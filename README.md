@@ -1,0 +1,21 @@
+# Depth
+
+Depth is a shared confidential perpetual trading protocol for Solana. Trading
+apps connect to a common clearing venue where collateralized makers compete to
+fill orders. The first market is a SOL perpetual with USDC collateral and
+settlement.
+
+The [protocol specification](depth.md) describes the market model, privacy
+boundary, architecture, and requirements for trading.
+
+## Repository
+
+| Directory | Purpose |
+| --- | --- |
+| `contracts/` | Solana program, Arcium computations, and integration tests |
+| `packages/` | Bindings, shared schemas, and trader and maker SDKs |
+| `client/` | Hosted trading interface |
+| `server/` | Public market data and operation indexing |
+| `scripts/` | Repository automation |
+
+For contract development, see [contracts/README.md](contracts/README.md).
