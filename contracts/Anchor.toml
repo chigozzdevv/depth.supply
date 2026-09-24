@@ -1,0 +1,41 @@
+[toolchain]
+package_manager = "pnpm"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+depth = "5cE5Kc42mwvg931PfNfs224RuBr47JRk3VqgTSyEV7MS"
+
+[registry]
+url = "https://api.apr.dev"
+
+[provider]
+cluster = "localnet"
+wallet = "target/test-wallet.json"
+
+[scripts]
+test = "pnpm exec ts-mocha -r tsconfig-paths/register -p ./tsconfig.json -t 1000000 tests/${DEPTH_TEST_FILE:-base}.ts"
+
+[test]
+upgradeable = true
+startup_wait = 60000
+
+[test.validator]
+
+[[test.validator.account]]
+address = "3RW84c8AwWtLCVyETK2Xtruo9YsgFnMMt6uW2cDN4mzV"
+filename = "artifacts/localnet/price-update.json"
+
+[[test.validator.account]]
+address = "Br7uuwx4Fpota9gQjs21GmY9bGXbxEgvcgMtPFVkTXKY"
+filename = "artifacts/localnet/price-second.json"
+
+[[test.validator.account]]
+address = "27X4fVvv5yP45ydHuVNHiekYuiZPC8tmEjVQAeoHxjU5"
+filename = "artifacts/localnet/price-crash.json"
+
+[[test.validator.account]]
+address = "GXJhaqHTaeQfpy1Qa91j863Avb43Bzs28vnFDH6aAdnF"
+filename = "artifacts/localnet/price-followup.json"
