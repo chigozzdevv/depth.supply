@@ -1,0 +1,368 @@
+use anchor_lang::prelude::*;
+
+#[account]
+#[derive(InitSpace)]
+pub struct Market {
+    pub market_id: [u8; 32],
+    pub settlement_mint: Pubkey,
+    pub vault: Pubkey,
+    pub config: MarketConfig,
+    pub revision: u64,
+    pub funding_index: i128,
+    pub last_funding_timestamp: i64,
+    pub oracle_price_e8: u64,
+    pub oracle_ema_e8: u64,
+    pub oracle_confidence_e8: u64,
+    pub oracle_timestamp: i64,
+    pub oracle_slot: u64,
+    pub active_quotes: [Pubkey; 4],
+    pub active_quote_count: u8,
+    pub quoted_notional: u64,
+    pub backstop_offer: Pubkey,
+    pub pending_orders: u16,
+    pub status: MarketStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub struct MarketConfig {
+    pub initial_margin_bps: u16,
+    pub maintenance_margin_bps: u16,
+    pub liquidation_fee_bps: u16,
+    pub trade_fee_bps: u16,
+    pub insurance_fee_bps: u16,
+    pub max_account_notional: u64,
+    pub max_market_notional: u64,
+    pub max_oracle_age_seconds: u32,
+    pub max_confidence_bps: u16,
+    pub max_quote_deviation_bps: u16,
+    pub max_quote_lifetime_seconds: u32,
+    pub max_order_queue_seconds: u32,
+    pub funding_interval_seconds: u32,
+    pub funding_rate_cap_bps: u16,
+    pub quote_tiers: [u64; 4],
+    pub backstop_min_collateral: u64,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum MarketStatus {
+    Draft,
+    Active,
+    Paused,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Protocol {
+    pub authority: Pubkey,
+    pub settlement_mint: Pubkey,
+    pub vault: Pubkey,
+    pub pending_total: u64,
+    pub credited_total: u64,
+    pub escrow_total: u64,
+    pub trading_enabled: bool,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct DepositReceipt {
+    pub owner: Pubkey,
+    pub nonce: u64,
+    pub amount: u64,
+    pub status: DepositStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum DepositStatus {
+    Pending,
+    Crediting,
+    Credited,
+    Refunded,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct BalanceAccount {
+    pub owner: Pubkey,
+    pub recovery_key: [u8; 32],
+    pub ciphertexts: [[u8; 32]; 2],
+    pub nonce: [u8; 16],
+    pub recovery_ciphertexts: [[u8; 32]; 2],
+    pub recovery_nonce: [u8; 16],
+    pub commitment: [u8; 32],
+    pub version: u64,
+    pub pending_computation: Pubkey,
+    pub pending_receipt: Pubkey,
+    pub pending_amount: u64,
+    pub pending_destination: Pubkey,
+    pub status: BalanceStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum BalanceStatus {
+    Opening,
+    Ready,
+    Crediting,
+    Withdrawing,
+    Moving,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct MarketAccount {
+    pub owner: Pubkey,
+    pub market: Pubkey,
+    pub recovery_key: [u8; 32],
+    pub ciphertexts: [[u8; 32]; 3],
+    pub nonce: [u8; 16],
+    pub recovery_ciphertexts: [[u8; 32]; 3],
+    pub recovery_nonce: [u8; 16],
+    pub commitment: [u8; 32],
+    pub version: u64,
+    pub last_liquidation_timestamp: i64,
+    pub pending_computation: Pubkey,
+    pub status: MarketAccountStatus,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct ClearingAccount {
+    pub market: Pubkey,
+    pub recovery_key: [u8; 32],
+    pub ciphertexts: [[u8; 32]; 2],
+    pub nonce: [u8; 16],
+    pub recovery_ciphertexts: [[u8; 32]; 2],
+    pub recovery_nonce: [u8; 16],
+    pub commitment: [u8; 32],
+    pub version: u64,
+    pub pending_computation: Pubkey,
+    pub pending_receipt: Pubkey,
+    pub pending_amount: u64,
+    pub status: ClearingStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum ClearingStatus {
+    Opening,
+    Ready,
+    Crediting,
+    Trading,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct MarginTransfer {
+    pub owner: Pubkey,
+    pub market: Pubkey,
+    pub nonce: u64,
+    pub amount: u64,
+    pub to_market: bool,
+    pub pending_computation: Pubkey,
+    pub status: MarginTransferStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum MarginTransferStatus {
+    Debiting,
+    Escrow,
+    Crediting,
+    Settled,
+    Refunded,
+    Rejected,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum MarketAccountStatus {
+    Opening,
+    Ready,
+    Moving,
+    Reserving,
+    Releasing,
+    Matching,
+    Trading,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct QuoteRecord {
+    pub maker: Pubkey,
+    pub market: Pubkey,
+    pub nonce: u64,
+    pub capacity: u64,
+    pub remaining_capacity: u64,
+    pub required_margin: u64,
+    pub expiry: i64,
+    pub tier_count: u8,
+    pub market_revision: u64,
+    pub oracle_timestamp: i64,
+    pub funding_index: i128,
+    pub ciphertexts: [[u8; 32]; 3],
+    pub cipher_nonce: [u8; 16],
+    pub pending_computation: Pubkey,
+    pub attached_orders: u16,
+    pub status: QuoteStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum QuoteStatus {
+    Validating,
+    Validated,
+    Reserving,
+    Active,
+    Closing,
+    Releasing,
+    Cancelled,
+    Filled,
+    Rejected,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct BackstopOffer {
+    pub maker: Pubkey,
+    pub market: Pubkey,
+    pub nonce: u64,
+    pub capacity: u64,
+    pub margin: u64,
+    pub expiry: i64,
+    pub market_revision: u64,
+    pub oracle_timestamp: i64,
+    pub funding_index: i128,
+    pub pending_computation: Pubkey,
+    pub status: BackstopStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum BackstopStatus {
+    Reserving,
+    Active,
+    Locked,
+    Releasing,
+    Consumed,
+    Cancelled,
+    Rejected,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct OrderRecord {
+    pub trader: Pubkey,
+    pub maker: Pubkey,
+    pub market: Pubkey,
+    pub app: Pubkey,
+    pub nonce: u64,
+    pub deadline: i64,
+    pub quote_keys: [Pubkey; 4],
+    pub quote_count: u8,
+    pub market_revision: u64,
+    pub oracle_timestamp: i64,
+    pub oracle_price_e8: u64,
+    pub trader_version: u64,
+    pub maker_version: u64,
+    pub clearing_version: u64,
+    pub funding_index: i128,
+    pub plan_ciphertexts: [[u8; 32]; 2],
+    pub plan_nonce: [u8; 16],
+    pub candidate_trader: [[u8; 32]; 3],
+    pub candidate_trader_nonce: [u8; 16],
+    pub candidate_maker: [[u8; 32]; 3],
+    pub candidate_maker_nonce: [u8; 16],
+    pub candidate_clearing: [[u8; 32]; 2],
+    pub candidate_clearing_nonce: [u8; 16],
+    pub sealed_trader: [[u8; 32]; 3],
+    pub sealed_trader_nonce: [u8; 16],
+    pub trader_recovery: [[u8; 32]; 3],
+    pub trader_recovery_nonce: [u8; 16],
+    pub trader_commitment: [u8; 32],
+    pub sealed_maker: [[u8; 32]; 3],
+    pub sealed_maker_nonce: [u8; 16],
+    pub maker_recovery: [[u8; 32]; 3],
+    pub maker_recovery_nonce: [u8; 16],
+    pub maker_commitment: [u8; 32],
+    pub selected_quote: Pubkey,
+    pub pending_computation: Pubkey,
+    pub kind: OrderKind,
+    pub status: OrderStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum OrderKind {
+    Trade,
+    Liquidation,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum OrderStatus {
+    Matching,
+    Matched,
+    Settling,
+    RiskApproved,
+    SealingTrader,
+    TraderSealed,
+    SealingMaker,
+    MakerSealed,
+    SealingClearing,
+    Filled,
+    Rejected,
+    Cancelled,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct BalanceView {
+    pub owner: Pubkey,
+    pub balance: Pubkey,
+    pub version: u64,
+    pub nonce: u64,
+    pub view_key: [u8; 32],
+    pub pending_computation: Pubkey,
+    pub ciphertext: [u8; 32],
+    pub output_nonce: [u8; 16],
+    pub status: ViewStatus,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct MarketView {
+    pub owner: Pubkey,
+    pub market_account: Pubkey,
+    pub version: u64,
+    pub nonce: u64,
+    pub view_key: [u8; 32],
+    pub pending_computation: Pubkey,
+    pub ciphertexts: [[u8; 32]; 3],
+    pub output_nonce: [u8; 16],
+    pub status: ViewStatus,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct FillView {
+    pub owner: Pubkey,
+    pub order: Pubkey,
+    pub nonce: u64,
+    pub view_key: [u8; 32],
+    pub pending_computation: Pubkey,
+    pub ciphertexts: [[u8; 32]; 2],
+    pub output_nonce: [u8; 16],
+    pub status: ViewStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum ViewStatus {
+    Pending,
+    Ready,
+    Stale,
+}
