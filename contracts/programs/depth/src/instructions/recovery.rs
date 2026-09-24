@@ -79,6 +79,15 @@ pub struct RecoverMarket<'info> {
     pub token_program: Program<'info, Token>,
 }
 
+fn flat_recovery_state(
+    reserved: u64,
+    position: i64,
+    entry_price: u64,
+    _funding_checkpoint: i128,
+) -> bool {
+    reserved == 0 && position == 0 && entry_price == 0
+}
+
 pub fn recover_balance_handler(
     ctx: Context<RecoverBalance>,
     amount: u64,
@@ -157,7 +166,7 @@ pub fn recover_market_handler(
         ErrorCode::WrongMarketAccountStatus
     );
     require!(
-        reserved == 0 && position == 0 && entry_price == 0 && funding_checkpoint == 0,
+        flat_recovery_state(reserved, position, entry_price, funding_checkpoint),
         ErrorCode::InvalidRecoveryState
     );
 
@@ -209,4 +218,18 @@ pub fn recover_market_handler(
     );
     ctx.accounts.protocol.credited_total = credited;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::flat_recovery_state;
+
+    #[test]
+    fn flat_account_recovery_accepts_nonzero_funding_checkpoint() {
+        assert!(flat_recovery_state(0, 0, 0, 123_456));
+        assert!(flat_recovery_state(0, 0, 0, -123_456));
+        assert!(!flat_recovery_state(1, 0, 0, 123_456));
+        assert!(!flat_recovery_state(0, 1, 0, 123_456));
+        assert!(!flat_recovery_state(0, 0, 1, 123_456));
+    }
 }
