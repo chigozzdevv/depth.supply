@@ -20,9 +20,10 @@ test = "pnpm exec ts-mocha -r tsconfig-paths/register -p ./tsconfig.json -t 1000
 
 [test]
 upgradeable = true
-startup_wait = 60000
+startup_wait = 180000
 
 [test.validator]
+bind_address = "127.0.0.1"
 
 [[test.validator.account]]
 address = "3RW84c8AwWtLCVyETK2Xtruo9YsgFnMMt6uW2cDN4mzV"
