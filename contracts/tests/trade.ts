@@ -27,11 +27,25 @@ const followupOracle = new PublicKey(
   "GXJhaqHTaeQfpy1Qa91j863Avb43Bzs28vnFDH6aAdnF"
 );
 const clearingPacker = createPacker<
-  { insurance: bigint; open_interest: bigint; salt: bigint },
-  { insurance: bigint; open_interest: bigint; salt: bigint }
+  {
+    insurance: bigint;
+    open_interest: bigint;
+    protocol_fees: bigint;
+    app_fees: bigint;
+    salt: bigint;
+  },
+  {
+    insurance: bigint;
+    open_interest: bigint;
+    protocol_fees: bigint;
+    app_fees: bigint;
+    salt: bigint;
+  }
 >([
   { name: "insurance", type: { Integer: { signed: false, width: 64 } } },
   { name: "open_interest", type: { Integer: { signed: false, width: 64 } } },
+  { name: "protocol_fees", type: { Integer: { signed: false, width: 64 } } },
+  { name: "app_fees", type: { Integer: { signed: false, width: 64 } } },
   { name: "salt", type: { Integer: { signed: false, width: 128 } } },
 ] as const);
 const fillPacker = createPacker<
@@ -42,6 +56,7 @@ const fillPacker = createPacker<
     execution_price: bigint;
     fee: bigint;
     insurance_fee: bigint;
+    app_fee: bigint;
   },
   {
     side: bigint;
@@ -50,6 +65,7 @@ const fillPacker = createPacker<
     execution_price: bigint;
     fee: bigint;
     insurance_fee: bigint;
+    app_fee: bigint;
   }
 >([
   { name: "side", type: { Integer: { signed: true, width: 8 } } },
@@ -58,7 +74,16 @@ const fillPacker = createPacker<
   { name: "execution_price", type: { Integer: { signed: false, width: 64 } } },
   { name: "fee", type: { Integer: { signed: false, width: 64 } } },
   { name: "insurance_fee", type: { Integer: { signed: false, width: 64 } } },
+  { name: "app_fee", type: { Integer: { signed: false, width: 64 } } },
 ] as const);
+
+function unpackFill(words: bigint[]) {
+  // Arcium packs the eighth fill field into a third 214-bit slot.
+  return {
+    ...fillPacker.unpack(words.slice(0, 2)),
+    maker_rebate: words[2] & ((1n << 64n) - 1n),
+  };
+}
 
 describe("confidential trade settlement", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
@@ -111,15 +136,15 @@ describe("confidential trade settlement", () => {
       initialMarginBps: 1_000,
       maintenanceMarginBps: 500,
       liquidationFeeBps: 50,
-      tradeFeeBps: 6,
-      insuranceFeeBps: 2,
+      tradeFeeBps: 5,
+      insuranceFeeBps: 1,
       maxAccountNotional: new anchor.BN(1_000_000_000),
       maxMarketNotional: new anchor.BN(10_000_000_000),
       maxOracleAgeSeconds: 300,
       maxConfidenceBps: 100,
       maxQuoteDeviationBps: 500,
       maxQuoteLifetimeSeconds: 120,
-      maxOrderQueueSeconds: 120,
+      maxOrderQueueSeconds: 300,
       fundingIntervalSeconds: 3_600,
       fundingRateCapBps: 50,
       quoteTiers: [1_000_000, 10_000_000, 100_000_000, 1_000_000_000].map(
@@ -242,6 +267,22 @@ describe("confidential trade settlement", () => {
             .rpc(options),
       ],
       [
+        "claim_trade_fees",
+        (a) =>
+          program.methods
+            .initClaimTradeFeesCompDef()
+            .accountsPartial(a)
+            .rpc(options),
+      ],
+      [
+        "seal_trade_fees",
+        (a) =>
+          program.methods
+            .initSealTradeFeesCompDef()
+            .accountsPartial(a)
+            .rpc(options),
+      ],
+      [
         "liquidate",
         (a) =>
           program.methods
@@ -289,6 +330,26 @@ describe("confidential trade settlement", () => {
       2 * anchor.web3.LAMPORTS_PER_SOL
     );
     await provider.connection.confirmTransaction(airdrop, "confirmed");
+    const [appConfig] = PublicKey.findProgramAddressSync(
+      [Buffer.from("app"), trader.publicKey.toBuffer()],
+      program.programId
+    );
+    await program.methods
+      .registerApp(1)
+      .accountsPartial({ app: trader.publicKey, config: appConfig })
+      .signers([trader])
+      .rpc();
+    let excessiveFeeRejected = false;
+    try {
+      await program.methods
+        .setAppFee(3, true)
+        .accountsPartial({ app: trader.publicKey, config: appConfig })
+        .signers([trader])
+        .rpc();
+    } catch {
+      excessiveFeeRejected = true;
+    }
+    expect(excessiveFeeRejected).to.equal(true);
     const makerRecoveryPrivate = new Uint8Array(32).fill(7);
     const traderRecoveryPrivate = new Uint8Array(32).fill(9);
     const makerRecovery = Array.from(x25519.getPublicKey(makerRecoveryPrivate));
@@ -493,6 +554,48 @@ describe("confidential trade settlement", () => {
     await harness.finalize(offset);
     const makerState = await fundUser(maker, makerRecovery, 1);
     const traderState = await fundUser(trader, traderRecovery, 2);
+    const claimFees = async (filledOrder: PublicKey) => {
+      const claimOffset = harness.offset();
+      await program.methods
+        .claimTradeFees(claimOffset)
+        .accountsPartial({
+          ...harness.queue(claimOffset, "claim_trade_fees"),
+          payer: authority,
+          market,
+          clearing,
+          protocolBalance: makerState.balance,
+          appBalance: traderState.balance,
+          order: filledOrder,
+        })
+        .remainingAccounts([
+          { pubkey: protocol, isSigner: false, isWritable: false },
+        ])
+        .rpc(options);
+      await harness.finalize(claimOffset);
+      const pending = await program.account.orderRecord.fetch(filledOrder);
+      expect(pending.claimStage).to.deep.equal({ ready: {} });
+      expect(pending.feesClaimed).to.equal(false);
+      const sealOffset = harness.offset();
+      await program.methods
+        .sealTradeFees(sealOffset)
+        .accountsPartial({
+          ...harness.queue(sealOffset, "seal_trade_fees"),
+          payer: authority,
+          market,
+          clearing,
+          protocolBalance: makerState.balance,
+          appBalance: traderState.balance,
+          order: filledOrder,
+        })
+        .remainingAccounts([
+          { pubkey: protocol, isSigner: false, isWritable: false },
+        ])
+        .rpc(options);
+      await harness.finalize(sealOffset);
+      expect(
+        (await program.account.orderRecord.fetch(filledOrder)).feesClaimed
+      ).to.equal(true);
+    };
     await program.methods
       .refreshOracle()
       .accountsPartial({ market, priceUpdate: oracle })
@@ -633,13 +736,15 @@ describe("confidential trade settlement", () => {
       20_100_000_000n,
       1_000n,
     ]);
-    const deadline = Math.floor(Date.now() / 1000) + 115;
+    const deadline = Math.floor(Date.now() / 1000) + 260;
     offset = harness.offset();
     await program.methods
       .submitOrder(
         offset,
         orderNonce,
-        authority,
+        trader.publicKey,
+        1,
+        new anchor.BN(1),
         new anchor.BN(deadline),
         input.ciphertexts,
         input.inputKey,
@@ -649,6 +754,7 @@ describe("confidential trade settlement", () => {
         ...harness.queue(offset, "match_order"),
         trader: trader.publicKey,
         protocol,
+        appConfig,
         market,
         marketAccount: traderState.marketAccount,
         order,
@@ -663,6 +769,13 @@ describe("confidential trade settlement", () => {
     let orderState = await program.account.orderRecord.fetch(order);
     expect(orderState.status).to.deep.equal({ matched: {} });
     expect(orderState.selectedQuote.equals(quote)).to.equal(true);
+    expect(orderState.appFeeBps).to.equal(1);
+    expect(orderState.appFeeVersion.toNumber()).to.equal(1);
+    await program.methods
+      .setAppFee(2, true)
+      .accountsPartial({ app: trader.publicKey, config: appConfig })
+      .signers([trader])
+      .rpc();
     expect((await program.account.market.fetch(market)).pendingOrders).to.equal(
       1
     );
@@ -797,13 +910,91 @@ describe("confidential trade settlement", () => {
     expect(traderValues.entry_price).to.equal(20_100_000_000n);
     expect(makerValues.entry_price).to.equal(20_100_000_000n);
     expect(traderValues.collateral).to.equal(1_999_397n);
-    expect(makerValues.collateral).to.equal(110_000_402n);
-    expect(clearingValues.insurance).to.equal(100_000_201n);
+    expect(makerValues.collateral).to.equal(110_000_100n);
+    expect(clearingValues.insurance).to.equal(100_000_100n);
     expect(clearingValues.open_interest).to.equal(5_000_000n);
+    expect(clearingValues.protocol_fees).to.equal(303n);
+    expect(clearingValues.app_fees).to.equal(100n);
+    const protocolBefore = await program.account.balanceAccount.fetch(
+      makerState.balance
+    );
+    const appBefore = await program.account.balanceAccount.fetch(
+      traderState.balance
+    );
+    expect(
+      makerCipher.decrypt(
+        protocolBefore.recoveryCiphertexts.map((word) => Array.from(word)),
+        Uint8Array.from(protocolBefore.recoveryNonce)
+      )[0]
+    ).to.equal(0n);
+    expect(
+      traderCipher.decrypt(
+        appBefore.recoveryCiphertexts.map((word) => Array.from(word)),
+        Uint8Array.from(appBefore.recoveryNonce)
+      )[0]
+    ).to.equal(0n);
+
+    await claimFees(order);
+    const claimedClearing = await program.account.clearingAccount.fetch(
+      clearing
+    );
+    const claimedValues = clearingPacker.unpack(
+      clearingCipher.decrypt(
+        claimedClearing.recoveryCiphertexts.map((word) => Array.from(word)),
+        Uint8Array.from(claimedClearing.recoveryNonce)
+      )
+    );
+    expect(claimedValues.protocol_fees).to.equal(0n);
+    expect(claimedValues.app_fees).to.equal(0n);
+    const protocolBalance = await program.account.balanceAccount.fetch(
+      makerState.balance
+    );
+    const appBalance = await program.account.balanceAccount.fetch(
+      traderState.balance
+    );
+    let protocolFees = makerCipher.decrypt(
+      protocolBalance.recoveryCiphertexts.map((word) => Array.from(word)),
+      Uint8Array.from(protocolBalance.recoveryNonce)
+    )[0];
+    let appFees = traderCipher.decrypt(
+      appBalance.recoveryCiphertexts.map((word) => Array.from(word)),
+      Uint8Array.from(appBalance.recoveryNonce)
+    )[0];
+    expect(protocolFees).to.equal(303n);
+    expect(appFees).to.equal(100n);
+    let duplicateClaimRejected = false;
+    offset = harness.offset();
+    try {
+      await program.methods
+        .claimTradeFees(offset)
+        .accountsPartial({
+          ...harness.queue(offset, "claim_trade_fees"),
+          payer: authority,
+          market,
+          clearing,
+          protocolBalance: makerState.balance,
+          appBalance: traderState.balance,
+          order,
+        })
+        .remainingAccounts([
+          { pubkey: protocol, isSigner: false, isWritable: false },
+        ])
+        .rpc(options);
+    } catch {
+      duplicateClaimRejected = true;
+    }
+    expect(duplicateClaimRejected).to.equal(true);
+    await program.methods
+      .setAppFee(1, true)
+      .accountsPartial({ app: trader.publicKey, config: appConfig })
+      .signers([trader])
+      .rpc();
     expect(
       traderValues.collateral +
         makerValues.collateral +
-        clearingValues.insurance
+        clearingValues.insurance +
+        protocolFees +
+        appFees
     ).to.equal(212_000_000n);
     expect((await getAccount(provider.connection, vault)).amount).to.equal(
       212_000_000n
@@ -881,7 +1072,7 @@ describe("confidential trade settlement", () => {
     await harness.finalize(offset);
     const sealedFill = await program.account.fillView.fetch(fillView);
     expect(sealedFill.status).to.deep.equal({ ready: {} });
-    const fill = fillPacker.unpack(
+    const fill = unpackFill(
       viewCipher.decrypt(
         sealedFill.ciphertexts.map((word) => Array.from(word)),
         Uint8Array.from(sealedFill.outputNonce)
@@ -891,7 +1082,9 @@ describe("confidential trade settlement", () => {
     expect(fill.size).to.equal(5_000_000n);
     expect(fill.execution_price).to.equal(20_100_000_000n);
     expect(fill.fee).to.equal(603n);
-    expect(fill.insurance_fee).to.equal(201n);
+    expect(fill.insurance_fee).to.equal(100n);
+    expect(fill.app_fee).to.equal(100n);
+    expect(fill.maker_rebate).to.equal(100n);
 
     const makerFillNonce = new anchor.BN(603);
     const [makerFillView] = PublicKey.findProgramAddressSync(
@@ -916,7 +1109,7 @@ describe("confidential trade settlement", () => {
     await harness.finalize(offset);
     const sealedMakerFill = await program.account.fillView.fetch(makerFillView);
     expect(sealedMakerFill.status).to.deep.equal({ ready: {} });
-    const makerFill = fillPacker.unpack(
+    const makerFill = unpackFill(
       viewCipher.decrypt(
         sealedMakerFill.ciphertexts.map((word) => Array.from(word)),
         Uint8Array.from(sealedMakerFill.outputNonce)
@@ -1001,8 +1194,10 @@ describe("confidential trade settlement", () => {
       .submitOrder(
         offset,
         rejectedNonce,
-        authority,
-        new anchor.BN(Math.floor(Date.now() / 1000) + 115),
+        trader.publicKey,
+        1,
+        new anchor.BN(3),
+        new anchor.BN(Math.floor(Date.now() / 1000) + 260),
         rejectedInput.ciphertexts,
         rejectedInput.inputKey,
         rejectedInput.inputNonce
@@ -1011,6 +1206,7 @@ describe("confidential trade settlement", () => {
         ...harness.queue(offset, "match_order"),
         trader: trader.publicKey,
         protocol,
+        appConfig,
         market,
         marketAccount: traderState.marketAccount,
         order: rejectedOrder,
@@ -1051,8 +1247,10 @@ describe("confidential trade settlement", () => {
       .submitOrder(
         offset,
         exitNonce,
-        authority,
-        new anchor.BN(Math.floor(Date.now() / 1000) + 115),
+        trader.publicKey,
+        1,
+        new anchor.BN(3),
+        new anchor.BN(Math.floor(Date.now() / 1000) + 260),
         exitInput.ciphertexts,
         exitInput.inputKey,
         exitInput.inputNonce
@@ -1061,6 +1259,7 @@ describe("confidential trade settlement", () => {
         ...harness.queue(offset, "match_order"),
         trader: trader.publicKey,
         protocol,
+        appConfig,
         market,
         marketAccount: traderState.marketAccount,
         order: exitOrder,
@@ -1159,12 +1358,49 @@ describe("confidential trade settlement", () => {
     expect(traderAfter.position).to.equal(0n);
     expect(makerAfter.position).to.equal(0n);
     expect(traderAfter.collateral).to.equal(1_988_800n);
-    expect(makerAfter.collateral).to.equal(110_010_800n);
-    expect(clearingAfter.insurance).to.equal(100_000_400n);
+    expect(makerAfter.collateral).to.equal(110_010_199n);
+    expect(clearingAfter.insurance).to.equal(100_000_199n);
     expect(clearingAfter.open_interest).to.equal(0n);
+    expect(clearingAfter.protocol_fees).to.equal(300n);
+    expect(clearingAfter.app_fees).to.equal(99n);
     expect(
-      traderAfter.collateral + makerAfter.collateral + clearingAfter.insurance
+      traderAfter.collateral +
+        makerAfter.collateral +
+        clearingAfter.insurance +
+        clearingAfter.protocol_fees +
+        clearingAfter.app_fees +
+        protocolFees +
+        appFees
     ).to.equal(212_000_000n);
+
+    await claimFees(exitOrder);
+    const exitClaimedClearing = await program.account.clearingAccount.fetch(
+      clearing
+    );
+    const exitClaimedValues = clearingPacker.unpack(
+      clearingCipher.decrypt(
+        exitClaimedClearing.recoveryCiphertexts.map((word) => Array.from(word)),
+        Uint8Array.from(exitClaimedClearing.recoveryNonce)
+      )
+    );
+    expect(exitClaimedValues.protocol_fees).to.equal(0n);
+    expect(exitClaimedValues.app_fees).to.equal(0n);
+    const protocolAfterClaim = await program.account.balanceAccount.fetch(
+      makerState.balance
+    );
+    const appAfterClaim = await program.account.balanceAccount.fetch(
+      traderState.balance
+    );
+    protocolFees = makerCipher.decrypt(
+      protocolAfterClaim.recoveryCiphertexts.map((word) => Array.from(word)),
+      Uint8Array.from(protocolAfterClaim.recoveryNonce)
+    )[0];
+    appFees = traderCipher.decrypt(
+      appAfterClaim.recoveryCiphertexts.map((word) => Array.from(word)),
+      Uint8Array.from(appAfterClaim.recoveryNonce)
+    )[0];
+    expect(protocolFees).to.equal(603n);
+    expect(appFees).to.equal(199n);
 
     await program.methods
       .pauseMarket()
@@ -1271,8 +1507,10 @@ describe("confidential trade settlement", () => {
       .submitOrder(
         offset,
         riskNonce,
-        authority,
-        new anchor.BN(Math.floor(Date.now() / 1000) + 115),
+        trader.publicKey,
+        1,
+        new anchor.BN(3),
+        new anchor.BN(Math.floor(Date.now() / 1000) + 260),
         riskInput.ciphertexts,
         riskInput.inputKey,
         riskInput.inputNonce
@@ -1281,6 +1519,7 @@ describe("confidential trade settlement", () => {
         ...harness.queue(offset, "match_order"),
         trader: trader.publicKey,
         protocol,
+        appConfig,
         market,
         marketAccount: traderState.marketAccount,
         order: riskOrder,
@@ -1372,7 +1611,7 @@ describe("confidential trade settlement", () => {
         offset,
         trader.publicKey,
         liquidationNonce,
-        new anchor.BN(Math.floor(Date.now() / 1000) + 115)
+        new anchor.BN(Math.floor(Date.now() / 1000) + 260)
       )
       .accountsPartial({
         ...harness.queue(offset, "liquidate"),
@@ -1465,7 +1704,13 @@ describe("confidential trade settlement", () => {
     expect(makerFinal.position).to.equal(0n);
     expect(clearingFinal.open_interest).to.equal(0n);
     expect(
-      traderFinal.collateral + makerFinal.collateral + clearingFinal.insurance
+      traderFinal.collateral +
+        makerFinal.collateral +
+        clearingFinal.insurance +
+        clearingFinal.protocol_fees +
+        clearingFinal.app_fees +
+        protocolFees +
+        appFees
     ).to.equal(212_000_000n);
 
     const replacementNonce = new anchor.BN(67);

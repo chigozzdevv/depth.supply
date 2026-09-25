@@ -26,7 +26,7 @@ describe("SOL perpetual market", () => {
     maintenanceMarginBps: 500,
     liquidationFeeBps: 50,
     tradeFeeBps: 5,
-    insuranceFeeBps: 2,
+    insuranceFeeBps: 1,
     maxAccountNotional: new anchor.BN(1_000_000_000),
     maxMarketNotional: new anchor.BN(10_000_000_000),
     maxOracleAgeSeconds: 300,
@@ -62,7 +62,7 @@ describe("SOL perpetual market", () => {
     const stranger = anchor.web3.Keypair.generate();
     await expectRejected(
       program.methods
-        .reviseMarket({ ...config, tradeFeeBps: 6 })
+        .reviseMarket({ ...config, maxOracleAgeSeconds: 250 })
         .accountsPartial({ market, protocol, authority: stranger.publicKey })
         .signers([stranger])
         .rpc()
@@ -73,15 +73,21 @@ describe("SOL perpetual market", () => {
         .accountsPartial({ market, protocol, authority })
         .rpc()
     );
+    await expectRejected(
+      program.methods
+        .reviseMarket({ ...config, tradeFeeBps: 6 })
+        .accountsPartial({ market, protocol, authority })
+        .rpc()
+    );
 
     await program.methods
-      .reviseMarket({ ...config, tradeFeeBps: 6 })
+      .reviseMarket({ ...config, maxOracleAgeSeconds: 250 })
       .accountsPartial({ market, protocol, authority })
       .rpc();
 
     const revised = await program.account.market.fetch(market);
     expect(revised.revision.toNumber()).to.equal(2);
-    expect(revised.config.tradeFeeBps).to.equal(6);
+    expect(revised.config.maxOracleAgeSeconds).to.equal(250);
   });
 });
 

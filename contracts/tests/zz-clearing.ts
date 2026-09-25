@@ -34,11 +34,25 @@ const feed = Buffer.from(
   "hex"
 );
 const clearingPacker = createPacker<
-  { insurance: bigint; open_interest: bigint; salt: bigint },
-  { insurance: bigint; open_interest: bigint; salt: bigint }
+  {
+    insurance: bigint;
+    open_interest: bigint;
+    protocol_fees: bigint;
+    app_fees: bigint;
+    salt: bigint;
+  },
+  {
+    insurance: bigint;
+    open_interest: bigint;
+    protocol_fees: bigint;
+    app_fees: bigint;
+    salt: bigint;
+  }
 >([
   { name: "insurance", type: { Integer: { signed: false, width: 64 } } },
   { name: "open_interest", type: { Integer: { signed: false, width: 64 } } },
+  { name: "protocol_fees", type: { Integer: { signed: false, width: 64 } } },
+  { name: "app_fees", type: { Integer: { signed: false, width: 64 } } },
   { name: "salt", type: { Integer: { signed: false, width: 128 } } },
 ] as const);
 
@@ -227,14 +241,16 @@ describe("encrypted market clearing", () => {
       (await getAccount(provider.connection, protocolState.vault)).amount
     ).to.equal(100_000_000n);
 
-    const preimage = Buffer.alloc(88);
-    Buffer.from("depth.clear.v1\0\0").copy(preimage, 0);
+    const preimage = Buffer.alloc(104);
+    Buffer.from("depth.clear.v2\0\0").copy(preimage, 0);
     market.toBuffer().copy(preimage, 16);
     preimage.writeBigUInt64LE(1n, 48);
     preimage.writeBigUInt64LE(values.insurance, 56);
     preimage.writeBigUInt64LE(values.open_interest, 64);
+    preimage.writeBigUInt64LE(values.protocol_fees, 72);
+    preimage.writeBigUInt64LE(values.app_fees, 80);
     for (let index = 0; index < 16; index++) {
-      preimage[72 + index] = Number((values.salt >> BigInt(index * 8)) & 255n);
+      preimage[88 + index] = Number((values.salt >> BigInt(index * 8)) & 255n);
     }
     expect(
       createHash("sha3-256")
