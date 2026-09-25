@@ -359,10 +359,10 @@ pub fn liquidate_callback_handler(
         && offer.expiry > clock.unix_timestamp
         && market.backstop_offer == offer.key();
     if result.field_4 && fresh {
-        order.candidate_trader = result.field_0.ciphertexts;
-        order.candidate_trader_nonce = result.field_0.nonce.to_le_bytes();
-        order.candidate_maker = result.field_1.ciphertexts;
-        order.candidate_maker_nonce = result.field_1.nonce.to_le_bytes();
+        order.candidate_primary = result.field_0.ciphertexts;
+        order.candidate_primary_nonce = result.field_0.nonce.to_le_bytes();
+        order.candidate_secondary = result.field_1.ciphertexts;
+        order.candidate_secondary_nonce = result.field_1.nonce.to_le_bytes();
         order.candidate_clearing = result.field_2.ciphertexts;
         order.candidate_clearing_nonce = result.field_2.nonce.to_le_bytes();
         order.status = OrderStatus::RiskApproved;

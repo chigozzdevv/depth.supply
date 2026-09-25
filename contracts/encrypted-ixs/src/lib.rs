@@ -43,25 +43,31 @@ mod circuits {
         pub execution_price: u64,
         pub fee: u64,
         pub insurance_fee: u64,
+        pub app_fee: u64,
+        pub maker_rebate: u64,
     }
 
     #[derive(Copy, Clone)]
     pub struct ClearingState {
         pub insurance: u64,
         pub open_interest: u64,
+        pub protocol_fees: u64,
+        pub app_fees: u64,
         pub salt: u128,
     }
 
     fn clearing_hash(state: ClearingState, market: [u8; 32], version: u64) -> [u8; 32] {
-        let mut bytes = [0u8; 88];
-        let domain = b"depth.clear.v1\0\0";
+        let mut bytes = [0u8; 104];
+        let domain = b"depth.clear.v2\0\0";
         let version_bytes = version.to_le_bytes();
         let insurance_bytes = state.insurance.to_le_bytes();
         let open_interest_bytes = state.open_interest.to_le_bytes();
+        let protocol_fees_bytes = state.protocol_fees.to_le_bytes();
+        let app_fees_bytes = state.app_fees.to_le_bytes();
         let salt_bytes = state.salt.to_le_bytes();
         for i in 0..16 {
             bytes[i] = domain[i];
-            bytes[72 + i] = salt_bytes[i];
+            bytes[88 + i] = salt_bytes[i];
         }
         for i in 0..32 {
             bytes[16 + i] = market[i];
@@ -70,6 +76,8 @@ mod circuits {
             bytes[48 + i] = version_bytes[i];
             bytes[56 + i] = insurance_bytes[i];
             bytes[64 + i] = open_interest_bytes[i];
+            bytes[72 + i] = protocol_fees_bytes[i];
+            bytes[80 + i] = app_fees_bytes[i];
         }
         SHA3_256::new().digest(&bytes)
     }
@@ -261,6 +269,8 @@ mod circuits {
         let state = ClearingState {
             insurance: 0,
             open_interest: 0,
+            protocol_fees: 0,
+            app_fees: 0,
             salt: ArcisRNG::gen_uniform::<u128>(),
         };
         let digest = clearing_hash(state, market, 0);
@@ -471,6 +481,7 @@ mod circuits {
         initial_margin_bps: u16,
         trade_fee_bps: u16,
         insurance_fee_bps: u16,
+        app_fee_bps: u16,
         max_deviation_bps: u16,
         max_account_notional: u64,
     ) -> (Enc<Mxe, Pack<TradePlan>>, u8, bool) {
@@ -498,13 +509,16 @@ mod circuits {
             && tier < 4
             && initial_margin_bps > 0
             && initial_margin_bps <= 10_000
-            && trade_fee_bps <= 100
-            && insurance_fee_bps <= trade_fee_bps
+            && trade_fee_bps == 5
+            && insurance_fee_bps == 1
+            && app_fee_bps <= 2
             && max_deviation_bps <= 1_000;
         let mut selected = 255u8;
         let mut execution_price = 0u64;
         let mut execution_fee = 0u64;
         let mut execution_insurance_fee = 0u64;
+        let mut execution_app_fee = 0u64;
+        let mut execution_maker_rebate = 0u64;
         for index in 0..4 {
             let mut price = 0u64;
             for price_tier in 0..4 {
@@ -517,8 +531,10 @@ mod circuits {
                 }
             }
             let notional = order.size as u128 * price as u128 / 100_000_000_000u128;
-            let fee = (notional * trade_fee_bps as u128 + 9_999u128) / 10_000u128;
-            let insurance_fee = (notional * insurance_fee_bps as u128 + 9_999u128) / 10_000u128;
+            let fee = (notional * (trade_fee_bps + app_fee_bps) as u128 + 9_999u128) / 10_000u128;
+            let insurance_fee = notional * insurance_fee_bps as u128 / 10_000u128;
+            let app_fee = notional * app_fee_bps as u128 / 10_000u128;
+            let maker_rebate = notional / 10_000u128;
             let initial_margin = (notional * initial_margin_bps as u128 + 9_999u128) / 10_000u128;
             let lower = oracle_price as u128 * (10_000u128 - max_deviation_bps as u128);
             let upper = oracle_price as u128 * (10_000u128 + max_deviation_bps as u128);
@@ -534,7 +550,7 @@ mod circuits {
                 && notional <= max_account_notional as u128
                 && fee <= order.max_fee as u128
                 && fee <= u64::MAX as u128
-                && insurance_fee <= fee
+                && insurance_fee + app_fee + maker_rebate <= fee
                 && initial_margin + fee <= order.margin as u128
                 && if order.side == 1 {
                     price <= order.limit_price
@@ -552,6 +568,8 @@ mod circuits {
                 execution_price = price;
                 execution_fee = fee as u64;
                 execution_insurance_fee = insurance_fee as u64;
+                execution_app_fee = app_fee as u64;
+                execution_maker_rebate = maker_rebate as u64;
             }
         }
         let filled = valid_order && selected < 4;
@@ -562,6 +580,8 @@ mod circuits {
             execution_price: if filled { execution_price } else { 0 },
             fee: if filled { execution_fee } else { 0 },
             insurance_fee: if filled { execution_insurance_fee } else { 0 },
+            app_fee: if filled { execution_app_fee } else { 0 },
+            maker_rebate: if filled { execution_maker_rebate } else { 0 },
         };
         (
             Mxe::get().from_arcis(Pack::new(plan)),
@@ -628,7 +648,8 @@ mod circuits {
         let valid = (plan.side == 1 || plan.side == -1)
             && plan.size > 0
             && plan.execution_price > 0
-            && plan.insurance_fee <= plan.fee
+            && (plan.insurance_fee as u128 + plan.app_fee as u128 + plan.maker_rebate as u128)
+                <= plan.fee as u128
             && next >= -1_000_000_000_000_000_000i128
             && next <= 1_000_000_000_000_000_000i128;
         (updated, realised, next_size - old_size, valid)
@@ -665,11 +686,23 @@ mod circuits {
         let maker_funding = maker.position as i128 * (funding_index - maker.funding_checkpoint)
             / 100_000_000_000i128;
         let trader_cash = trader_realised - trader_funding - plan.fee as i128;
-        let maker_cash =
-            maker_realised - maker_funding + plan.fee as i128 - plan.insurance_fee as i128;
+        let maker_cash = maker_realised - maker_funding + plan.maker_rebate as i128;
         let trader_balance = trader.collateral as i128 + trader_cash;
         let maker_balance = maker.collateral as i128 + maker_cash;
-        let insurance_balance = clearing.insurance as i128 - trader_cash - maker_cash;
+        let allocated =
+            plan.insurance_fee as u128 + plan.app_fee as u128 + plan.maker_rebate as u128;
+        let protocol_fee = if allocated <= plan.fee as u128 {
+            plan.fee as u128 - allocated
+        } else {
+            0
+        };
+        let insurance_balance = clearing.insurance as i128
+            - trader_cash
+            - maker_cash
+            - protocol_fee as i128
+            - plan.app_fee as i128;
+        let protocol_fees = clearing.protocol_fees as u128 + protocol_fee;
+        let app_fees = clearing.app_fees as u128 + plan.app_fee as u128;
         let reserve_valid = maker.reserved >= quote_reserve;
         trader_next.collateral = trader_balance as u64;
         trader_next.funding_checkpoint = funding_index;
@@ -689,6 +722,9 @@ mod circuits {
             && maker_balance <= u64::MAX as i128
             && insurance_balance >= 0
             && insurance_balance <= u64::MAX as i128
+            && allocated <= plan.fee as u128
+            && protocol_fees <= u64::MAX as u128
+            && app_fees <= u64::MAX as u128
             && plan.margin <= trader.collateral;
         for state in [trader_next, maker_next] {
             let position = state.position as i128;
@@ -717,6 +753,8 @@ mod circuits {
         if valid {
             clearing_next.insurance = insurance_balance as u64;
             clearing_next.open_interest = open_interest as u64;
+            clearing_next.protocol_fees = protocol_fees as u64;
+            clearing_next.app_fees = app_fees as u64;
         } else {
             trader_next = trader;
             maker_next = maker;
@@ -726,6 +764,91 @@ mod circuits {
             maker_cipher.owner.from_arcis(Pack::new(maker_next)),
             clearing_cipher.owner.from_arcis(Pack::new(clearing_next)),
             valid.reveal(),
+        )
+    }
+
+    #[instruction]
+    pub fn claim_trade_fees(
+        plan_cipher: Enc<Mxe, Pack<TradePlan>>,
+        clearing_cipher: Enc<Mxe, Pack<ClearingState>>,
+        protocol_cipher: Enc<Mxe, BalanceState>,
+        app_cipher: Enc<Mxe, BalanceState>,
+    ) -> (
+        Enc<Mxe, Pack<ClearingState>>,
+        Enc<Mxe, BalanceState>,
+        Enc<Mxe, BalanceState>,
+        bool,
+    ) {
+        let plan = plan_cipher.to_arcis().unpack();
+        let mut clearing = clearing_cipher.to_arcis().unpack();
+        let mut protocol = protocol_cipher.to_arcis();
+        let mut app = app_cipher.to_arcis();
+        let allocated =
+            plan.insurance_fee as u128 + plan.app_fee as u128 + plan.maker_rebate as u128;
+        let protocol_fee = if allocated <= plan.fee as u128 {
+            plan.fee as u128 - allocated
+        } else {
+            0
+        };
+        let valid_allocation = allocated <= plan.fee as u128;
+        let valid_protocol_pool = protocol_fee <= clearing.protocol_fees as u128;
+        let valid_app_pool = plan.app_fee <= clearing.app_fees;
+        let valid_protocol_capacity = protocol.amount as u128 + protocol_fee <= u64::MAX as u128;
+        let valid_app_capacity = app.amount as u128 + plan.app_fee as u128 <= u64::MAX as u128;
+        let valid = valid_allocation
+            && valid_protocol_pool
+            && valid_app_pool
+            && valid_protocol_capacity
+            && valid_app_capacity;
+        if valid {
+            clearing.protocol_fees -= protocol_fee as u64;
+            clearing.app_fees -= plan.app_fee;
+            protocol.amount += protocol_fee as u64;
+            app.amount += plan.app_fee;
+        }
+        clearing.salt = ArcisRNG::gen_uniform::<u128>();
+        protocol.salt = ArcisRNG::gen_uniform::<u128>();
+        app.salt = ArcisRNG::gen_uniform::<u128>();
+        (
+            clearing_cipher.owner.from_arcis(Pack::new(clearing)),
+            protocol_cipher.owner.from_arcis(protocol),
+            app_cipher.owner.from_arcis(app),
+            valid.reveal(),
+        )
+    }
+
+    #[instruction]
+    pub fn seal_trade_fees(
+        clearing_cipher: Enc<Mxe, Pack<ClearingState>>,
+        protocol_cipher: Enc<Mxe, BalanceState>,
+        app_cipher: Enc<Mxe, BalanceState>,
+        market: [u8; 32],
+        clearing_version: u64,
+        clearing_recovery_key: ArcisX25519Pubkey,
+        protocol_owner: [u8; 32],
+        protocol_version: u64,
+        protocol_recovery_key: ArcisX25519Pubkey,
+        app_owner: [u8; 32],
+        app_version: u64,
+        app_recovery_key: ArcisX25519Pubkey,
+    ) -> (
+        Enc<Shared, Pack<ClearingState>>,
+        [u8; 32],
+        Enc<Shared, BalanceState>,
+        [u8; 32],
+        Enc<Shared, BalanceState>,
+        [u8; 32],
+    ) {
+        let clearing = clearing_cipher.to_arcis().unpack();
+        let protocol = protocol_cipher.to_arcis();
+        let app = app_cipher.to_arcis();
+        (
+            Shared::new(clearing_recovery_key).from_arcis(Pack::new(clearing)),
+            clearing_hash(clearing, market, clearing_version + 1).reveal(),
+            Shared::new(protocol_recovery_key).from_arcis(protocol),
+            balance_hash(protocol, protocol_owner, protocol_version + 1).reveal(),
+            Shared::new(app_recovery_key).from_arcis(app),
+            balance_hash(app, app_owner, app_version + 1).reveal(),
         )
     }
 
@@ -778,6 +901,8 @@ mod circuits {
             execution_price: oracle_price,
             fee: 0,
             insurance_fee: 0,
+            app_fee: 0,
+            maker_rebate: 0,
         };
         let (mut backstop_next, backstop_realised, backstop_oi, backstop_valid) =
             enter_leg(backstop, plan, target.position as i128);

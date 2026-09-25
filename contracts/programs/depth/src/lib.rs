@@ -17,6 +17,56 @@ declare_id!("5cE5Kc42mwvg931PfNfs224RuBr47JRk3VqgTSyEV7MS");
 pub mod depth {
     use super::*;
 
+    pub fn register_app(ctx: Context<RegisterApp>, fee_bps: u16) -> Result<()> {
+        app::register_app_handler(ctx, fee_bps)
+    }
+
+    pub fn set_app_fee(ctx: Context<SetAppFee>, fee_bps: u16, active: bool) -> Result<()> {
+        app::set_app_fee_handler(ctx, fee_bps, active)
+    }
+
+    pub fn init_claim_trade_fees_comp_def(ctx: Context<InitClaimTradeFeesCompDef>) -> Result<()> {
+        fees::init_claim_trade_fees_comp_def_handler(ctx)
+    }
+
+    pub fn init_seal_trade_fees_comp_def(ctx: Context<InitSealTradeFeesCompDef>) -> Result<()> {
+        fees::init_seal_trade_fees_comp_def_handler(ctx)
+    }
+
+    pub fn claim_trade_fees<'info>(
+        ctx: Context<'info, ClaimTradeFees<'info>>,
+        computation_offset: u64,
+    ) -> Result<()> {
+        fees::claim_trade_fees_handler(ctx, computation_offset)
+    }
+
+    #[arcium_callback(encrypted_ix = "claim_trade_fees")]
+    pub fn claim_trade_fees_callback(
+        ctx: Context<ClaimTradeFeesCallback>,
+        output: SignedComputationOutputs<ClaimTradeFeesOutput>,
+    ) -> Result<()> {
+        fees::claim_trade_fees_callback_handler(ctx, output)
+    }
+
+    pub fn seal_trade_fees<'info>(
+        ctx: Context<'info, SealTradeFees<'info>>,
+        computation_offset: u64,
+    ) -> Result<()> {
+        fees::seal_trade_fees_handler(ctx, computation_offset)
+    }
+
+    #[arcium_callback(encrypted_ix = "seal_trade_fees")]
+    pub fn seal_trade_fees_callback(
+        ctx: Context<SealTradeFeesCallback>,
+        output: SignedComputationOutputs<SealTradeFeesOutput>,
+    ) -> Result<()> {
+        fees::seal_trade_fees_callback_handler(ctx, output)
+    }
+
+    pub fn cancel_fee_claim(ctx: Context<CancelFeeClaim>) -> Result<()> {
+        fees::cancel_fee_claim_handler(ctx)
+    }
+
     pub fn create_market(ctx: Context<CreateMarket>, config: MarketConfig) -> Result<()> {
         market::create_market_handler(ctx, config)
     }
@@ -432,6 +482,8 @@ pub mod depth {
         computation_offset: u64,
         nonce: u64,
         app: Pubkey,
+        app_fee_bps: u16,
+        app_fee_version: u64,
         deadline: i64,
         ciphertexts: [[u8; 32]; 5],
         input_key: [u8; 32],
@@ -442,6 +494,8 @@ pub mod depth {
             computation_offset,
             nonce,
             app,
+            app_fee_bps,
+            app_fee_version,
             deadline,
             ciphertexts,
             input_key,

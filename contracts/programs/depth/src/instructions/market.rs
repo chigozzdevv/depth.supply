@@ -238,13 +238,14 @@ pub fn activate_market_handler(
             <= u128::from(ctx.accounts.vault.amount),
         ErrorCode::VaultUnderfunded
     );
-    let mut preimage = [0u8; 88];
-    preimage[..16].copy_from_slice(b"depth.clear.v1\0\0");
+    let mut preimage = [0u8; 104];
+    preimage[..16].copy_from_slice(b"depth.clear.v2\0\0");
     preimage[16..48].copy_from_slice(market.key().as_ref());
     preimage[48..56].copy_from_slice(&clearing.version.to_le_bytes());
     preimage[56..64].copy_from_slice(&insurance.to_le_bytes());
     preimage[64..72].copy_from_slice(&0u64.to_le_bytes());
-    preimage[72..88].copy_from_slice(&salt.to_le_bytes());
+    preimage[72..88].copy_from_slice(&[0; 16]);
+    preimage[88..104].copy_from_slice(&salt.to_le_bytes());
     require!(
         Sha3_256::digest(preimage).as_slice() == clearing.commitment,
         ErrorCode::InvalidRecoveryState
@@ -354,8 +355,8 @@ fn validate_config(config: &MarketConfig) -> Result<()> {
     );
     require!(
         config.liquidation_fee_bps < config.maintenance_margin_bps
-            && config.trade_fee_bps <= 100
-            && config.insurance_fee_bps <= config.trade_fee_bps,
+            && config.trade_fee_bps == 5
+            && config.insurance_fee_bps == 1,
         ErrorCode::InvalidMarketConfig
     );
     require!(
@@ -372,7 +373,7 @@ fn validate_config(config: &MarketConfig) -> Result<()> {
     );
     require!(
         (1..=120).contains(&config.max_quote_lifetime_seconds)
-            && (1..=120).contains(&config.max_order_queue_seconds)
+            && (1..=300).contains(&config.max_order_queue_seconds)
             && (60..=86_400).contains(&config.funding_interval_seconds)
             && config.funding_rate_cap_bps <= 100,
         ErrorCode::InvalidMarketConfig

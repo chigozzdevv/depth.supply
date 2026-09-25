@@ -156,7 +156,7 @@ pub fn settle_trade_handler<'info>(
         ErrorCode::WrongClearingStatus
     );
     require!(
-        quote.status == QuoteStatus::Active && quote.expiry > clock.unix_timestamp,
+        quote.status == QuoteStatus::Active,
         ErrorCode::WrongQuoteStatus
     );
     require_keys_eq!(order.market, market.key(), ErrorCode::WrongMarket);
@@ -214,7 +214,8 @@ pub fn settle_trade_handler<'info>(
     let mut args = ArgBuilder::new()
         .plaintext_u128(u128::from_le_bytes(order.plan_nonce))
         .encrypted_u64(order.plan_ciphertexts[0])
-        .encrypted_u64(order.plan_ciphertexts[1]);
+        .encrypted_u64(order.plan_ciphertexts[1])
+        .encrypted_u64(order.plan_ciphertexts[2]);
     for account in [&ctx.accounts.trader_account, &ctx.accounts.maker_account] {
         args = args.plaintext_u128(u128::from_le_bytes(account.nonce));
         for field in account.ciphertexts {
@@ -336,7 +337,6 @@ pub fn settle_trade_callback_handler(
     let eligible = result.field_3
         && market.status == MarketStatus::Active
         && quote.status == QuoteStatus::Active
-        && quote.expiry > clock.unix_timestamp
         && order.deadline > clock.unix_timestamp
         && order.market_revision == market.revision
         && order.oracle_timestamp == market.oracle_timestamp
@@ -349,10 +349,10 @@ pub fn settle_trade_callback_handler(
         && clock.unix_timestamp.saturating_sub(market.oracle_timestamp)
             <= i64::from(market.config.max_oracle_age_seconds);
     if eligible {
-        order.candidate_trader = result.field_0.ciphertexts;
-        order.candidate_trader_nonce = result.field_0.nonce.to_le_bytes();
-        order.candidate_maker = result.field_1.ciphertexts;
-        order.candidate_maker_nonce = result.field_1.nonce.to_le_bytes();
+        order.candidate_primary = result.field_0.ciphertexts;
+        order.candidate_primary_nonce = result.field_0.nonce.to_le_bytes();
+        order.candidate_secondary = result.field_1.ciphertexts;
+        order.candidate_secondary_nonce = result.field_1.nonce.to_le_bytes();
         order.candidate_clearing = result.field_2.ciphertexts;
         order.candidate_clearing_nonce = result.field_2.nonce.to_le_bytes();
         order.status = OrderStatus::RiskApproved;

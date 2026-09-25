@@ -128,6 +128,7 @@ pub fn request_fill_view_handler(
         .plaintext_u128(u128::from_le_bytes(ctx.accounts.order.plan_nonce))
         .encrypted_u64(ctx.accounts.order.plan_ciphertexts[0])
         .encrypted_u64(ctx.accounts.order.plan_ciphertexts[1])
+        .encrypted_u64(ctx.accounts.order.plan_ciphertexts[2])
         .x25519_pubkey(view_key)
         .build();
     queue_computation(

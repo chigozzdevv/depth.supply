@@ -1,8 +1,10 @@
+pub mod app;
 pub mod backstop;
 pub mod balance;
 pub mod clearing;
 pub mod commit;
 pub mod credit;
+pub mod fees;
 pub mod fill_view;
 pub mod liquidation;
 pub mod margin;
@@ -19,11 +21,13 @@ pub mod vault;
 pub mod view;
 pub mod withdraw;
 
+pub use app::*;
 pub use backstop::*;
 pub use balance::*;
 pub use clearing::*;
 pub use commit::*;
 pub use credit::*;
+pub use fees::*;
 pub use fill_view::*;
 pub use liquidation::*;
 pub use margin::*;

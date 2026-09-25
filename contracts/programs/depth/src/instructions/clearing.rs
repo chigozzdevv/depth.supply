@@ -514,13 +514,14 @@ pub fn recover_clearing_handler(
         ctx.accounts.market.key(),
         ErrorCode::WrongMarket
     );
-    let mut preimage = [0u8; 88];
-    preimage[..16].copy_from_slice(b"depth.clear.v1\0\0");
+    let mut preimage = [0u8; 104];
+    preimage[..16].copy_from_slice(b"depth.clear.v2\0\0");
     preimage[16..48].copy_from_slice(ctx.accounts.market.key().as_ref());
     preimage[48..56].copy_from_slice(&ctx.accounts.clearing.version.to_le_bytes());
     preimage[56..64].copy_from_slice(&insurance.to_le_bytes());
     preimage[64..72].copy_from_slice(&0u64.to_le_bytes());
-    preimage[72..88].copy_from_slice(&salt.to_le_bytes());
+    preimage[72..88].copy_from_slice(&[0; 16]);
+    preimage[88..104].copy_from_slice(&salt.to_le_bytes());
     require!(
         Sha3_256::digest(preimage).as_slice() == ctx.accounts.clearing.commitment,
         ErrorCode::InvalidRecoveryState

@@ -289,9 +289,17 @@ pub fn seal_market_handler(ctx: Context<SealMarket>, computation_offset: u64) ->
     );
     let is_trader = order.status == OrderStatus::RiskApproved;
     let (candidate, nonce, account) = if is_trader {
-        (order.candidate_trader, order.candidate_trader_nonce, trader)
+        (
+            order.candidate_primary,
+            order.candidate_primary_nonce,
+            trader,
+        )
     } else {
-        (order.candidate_maker, order.candidate_maker_nonce, maker)
+        (
+            order.candidate_secondary,
+            order.candidate_secondary_nonce,
+            maker,
+        )
     };
     let mut args = ArgBuilder::new().plaintext_u128(u128::from_le_bytes(nonce));
     for field in candidate {
@@ -451,14 +459,12 @@ pub fn seal_clearing_handler<'info>(
             let quote = Account::<QuoteRecord>::try_from(&ctx.remaining_accounts[0])?;
             quote.market == market.key()
                 && quote.status == QuoteStatus::Active
-                && quote.expiry > Clock::get()?.unix_timestamp
                 && quote.maker == maker.owner
         }
         OrderKind::Liquidation => {
             let offer = Account::<BackstopOffer>::try_from(&ctx.remaining_accounts[0])?;
             offer.market == market.key()
                 && offer.status == BackstopStatus::Locked
-                && offer.expiry > Clock::get()?.unix_timestamp
                 && offer.maker == maker.owner
         }
     };
@@ -605,14 +611,12 @@ pub fn seal_clearing_callback_handler(
             let quote = read_quote(&ctx.accounts.source)?;
             quote.market == market.key()
                 && quote.status == QuoteStatus::Active
-                && quote.expiry > Clock::get()?.unix_timestamp
                 && quote.maker == maker.owner
         }
         OrderKind::Liquidation => {
             let offer = read_offer(&ctx.accounts.source)?;
             offer.market == market.key()
                 && offer.status == BackstopStatus::Locked
-                && offer.expiry > Clock::get()?.unix_timestamp
                 && offer.maker == maker.owner
         }
     };

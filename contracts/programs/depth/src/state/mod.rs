@@ -66,6 +66,16 @@ pub struct Protocol {
 
 #[account]
 #[derive(InitSpace)]
+pub struct AppConfig {
+    pub app: Pubkey,
+    pub fee_bps: u16,
+    pub version: u64,
+    pub active: bool,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
 pub struct DepositReceipt {
     pub owner: Pubkey,
     pub nonce: u64,
@@ -108,6 +118,7 @@ pub enum BalanceStatus {
     Crediting,
     Withdrawing,
     Moving,
+    Claiming,
 }
 
 #[account]
@@ -152,6 +163,7 @@ pub enum ClearingStatus {
     Ready,
     Crediting,
     Trading,
+    Claiming,
 }
 
 #[account]
@@ -258,6 +270,8 @@ pub struct OrderRecord {
     pub maker: Pubkey,
     pub market: Pubkey,
     pub app: Pubkey,
+    pub app_fee_bps: u16,
+    pub app_fee_version: u64,
     pub nonce: u64,
     pub deadline: i64,
     pub quote_keys: [Pubkey; 4],
@@ -269,12 +283,12 @@ pub struct OrderRecord {
     pub maker_version: u64,
     pub clearing_version: u64,
     pub funding_index: i128,
-    pub plan_ciphertexts: [[u8; 32]; 2],
+    pub plan_ciphertexts: [[u8; 32]; 3],
     pub plan_nonce: [u8; 16],
-    pub candidate_trader: [[u8; 32]; 3],
-    pub candidate_trader_nonce: [u8; 16],
-    pub candidate_maker: [[u8; 32]; 3],
-    pub candidate_maker_nonce: [u8; 16],
+    pub candidate_primary: [[u8; 32]; 3],
+    pub candidate_primary_nonce: [u8; 16],
+    pub candidate_secondary: [[u8; 32]; 3],
+    pub candidate_secondary_nonce: [u8; 16],
     pub candidate_clearing: [[u8; 32]; 2],
     pub candidate_clearing_nonce: [u8; 16],
     pub sealed_trader: [[u8; 32]; 3],
@@ -289,9 +303,20 @@ pub struct OrderRecord {
     pub maker_commitment: [u8; 32],
     pub selected_quote: Pubkey,
     pub pending_computation: Pubkey,
+    pub fees_claimed: bool,
+    pub claim_deadline: i64,
+    pub claim_stage: FeeClaimStage,
     pub kind: OrderKind,
     pub status: OrderStatus,
     pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum FeeClaimStage {
+    Idle,
+    Computing,
+    Ready,
+    Sealing,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
@@ -354,7 +379,7 @@ pub struct FillView {
     pub nonce: u64,
     pub view_key: [u8; 32],
     pub pending_computation: Pubkey,
-    pub ciphertexts: [[u8; 32]; 2],
+    pub ciphertexts: [[u8; 32]; 3],
     pub output_nonce: [u8; 16],
     pub status: ViewStatus,
     pub bump: u8,

@@ -6,20 +6,26 @@ use crate::{
     constants::{COMP_DEF_OFFSET_MATCH_ORDER, SOL_USD_FEED_ID},
     error::ErrorCode,
     state::{
-        BackstopOffer, BackstopStatus, Market, MarketAccount, MarketAccountStatus, MarketStatus,
-        OrderKind, OrderRecord, OrderStatus, Protocol, QuoteRecord, QuoteStatus,
+        AppConfig, BackstopOffer, BackstopStatus, Market, MarketAccount, MarketAccountStatus,
+        MarketStatus, OrderKind, OrderRecord, OrderStatus, Protocol, QuoteRecord, QuoteStatus,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
 
 #[queue_computation_accounts("match_order", trader)]
 #[derive(Accounts)]
-#[instruction(computation_offset: u64, nonce: u64)]
+#[instruction(computation_offset: u64, nonce: u64, app: Pubkey)]
 pub struct SubmitOrder<'info> {
     #[account(mut)]
     pub trader: Signer<'info>,
     #[account(seeds = [b"protocol"], bump = protocol.bump)]
     pub protocol: Box<Account<'info, Protocol>>,
+    #[account(
+        seeds = [b"app", app.as_ref()],
+        bump = app_config.bump,
+        constraint = app_config.app == app && app_config.active @ ErrorCode::InvalidOrder,
+    )]
+    pub app_config: Box<Account<'info, AppConfig>>,
     #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
     #[account(
@@ -130,6 +136,8 @@ pub fn submit_order_handler<'info>(
     computation_offset: u64,
     nonce: u64,
     app: Pubkey,
+    app_fee_bps: u16,
+    app_fee_version: u64,
     deadline: i64,
     ciphertexts: [[u8; 32]; 5],
     input_key: [u8; 32],
@@ -152,7 +160,12 @@ pub fn submit_order_handler<'info>(
         ErrorCode::RevisionOverflow
     );
     require!(
-        input_key != [0; 32] && app != Pubkey::default(),
+        input_key != [0; 32] && app != Pubkey::default() && app != ctx.accounts.protocol.authority,
+        ErrorCode::InvalidOrder
+    );
+    require!(
+        app_fee_bps == ctx.accounts.app_config.fee_bps
+            && app_fee_version == ctx.accounts.app_config.version,
         ErrorCode::InvalidOrder
     );
     require!(
@@ -219,6 +232,8 @@ pub fn submit_order_handler<'info>(
     order.trader = ctx.accounts.trader.key();
     order.market = market.key();
     order.app = app;
+    order.app_fee_bps = app_fee_bps;
+    order.app_fee_version = app_fee_version;
     order.nonce = nonce;
     order.deadline = deadline;
     order.quote_keys = keys;
@@ -267,6 +282,7 @@ pub fn submit_order_handler<'info>(
         .plaintext_u16(market.config.initial_margin_bps)
         .plaintext_u16(market.config.trade_fee_bps)
         .plaintext_u16(market.config.insurance_fee_bps)
+        .plaintext_u16(order.app_fee_bps)
         .plaintext_u16(market.config.max_quote_deviation_bps)
         .plaintext_u64(market.config.max_account_notional)
         .build();

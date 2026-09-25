@@ -150,7 +150,7 @@ mod tests {
             maintenance_margin_bps: 500,
             liquidation_fee_bps: 50,
             trade_fee_bps: 5,
-            insurance_fee_bps: 2,
+            insurance_fee_bps: 1,
             max_account_notional: 1_000_000_000,
             max_market_notional: 10_000_000_000,
             max_oracle_age_seconds: 30,
