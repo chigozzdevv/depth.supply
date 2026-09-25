@@ -403,11 +403,10 @@ its entry, close, and liquidation timing against those cases.
 
 ## App integration
 
-An app registers its name, verified origin, supported environment, callback
-URL if needed, and fee attribution. It receives a public app ID. Registration
-does not give custody or control over a trader. A compatible app can also use
-the public protocol without a commercial app registration; it simply has no
-app-specific attribution.
+An app registers its signing key and 0–2 bps fee onchain. Its public profile
+may include a name, verified origin, supported environment, and callback
+URL. Registration does not give custody or control over a trader. A direct
+Depth interface uses a registered zero-fee app identity.
 
 The app displays Depth's market catalog and the user's authorized account
 view. It can open Depth's hosted trade interface with a market already chosen.
@@ -846,13 +845,25 @@ verified program checks change custody.
 
 ## Fees and losses
 
-Trade fees, maker rebates if any, app fees, keeper rewards, and insurance
-contributions are all versioned market terms. The trader's signed limit
-covers its total charge. The circuit debits each charge from the paying
-account and credits the exact recipient ledger. The program allows token
-payout only to recorded destinations. No fee is collected merely because
-an encrypted order was submitted and then rejected, except disclosed
-network and computation costs paid by the submitter.
+The first SOL/USDC market charges 5 bps of filled notional: 3 bps to Depth,
+1 bps to market insurance, and a 1 bps rebate to the maker whose quote
+filled. The app can configure an additional 0–2 bps, with 1 bps as the
+suggested setting. A direct route through a registered zero-fee app pays
+5 bps; a 1 bps app pays 6 bps in total. The trader's encrypted maximum fee
+covers the combined charge. The total charge rounds up to the smallest
+USDC unit; insurance, app, and maker amounts round down, with the
+remainder going to Depth.
+
+The app rate and version are fixed when the trader signs each order.
+Fees accrue only on a filled trade. The maker rebate is credited to the
+maker's private market balance; insurance, Depth fees, and app fees remain
+in encrypted clearing until a private claim credits the recorded recipient
+balances. One claim debits clearing and credits both fee recipients
+atomically, so its public record does not reveal the fee amounts.
+Recipient withdrawals use their own balance accounts. Solana transaction
+and Arcium computation costs are separate from the trade fee and are paid
+by the transaction payer; the product must display them before submission.
+Rejected orders incur no trade fee.
 
 The loss order is: distressed account margin, then the market insurance
 allocation, then its published auto-deleveraging or payout haircut rule.
