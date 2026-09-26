@@ -24,7 +24,40 @@ importers:
         specifier: 1.99.0
         version: 1.99.0(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@6.0.6)
 
+  packages/maker:
+    dependencies:
+      '@anchor-lang/core':
+        specifier: 1.0.2
+        version: 1.0.2(bufferutil@4.1.0)(typescript@5.7.3)
+      '@arcium-hq/client':
+        specifier: 0.13.2
+        version: 0.13.2(bufferutil@4.1.0)(typescript@5.7.3)
+      '@depth/bindings':
+        specifier: workspace:*
+        version: link:../bindings
+      '@solana/web3.js':
+        specifier: 1.99.0
+        version: 1.99.0(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@6.0.6)
+
   packages/schema: {}
+
+  packages/trader:
+    dependencies:
+      '@anchor-lang/core':
+        specifier: 1.0.2
+        version: 1.0.2(bufferutil@4.1.0)(typescript@5.7.3)
+      '@arcium-hq/client':
+        specifier: 0.13.2
+        version: 0.13.2(bufferutil@4.1.0)(typescript@5.7.3)
+      '@depth/bindings':
+        specifier: workspace:*
+        version: link:../bindings
+      '@depth/schema':
+        specifier: workspace:*
+        version: link:../schema
+      '@solana/web3.js':
+        specifier: 1.99.0
+        version: 1.99.0(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@6.0.6)
 
   server:
     dependencies:
@@ -56,6 +89,10 @@ packages:
   '@anchor-lang/errors@1.2.0':
     resolution: {integrity: sha512-muEmHFs2UDrcmGUuj+IWiYW2/AazI3tMv6f6OT5KNwOuSLG4j9g4zv8Pqvo+Cj9F6deP4P2c6DWhSUBHdYL4+g==}
     engines: {node: '>=10'}
+
+  '@arcium-hq/client@0.13.2':
+    resolution: {integrity: sha512-lAS/iRsYFoPlGaePl2d/6wOOexQn+cy7JfDCmoKYy3oIJk6zvbo8fB+lamZetiHX2S/EH/5GRpZxax3h7RAl8A==}
+    engines: {node: '>=20.18.0'}
 
   '@babel/runtime@7.29.7':
     resolution: {integrity: sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw==}
@@ -349,6 +386,18 @@ snapshots:
       - utf-8-validate
 
   '@anchor-lang/errors@1.2.0': {}
+
+  '@arcium-hq/client@0.13.2(bufferutil@4.1.0)(typescript@5.7.3)':
+    dependencies:
+      '@anchor-lang/core': 1.0.2(bufferutil@4.1.0)(typescript@5.7.3)
+      '@noble/curves': 1.9.7
+      '@noble/hashes': 1.8.0
+      '@solana/web3.js': 1.99.0(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@6.0.6)
+    transitivePeerDependencies:
+      - bufferutil
+      - encoding
+      - typescript
+      - utf-8-validate
 
   '@babel/runtime@7.29.7': {}
 
