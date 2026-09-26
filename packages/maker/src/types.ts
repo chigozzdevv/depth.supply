@@ -46,6 +46,7 @@ export type MarketState = {
 
 export type GrantState = {
   active: boolean;
+  canView: boolean;
   maker: PublicKey;
   operator: PublicKey;
   market: PublicKey;

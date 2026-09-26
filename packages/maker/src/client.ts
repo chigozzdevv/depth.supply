@@ -11,6 +11,8 @@ import {
   marketAddress,
   protocolAddress,
 } from "@depth/bindings";
+import { DepthView } from "@depth/sdk/views";
+import type { FillSnapshot, PositionSnapshot } from "@depth/sdk/views";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import { mxeAccount, queueAccounts } from "@/arcium";
@@ -266,6 +268,143 @@ export class MakerClient {
       return handle;
     },
     get: (id: PublicKey): QuoteHandle => new QuoteHandle(id, undefined, this),
+  };
+
+  private async viewGrant(): Promise<PublicKey | undefined> {
+    if (this.options.wallet.publicKey.equals(this.options.maker)) {
+      return undefined;
+    }
+    const address = this.grantAddress();
+    const grant = await this.read<GrantState>("OperatorGrant", address);
+    if (
+      !grant.active ||
+      !grant.canView ||
+      !grant.maker.equals(this.options.maker) ||
+      !grant.operator.equals(this.options.wallet.publicKey) ||
+      !grant.market.equals(this.marketAddress) ||
+      grant.expiresAt.toNumber() <= Math.floor(Date.now() / 1_000)
+    ) {
+      throw new Error("Maker view grant is inactive");
+    }
+    return address;
+  }
+
+  async requestMarketView(): Promise<DepthView> {
+    const account = await this.read<{ status: Record<string, unknown> }>(
+      "MarketAccount",
+      this.marketAccount()
+    );
+    if (stateName(account.status) !== "ready") {
+      throw new Error("Maker account is processing another operation");
+    }
+    const grant = await this.viewGrant();
+    const viewNonce = offset();
+    const view = pda([
+      Buffer.from("market-view"),
+      this.marketAccount().toBuffer(),
+      viewNonce.toArrayLike(Buffer, "le", 8),
+    ]);
+    return this.requestView("market", view, viewNonce, {
+      market: this.marketAddress,
+      marketAccount: this.marketAccount(),
+      ...(grant ? { grant } : {}),
+    });
+  }
+
+  async requestFillView(order: PublicKey): Promise<DepthView> {
+    const state = await this.read<{
+      maker: PublicKey;
+      market: PublicKey;
+      status: Record<string, unknown>;
+      kind: Record<string, unknown>;
+    }>("OrderRecord", order);
+    if (
+      !state.maker.equals(this.options.maker) ||
+      !state.market.equals(this.marketAddress) ||
+      stateName(state.status) !== "filled" ||
+      stateName(state.kind) !== "trade"
+    ) {
+      throw new Error("Fill is not a finalized trade by this maker");
+    }
+    const grant = await this.viewGrant();
+    const viewNonce = offset();
+    const view = pda([
+      Buffer.from("fill-view"),
+      order.toBuffer(),
+      this.options.wallet.publicKey.toBuffer(),
+      viewNonce.toArrayLike(Buffer, "le", 8),
+    ]);
+    return this.requestView("fill", view, viewNonce, {
+      order,
+      ...(grant ? { grant } : {}),
+    });
+  }
+
+  private async requestView(
+    kind: "market" | "fill",
+    view: PublicKey,
+    viewNonce: anchor.BN,
+    accounts: Record<string, PublicKey>
+  ): Promise<DepthView> {
+    const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
+    if (!mxePublicKey) throw new Error("MXE public key is unavailable");
+    const secret = x25519.utils.randomSecretKey();
+    const publicKey = x25519.getPublicKey(secret);
+    const computationOffset = offset();
+    const queue = await this.queue(
+      kind === "market" ? "view_market" : "view_fill",
+      computationOffset
+    );
+    const builder =
+      kind === "market"
+        ? this.program.methods.requestMarketView(
+            computationOffset,
+            viewNonce,
+            Array.from(publicKey)
+          )
+        : this.program.methods.requestFillView(
+            computationOffset,
+            viewNonce,
+            Array.from(publicKey)
+          );
+    const signature = await builder
+      .accountsPartial({
+        ...queue,
+        payer: this.options.wallet.publicKey,
+        ...accounts,
+        view,
+      })
+      .rpc({ commitment: "confirmed" });
+    return new DepthView(
+      view,
+      signature,
+      kind,
+      this.options.wallet.publicKey,
+      secret,
+      publicKey,
+      mxePublicKey,
+      this.program,
+      this.options.connection
+    );
+  }
+
+  readonly position = {
+    summary: async (
+      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
+    ): Promise<PositionSnapshot> => {
+      const view = await this.requestMarketView();
+      return (await view.wait(options)) as PositionSnapshot;
+    },
+  };
+
+  readonly fills = {
+    get: async (
+      order: PublicKey,
+      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
+    ): Promise<FillSnapshot> => {
+      const view = await this.requestFillView(order);
+      return (await view.wait(options)) as FillSnapshot;
+    },
   };
 
   private validateQuote(input: QuoteInput, market: MarketState): void {

@@ -30,3 +30,12 @@ const state = await quote.wait({ timeoutMs: 30_000 });
 `publish` submits the encrypted quote, waits up to 30 seconds for validation, and signs its reservation when validation completes. It may return a pending handle if computation takes longer; call `quote.activate({ timeoutMs })` to resume, including after a restart with `maker.quote.get(id)`. The quote is executable only when its onchain status is `active`.
 
 `quote.cancel()` stops an active quote from new selection and queues release of its reserved margin. The margin becomes available only when the release callback sets the quote to `cancelled`.
+
+The maker wallet or an operator with view scope can request its sealed position and finalized fill details:
+
+```ts
+const position = await maker.position.summary();
+const fill = await maker.fills.get(orderAddress);
+```
+
+These views return decrypted fields only after the authenticated callback is ready. The maker can request a fresh view after a restart.

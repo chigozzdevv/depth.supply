@@ -14,6 +14,7 @@
     "@anchor-lang/core": "1.0.2",
     "@arcium-hq/client": "0.13.2",
     "@depth/bindings": "workspace:*",
+    "@depth/sdk": "workspace:*",
     "@solana/web3.js": "1.99.0"
   }
 }
