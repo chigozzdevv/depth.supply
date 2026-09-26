@@ -1,0 +1,14 @@
+{
+  "name": "depth-workspace",
+  "private": true,
+  "scripts": {
+    "sync:bindings": "node scripts/sync-bindings.mjs",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test"
+  },
+  "devDependencies": {
+    "@types/bn.js": "^5.1.0",
+    "@types/node": "26.6.2",
+    "typescript": "5.7.3"
+  }
+}

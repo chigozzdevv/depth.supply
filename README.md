@@ -19,3 +19,6 @@ boundary, architecture, and requirements for trading.
 | `scripts/` | Repository automation |
 
 For contract development, see [contracts/README.md](contracts/README.md).
+After rebuilding the contracts, run `pnpm sync:bindings` at the repository
+root to refresh the generated IDL and TypeScript binding. The public API's
+run instructions are in [server/README.md](server/README.md).
