@@ -25,6 +25,19 @@ pub mod depth {
         app::set_app_fee_handler(ctx, fee_bps, active)
     }
 
+    pub fn grant_operator(
+        ctx: Context<GrantOperator>,
+        max_capacity: u64,
+        expires_at: i64,
+        can_view: bool,
+    ) -> Result<()> {
+        operator::grant_operator_handler(ctx, max_capacity, expires_at, can_view)
+    }
+
+    pub fn revoke_operator(ctx: Context<RevokeOperator>) -> Result<()> {
+        operator::revoke_operator_handler(ctx)
+    }
+
     pub fn init_claim_trade_fees_comp_def(ctx: Context<InitClaimTradeFeesCompDef>) -> Result<()> {
         fees::init_claim_trade_fees_comp_def_handler(ctx)
     }

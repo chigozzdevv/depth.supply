@@ -76,6 +76,20 @@ pub struct AppConfig {
 
 #[account]
 #[derive(InitSpace)]
+pub struct OperatorGrant {
+    pub maker: Pubkey,
+    pub operator: Pubkey,
+    pub market: Pubkey,
+    pub max_capacity: u64,
+    pub expires_at: i64,
+    pub can_view: bool,
+    pub active: bool,
+    pub version: u64,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
 pub struct DepositReceipt {
     pub owner: Pubkey,
     pub nonce: u64,
@@ -204,6 +218,8 @@ pub enum MarketAccountStatus {
 #[derive(InitSpace)]
 pub struct QuoteRecord {
     pub maker: Pubkey,
+    pub operator: Pubkey,
+    pub operator_version: u64,
     pub market: Pubkey,
     pub nonce: u64,
     pub capacity: u64,

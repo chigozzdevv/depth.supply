@@ -5,7 +5,11 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 use crate::{
     constants::{COMP_DEF_OFFSET_PREPARE_QUOTE, SOL_USD_FEED_ID},
     error::ErrorCode,
-    state::{Market, MarketStatus, QuoteRecord, QuoteStatus},
+    instructions::operator::authorize_operator,
+    state::{
+        Market, MarketAccount, MarketAccountStatus, MarketStatus, OperatorGrant, QuoteRecord,
+        QuoteStatus,
+    },
     ArciumSignerAccount, ID, ID_CONST,
 };
 
@@ -17,11 +21,14 @@ pub struct SubmitQuote<'info> {
     pub payer: Signer<'info>,
     #[account(seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
+    #[account(seeds = [b"market-account", market.key().as_ref(), market_account.owner.as_ref()], bump = market_account.bump, constraint = market_account.market == market.key() @ ErrorCode::WrongMarket)]
+    pub market_account: Box<Account<'info, MarketAccount>>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
     #[account(
         init,
         payer = payer,
         space = 8 + QuoteRecord::INIT_SPACE,
-        seeds = [b"quote", market.key().as_ref(), payer.key().as_ref(), nonce.to_le_bytes().as_ref()],
+        seeds = [b"quote", market.key().as_ref(), market_account.owner.as_ref(), nonce.to_le_bytes().as_ref()],
         bump,
     )]
     pub quote: Box<Account<'info, QuoteRecord>>,
@@ -104,11 +111,11 @@ pub struct InitPrepareQuoteCompDef<'info> {
 
 #[derive(Accounts)]
 pub struct CancelPreparedQuote<'info> {
-    pub maker: Signer<'info>,
+    pub actor: Signer<'info>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
     #[account(
         mut,
-        constraint = quote.maker == maker.key(),
-        seeds = [b"quote", quote.market.as_ref(), maker.key().as_ref(), quote.nonce.to_le_bytes().as_ref()],
+        seeds = [b"quote", quote.market.as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()],
         bump = quote.bump,
     )]
     pub quote: Box<Account<'info, QuoteRecord>>,
@@ -171,13 +178,28 @@ pub fn submit_quote_handler(
         ErrorCode::StaleOracle
     );
     require!(input_key != [0; 32], ErrorCode::InvalidQuote);
+    require!(
+        ctx.accounts.market_account.status == MarketAccountStatus::Ready,
+        ErrorCode::WrongMarketAccountStatus
+    );
+    let operator_version = authorize_operator(
+        ctx.accounts.payer.key(),
+        ctx.accounts.market_account.owner,
+        market.key(),
+        capacity,
+        expiry,
+        false,
+        ctx.accounts.grant.as_deref(),
+    )?;
     let required_margin = u128::from(capacity)
         .checked_mul(u128::from(market.config.initial_margin_bps))
         .ok_or(ErrorCode::InvalidQuote)?
         .div_ceil(10_000);
     let required_margin = u64::try_from(required_margin).map_err(|_| ErrorCode::InvalidQuote)?;
     let quote = &mut ctx.accounts.quote;
-    quote.maker = ctx.accounts.payer.key();
+    quote.maker = ctx.accounts.market_account.owner;
+    quote.operator = ctx.accounts.payer.key();
+    quote.operator_version = operator_version;
     quote.market = market.key();
     quote.nonce = nonce;
     quote.capacity = capacity;
@@ -273,6 +295,24 @@ pub fn prepare_quote_callback_handler(
 }
 
 pub fn cancel_prepared_quote_handler(ctx: Context<CancelPreparedQuote>) -> Result<()> {
+    let quote = &ctx.accounts.quote;
+    require!(
+        ctx.accounts.actor.key() == quote.maker || ctx.accounts.actor.key() == quote.operator,
+        ErrorCode::Unauthorized
+    );
+    let version = authorize_operator(
+        ctx.accounts.actor.key(),
+        quote.maker,
+        quote.market,
+        quote.capacity,
+        quote.expiry,
+        false,
+        ctx.accounts.grant.as_deref(),
+    )?;
+    require!(
+        ctx.accounts.actor.key() == quote.maker || version == quote.operator_version,
+        ErrorCode::Unauthorized
+    );
     require!(
         ctx.accounts.quote.status == QuoteStatus::Validating
             || ctx.accounts.quote.status == QuoteStatus::Validated,

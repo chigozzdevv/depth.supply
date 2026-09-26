@@ -5,7 +5,8 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 use crate::{
     constants::{COMP_DEF_OFFSET_VIEW_MARKET, SOL_USD_FEED_ID},
     error::ErrorCode,
-    state::{Market, MarketAccount, MarketAccountStatus, MarketView, ViewStatus},
+    instructions::operator::authorize_operator,
+    state::{Market, MarketAccount, MarketAccountStatus, MarketView, OperatorGrant, ViewStatus},
     ArciumSignerAccount, ID, ID_CONST,
 };
 
@@ -17,7 +18,8 @@ pub struct RequestMarketView<'info> {
     pub payer: Signer<'info>,
     #[account(seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
-    #[account(constraint = market_account.owner == payer.key(), constraint = market_account.market == market.key() @ ErrorCode::WrongMarket, seeds = [b"market-account", market.key().as_ref(), payer.key().as_ref()], bump = market_account.bump)]
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
+    #[account(constraint = market_account.market == market.key() @ ErrorCode::WrongMarket, seeds = [b"market-account", market.key().as_ref(), market_account.owner.as_ref()], bump = market_account.bump)]
     pub market_account: Box<Account<'info, MarketAccount>>,
     #[account(init, payer = payer, space = 8 + MarketView::INIT_SPACE, seeds = [b"market-view", market_account.key().as_ref(), nonce.to_le_bytes().as_ref()], bump)]
     pub view: Box<Account<'info, MarketView>>,
@@ -107,6 +109,15 @@ pub fn request_market_view_handler(
     view_key: [u8; 32],
 ) -> Result<()> {
     require!(view_key != [0; 32], ErrorCode::InvalidViewKey);
+    authorize_operator(
+        ctx.accounts.payer.key(),
+        ctx.accounts.market_account.owner,
+        ctx.accounts.market.key(),
+        0,
+        Clock::get()?.unix_timestamp,
+        true,
+        ctx.accounts.grant.as_deref(),
+    )?;
     require!(
         ctx.accounts.market_account.status == MarketAccountStatus::Ready,
         ErrorCode::WrongMarketAccountStatus

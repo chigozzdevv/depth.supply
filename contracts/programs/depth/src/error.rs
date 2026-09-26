@@ -10,6 +10,8 @@ pub enum ErrorCode {
     InvalidSettlementMint,
     #[msg("The actor is not authorized for this market operation")]
     Unauthorized,
+    #[msg("The maker operator grant is invalid")]
+    InvalidOperatorGrant,
     #[msg("The market is no longer a draft")]
     MarketNotDraft,
     #[msg("The market is not active")]

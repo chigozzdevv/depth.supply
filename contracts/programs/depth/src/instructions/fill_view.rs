@@ -5,7 +5,8 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 use crate::{
     constants::COMP_DEF_OFFSET_VIEW_FILL,
     error::ErrorCode,
-    state::{FillView, OrderKind, OrderRecord, OrderStatus, ViewStatus},
+    instructions::operator::authorize_operator,
+    state::{FillView, OperatorGrant, OrderKind, OrderRecord, OrderStatus, ViewStatus},
     ArciumSignerAccount, ID, ID_CONST,
 };
 
@@ -17,6 +18,7 @@ pub struct RequestFillView<'info> {
     pub payer: Signer<'info>,
     #[account(seeds = [b"order", order.market.as_ref(), order.trader.as_ref(), order.nonce.to_le_bytes().as_ref()], bump = order.bump)]
     pub order: Box<Account<'info, OrderRecord>>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
     #[account(init, payer = payer, space = 8 + FillView::INIT_SPACE, seeds = [b"fill-view", order.key().as_ref(), payer.key().as_ref(), nonce.to_le_bytes().as_ref()], bump)]
     pub view: Box<Account<'info, FillView>>,
     #[account(init_if_needed, space = 9, payer = payer, seeds = [&SIGN_PDA_SEED], bump, address = derive_sign_pda!())]
@@ -110,11 +112,17 @@ pub fn request_fill_view_handler(
             && ctx.accounts.order.kind == OrderKind::Trade,
         ErrorCode::WrongOrderStatus
     );
-    require!(
-        ctx.accounts.payer.key() == ctx.accounts.order.trader
-            || ctx.accounts.payer.key() == ctx.accounts.order.maker,
-        ErrorCode::WrongViewKey
-    );
+    if ctx.accounts.payer.key() != ctx.accounts.order.trader {
+        authorize_operator(
+            ctx.accounts.payer.key(),
+            ctx.accounts.order.maker,
+            ctx.accounts.order.market,
+            0,
+            Clock::get()?.unix_timestamp,
+            true,
+            ctx.accounts.grant.as_deref(),
+        )?;
+    }
     let view = &mut ctx.accounts.view;
     view.owner = ctx.accounts.payer.key();
     view.order = ctx.accounts.order.key();

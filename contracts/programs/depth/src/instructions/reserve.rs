@@ -5,9 +5,10 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 use crate::{
     constants::{COMP_DEF_OFFSET_RELEASE_QUOTE, COMP_DEF_OFFSET_RESERVE_QUOTE, SOL_USD_FEED_ID},
     error::ErrorCode,
+    instructions::operator::authorize_operator,
     state::{
-        Market, MarketAccount, MarketAccountStatus, MarketStatus, Protocol, QuoteRecord,
-        QuoteStatus,
+        Market, MarketAccount, MarketAccountStatus, MarketStatus, OperatorGrant, Protocol,
+        QuoteRecord, QuoteStatus,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -22,19 +23,19 @@ pub struct ReserveQuote<'info> {
     pub protocol: Box<Account<'info, Protocol>>,
     #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
     #[account(
         mut,
-        constraint = market_account.owner == payer.key(),
+        constraint = market_account.owner == quote.maker,
         constraint = market_account.market == market.key() @ ErrorCode::WrongMarket,
-        seeds = [b"market-account", market.key().as_ref(), payer.key().as_ref()],
+        seeds = [b"market-account", market.key().as_ref(), quote.maker.as_ref()],
         bump = market_account.bump,
     )]
     pub market_account: Box<Account<'info, MarketAccount>>,
     #[account(
         mut,
-        constraint = quote.maker == payer.key(),
         constraint = quote.market == market.key() @ ErrorCode::WrongMarket,
-        seeds = [b"quote", market.key().as_ref(), payer.key().as_ref(), quote.nonce.to_le_bytes().as_ref()],
+        seeds = [b"quote", market.key().as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()],
         bump = quote.bump,
     )]
     pub quote: Box<Account<'info, QuoteRecord>>,
@@ -118,19 +119,19 @@ pub struct ReleaseQuote<'info> {
     pub protocol: Box<Account<'info, Protocol>>,
     #[account(seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
     #[account(
         mut,
-        constraint = market_account.owner == payer.key(),
+        constraint = market_account.owner == quote.maker,
         constraint = market_account.market == market.key() @ ErrorCode::WrongMarket,
-        seeds = [b"market-account", market.key().as_ref(), payer.key().as_ref()],
+        seeds = [b"market-account", market.key().as_ref(), quote.maker.as_ref()],
         bump = market_account.bump,
     )]
     pub market_account: Box<Account<'info, MarketAccount>>,
     #[account(
         mut,
-        constraint = quote.maker == payer.key(),
         constraint = quote.market == market.key() @ ErrorCode::WrongMarket,
-        seeds = [b"quote", market.key().as_ref(), payer.key().as_ref(), quote.nonce.to_le_bytes().as_ref()],
+        seeds = [b"quote", market.key().as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()],
         bump = quote.bump,
     )]
     pub quote: Box<Account<'info, QuoteRecord>>,
@@ -209,25 +210,28 @@ pub struct StopQuote<'info> {
     pub actor: Signer<'info>,
     #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
     #[account(mut, constraint = quote.market == market.key() @ ErrorCode::WrongMarket, seeds = [b"quote", market.key().as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
     pub quote: Box<Account<'info, QuoteRecord>>,
 }
 
 #[derive(Accounts)]
 pub struct CancelQuoteReserve<'info> {
-    pub maker: Signer<'info>,
-    #[account(mut, constraint = quote.maker == maker.key(), seeds = [b"quote", quote.market.as_ref(), maker.key().as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
+    pub actor: Signer<'info>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
+    #[account(mut, seeds = [b"quote", quote.market.as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
     pub quote: Box<Account<'info, QuoteRecord>>,
-    #[account(mut, constraint = market_account.owner == maker.key(), constraint = market_account.market == quote.market @ ErrorCode::WrongMarket, seeds = [b"market-account", quote.market.as_ref(), maker.key().as_ref()], bump = market_account.bump)]
+    #[account(mut, constraint = market_account.owner == quote.maker, constraint = market_account.market == quote.market @ ErrorCode::WrongMarket, seeds = [b"market-account", quote.market.as_ref(), quote.maker.as_ref()], bump = market_account.bump)]
     pub market_account: Box<Account<'info, MarketAccount>>,
 }
 
 #[derive(Accounts)]
 pub struct CancelQuoteRelease<'info> {
-    pub maker: Signer<'info>,
-    #[account(mut, constraint = quote.maker == maker.key(), seeds = [b"quote", quote.market.as_ref(), maker.key().as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
+    pub actor: Signer<'info>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
+    #[account(mut, seeds = [b"quote", quote.market.as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
     pub quote: Box<Account<'info, QuoteRecord>>,
-    #[account(mut, constraint = market_account.owner == maker.key(), constraint = market_account.market == quote.market @ ErrorCode::WrongMarket, seeds = [b"market-account", quote.market.as_ref(), maker.key().as_ref()], bump = market_account.bump)]
+    #[account(mut, constraint = market_account.owner == quote.maker, constraint = market_account.market == quote.market @ ErrorCode::WrongMarket, seeds = [b"market-account", quote.market.as_ref(), quote.maker.as_ref()], bump = market_account.bump)]
     pub market_account: Box<Account<'info, MarketAccount>>,
 }
 
@@ -241,7 +245,37 @@ pub fn init_release_quote_comp_def_handler(ctx: Context<InitReleaseQuoteCompDef>
     Ok(())
 }
 
+fn authorize_quote_actor(
+    actor: Pubkey,
+    quote: &QuoteRecord,
+    grant: Option<&Account<OperatorGrant>>,
+) -> Result<()> {
+    require!(
+        actor == quote.maker || actor == quote.operator,
+        ErrorCode::Unauthorized
+    );
+    let version = authorize_operator(
+        actor,
+        quote.maker,
+        quote.market,
+        quote.capacity,
+        quote.expiry,
+        false,
+        grant,
+    )?;
+    require!(
+        actor == quote.maker || version == quote.operator_version,
+        ErrorCode::Unauthorized
+    );
+    Ok(())
+}
+
 pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64) -> Result<()> {
+    authorize_quote_actor(
+        ctx.accounts.payer.key(),
+        &ctx.accounts.quote,
+        ctx.accounts.grant.as_deref(),
+    )?;
     require!(
         ctx.accounts.market.pending_orders == 0,
         ErrorCode::WrongOrderStatus
@@ -438,10 +472,13 @@ pub fn stop_quote_handler(ctx: Context<StopQuote>) -> Result<()> {
         quote.status == QuoteStatus::Active,
         ErrorCode::WrongQuoteStatus
     );
-    require!(
-        ctx.accounts.actor.key() == quote.maker || Clock::get()?.unix_timestamp >= quote.expiry,
-        ErrorCode::InvalidQuote
-    );
+    if Clock::get()?.unix_timestamp < quote.expiry {
+        authorize_quote_actor(
+            ctx.accounts.actor.key(),
+            quote,
+            ctx.accounts.grant.as_deref(),
+        )?;
+    }
     let count = usize::from(market.active_quote_count);
     let index = market.active_quotes[..count]
         .iter()
@@ -457,6 +494,11 @@ pub fn stop_quote_handler(ctx: Context<StopQuote>) -> Result<()> {
 }
 
 pub fn release_quote_handler(ctx: Context<ReleaseQuote>, computation_offset: u64) -> Result<()> {
+    authorize_quote_actor(
+        ctx.accounts.payer.key(),
+        &ctx.accounts.quote,
+        ctx.accounts.grant.as_deref(),
+    )?;
     require!(
         ctx.accounts.market.pending_orders == 0,
         ErrorCode::WrongOrderStatus
@@ -589,6 +631,11 @@ pub fn release_quote_callback_handler(
 }
 
 pub fn cancel_quote_reserve_handler(ctx: Context<CancelQuoteReserve>) -> Result<()> {
+    authorize_quote_actor(
+        ctx.accounts.actor.key(),
+        &ctx.accounts.quote,
+        ctx.accounts.grant.as_deref(),
+    )?;
     require!(
         ctx.accounts.quote.status == QuoteStatus::Reserving,
         ErrorCode::WrongQuoteStatus
@@ -610,6 +657,11 @@ pub fn cancel_quote_reserve_handler(ctx: Context<CancelQuoteReserve>) -> Result<
 }
 
 pub fn cancel_quote_release_handler(ctx: Context<CancelQuoteRelease>) -> Result<()> {
+    authorize_quote_actor(
+        ctx.accounts.actor.key(),
+        &ctx.accounts.quote,
+        ctx.accounts.grant.as_deref(),
+    )?;
     require!(
         ctx.accounts.quote.status == QuoteStatus::Releasing,
         ErrorCode::WrongQuoteStatus
