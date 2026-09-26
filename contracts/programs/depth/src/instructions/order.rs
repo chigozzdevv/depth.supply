@@ -139,12 +139,19 @@ pub fn submit_order_handler<'info>(
     app_fee_bps: u16,
     app_fee_version: u64,
     deadline: i64,
+    expected_revision: u64,
+    expected_oracle_timestamp: i64,
     ciphertexts: [[u8; 32]; 5],
     input_key: [u8; 32],
     input_nonce: u128,
 ) -> Result<()> {
     let clock = Clock::get()?;
     let market = &mut ctx.accounts.market;
+    require!(
+        market.revision == expected_revision
+            && market.oracle_timestamp == expected_oracle_timestamp,
+        ErrorCode::StaleMarketSnapshot
+    );
     require!(
         ctx.accounts.protocol.trading_enabled && market.status == MarketStatus::Active,
         ErrorCode::MarketNotActive

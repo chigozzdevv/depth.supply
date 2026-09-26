@@ -148,12 +148,19 @@ pub fn submit_quote_handler(
     capacity: u64,
     tier_count: u8,
     expiry: i64,
+    expected_revision: u64,
+    expected_oracle_timestamp: i64,
     ciphertexts: [[u8; 32]; 8],
     input_key: [u8; 32],
     input_nonce: u128,
 ) -> Result<()> {
     let market = &ctx.accounts.market;
     let clock = Clock::get()?;
+    require!(
+        market.revision == expected_revision
+            && market.oracle_timestamp == expected_oracle_timestamp,
+        ErrorCode::StaleMarketSnapshot
+    );
     require!(
         market.status != MarketStatus::Paused,
         ErrorCode::InvalidQuote

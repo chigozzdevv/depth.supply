@@ -21,6 +21,7 @@ export type TradeInput = {
 };
 
 export type MarketState = {
+  revision: anchor.BN;
   settlementMint: PublicKey;
   vault: PublicKey;
   status: Record<string, unknown>;

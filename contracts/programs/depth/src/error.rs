@@ -118,4 +118,6 @@ pub enum ErrorCode {
     TradingActive,
     #[msg("The disclosed balance does not match the committed private state")]
     InvalidRecoveryState,
+    #[msg("The signed market revision or oracle update has changed")]
+    StaleMarketSnapshot,
 }

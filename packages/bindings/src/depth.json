@@ -14601,6 +14601,14 @@
           "type": "i64"
         },
         {
+          "name": "expected_revision",
+          "type": "u64"
+        },
+        {
+          "name": "expected_oracle_timestamp",
+          "type": "i64"
+        },
+        {
           "name": "ciphertexts",
           "type": {
             "array": [
@@ -14864,6 +14872,14 @@
         },
         {
           "name": "expiry",
+          "type": "i64"
+        },
+        {
+          "name": "expected_revision",
+          "type": "u64"
+        },
+        {
+          "name": "expected_oracle_timestamp",
           "type": "i64"
         },
         {
@@ -15751,6 +15767,11 @@
       "code": 6057,
       "name": "InvalidRecoveryState",
       "msg": "The disclosed balance does not match the committed private state"
+    },
+    {
+      "code": 6058,
+      "name": "StaleMarketSnapshot",
+      "msg": "The signed market revision or oracle update has changed"
     }
   ],
   "types": [

@@ -29,6 +29,7 @@ export type QuoteState = {
 };
 
 export type MarketState = {
+  revision: anchor.BN;
   status: Record<string, unknown>;
   oracleTimestamp: anchor.BN;
   activeQuoteCount: number;

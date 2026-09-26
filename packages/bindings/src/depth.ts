@@ -14607,6 +14607,14 @@ export type Depth = {
           "type": "i64"
         },
         {
+          "name": "expectedRevision",
+          "type": "u64"
+        },
+        {
+          "name": "expectedOracleTimestamp",
+          "type": "i64"
+        },
+        {
           "name": "ciphertexts",
           "type": {
             "array": [
@@ -14870,6 +14878,14 @@ export type Depth = {
         },
         {
           "name": "expiry",
+          "type": "i64"
+        },
+        {
+          "name": "expectedRevision",
+          "type": "u64"
+        },
+        {
+          "name": "expectedOracleTimestamp",
           "type": "i64"
         },
         {
@@ -15757,6 +15773,11 @@ export type Depth = {
       "code": 6057,
       "name": "invalidRecoveryState",
       "msg": "The disclosed balance does not match the committed private state"
+    },
+    {
+      "code": 6058,
+      "name": "staleMarketSnapshot",
+      "msg": "The signed market revision or oracle update has changed"
     }
   ],
   "types": [

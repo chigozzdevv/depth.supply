@@ -246,6 +246,8 @@ export class MakerClient {
           u64(input.maxCapacity, "maxCapacity"),
           input.tiers.length,
           new anchor.BN(input.expiresAt),
+          market.revision,
+          market.oracleTimestamp,
           ciphertexts,
           Array.from(inputKey),
           new anchor.BN(inputNonce, "le")

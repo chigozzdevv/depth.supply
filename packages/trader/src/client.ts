@@ -240,6 +240,8 @@ export class DepthClient {
           app.feeBps,
           app.version,
           new anchor.BN(input.expiresAt),
+          market.state.revision,
+          market.state.oracleTimestamp,
           ciphertexts,
           Array.from(inputKey),
           new anchor.BN(inputNonce, "le")
