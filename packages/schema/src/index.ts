@@ -39,6 +39,7 @@ export type PublicMarket = {
   insurance_fee_bps: number;
   initial_margin_bps: number;
   maintenance_margin_bps: number;
+  pending_order?: string;
   slot: number;
 };
 

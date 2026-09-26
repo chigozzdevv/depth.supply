@@ -25,6 +25,7 @@ type MarketData = {
   oraclePriceE8: NumberValue;
   oracleTimestamp: NumberValue;
   fundingIndex: NumberValue;
+  pendingOrder: PublicKey;
   config: {
     tradeFeeBps: number;
     insuranceFeeBps: number;
@@ -119,6 +120,9 @@ export class ChainReader {
       insurance_fee_bps: value.config.insuranceFeeBps,
       initial_margin_bps: value.config.initialMarginBps,
       maintenance_margin_bps: value.config.maintenanceMarginBps,
+      ...(!value.pendingOrder.equals(PublicKey.default)
+        ? { pending_order: value.pendingOrder.toBase58() }
+        : {}),
       slot,
     };
   }

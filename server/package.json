@@ -5,11 +5,13 @@
   "type": "module",
   "scripts": {
     "start": "bun src/index.ts",
+    "keeper": "bun src/worker.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
   "dependencies": {
     "@anchor-lang/core": "1.0.2",
+    "@arcium-hq/client": "0.13.2",
     "@depth/bindings": "workspace:*",
     "@depth/schema": "workspace:*",
     "@solana/web3.js": "1.99.0"
