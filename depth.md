@@ -78,9 +78,10 @@ An account's profitable position is a claim against the vault and the losing
 side, not a new token mint. If a losing account cannot pay, its margin is used
 first, then the market insurance allocation, then the published final loss
 rule. Each transition must leave total claims, fee balances, insurance, and
-token payouts reconciled with the vault. The first market still needs
-onchain oracle validation, margin levels, a funding formula, fees, capacity
-limits, a backstop, and a final loss rule before trading code can accept funds.
+token payouts reconciled with the vault. The first market implements onchain
+oracle validation, margin and capacity limits, funding, fees, a backstop, and
+a final payout haircut. Its parameters still require calibration and
+independent review before real collateral is accepted.
 
 ## What each part owns
 
@@ -264,8 +265,8 @@ The later sections give the rules for each step.
     If the position closes normally, the user may withdraw
     its free settlement balance from the vault. That payout
     is a public Solana token transfer. If the MXE fails
-    permanently, the emergency exit remains an unproved
-    launch gate described below.
+    permanently, the recovery committee can start the
+    market-wide winddown described below.
 
 The accounting boundary is simple: a deposit or withdrawal transfers
 real tokens; a pending deposit is a separate vault claim until credited
@@ -825,16 +826,25 @@ other accounts' losses, the market funding history, insurance, and the
 published loss waterfall. A single account's sealed witness cannot
 prove that the whole vault remains solvent.
 
-An emergency design would need an authenticated latest market-wide
-state or an equivalent verifiable settlement proof, a way for an
-eligible party to trigger it without the failed MXE, and a deterministic
-rule for disclosing private data and paying every claim once. A
-market-wide reveal would sacrifice privacy. Depth has not established
-a witness format, independent verification method, access path,
-onchain cost, or liveness proof for this. It must not promise
-unilateral withdrawal or guaranteed recovery from permanent MXE
-failure until that path is implemented and tested. This is a
-launch-blocking requirement, not a feature supplied by Arcium.
+The market pins five distinct recovery signers and a recovery public key.
+Each market account and clearing update stores an encrypted recovery copy
+and a hash commitment; each matched trade stores a separate encrypted fee
+receipt and commitment. Three committee signatures can start winddown after
+pending orders and escrow have resolved, using a fresh verified oracle mark.
+Anyone can then reveal the committed account and fee states. The program
+checks every commitment, account count, net exposure, open interest, fee
+total, and vault backing before finalizing a market-wide payout pool.
+
+Positive equity includes funding at the fixed winddown mark. The pool uses
+account collateral and market insurance, and insufficient funds produce a
+pro rata haircut. Owners claim their payouts once; app and Depth fees are
+paid separately before the remaining dust can be swept. Emergency reveals
+the positions and fee amounts needed for settlement. Committee members can
+collude to decrypt early, so key shares and signing operations require
+independent custody. The local integration test exercises this path, but
+key-share recovery, committee availability, cost at market scale, and an
+independent security review remain launch gates. It does not promise a
+unilateral withdrawal or guaranteed recovery from every failure.
 
 A normal pause does not grant administrators custody. It stops new quotes
 and exposure and preserves deposits, safe exits, recovery, and read access
@@ -1226,10 +1236,10 @@ Depth can claim a production-ready market or freeze its SDK types:
    empty or one-sided liquidity. Measure whether the side-hidden
    precommitment produces competitive prices after makers include
    fill-to-hedge risk.
-3. **Loss and exit design:** Fund the insurance allocation, define the
-   precise auto-deleveraging or haircut calculation, and prove an
-   emergency withdrawal path for permanent MXE failure. A normal
-   Solana vault does not solve private-state recovery on its own.
+3. **Loss and exit design:** Fund the insurance allocation, calibrate the
+   implemented pro rata haircut, and audit and rehearse committee recovery
+   with every account and fee receipt present. A normal Solana vault does
+   not solve private-state recovery on its own.
 4. **Arcium implementation fit:** Compile bounded quote, ledger, view,
    and liquidation circuits with one pinned toolchain. Measure
    callback bytes, account sizes, compute cost, queue delay, and
