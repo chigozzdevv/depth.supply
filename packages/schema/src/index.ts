@@ -22,6 +22,7 @@ export type OperationSnapshot = {
   status: OperationStatus;
   outcome?: "filled" | "active" | "cancelled" | "no_change";
   state_version?: string;
+  tx_signature?: string;
   slot: number;
 };
 
