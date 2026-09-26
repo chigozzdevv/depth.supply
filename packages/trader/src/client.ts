@@ -23,6 +23,7 @@ import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import { arciumAccount } from "@/arcium";
 import { DepthOperation } from "@/operation";
+import { DepthRecovery } from "@/recovery";
 import { encodeSide, u64 } from "@/trade";
 import { DepthView } from "@/views";
 import type { BalanceSnapshot, PositionSnapshot } from "@/views";
@@ -53,6 +54,14 @@ export class DepthClient {
   readonly marketAddress = marketAddress();
   readonly protocolAddress = protocolAddress();
   readonly mxeAddress = getMXEAccAddress(DEPTH_PROGRAM_ID);
+
+  get recovery(): DepthRecovery {
+    return new DepthRecovery(
+      this.program,
+      this.options.connection,
+      this.options.wallet.publicKey
+    );
+  }
 
   private constructor(readonly options: DepthOptions) {
     this.provider = new anchor.AnchorProvider(

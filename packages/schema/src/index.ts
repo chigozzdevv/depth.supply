@@ -29,7 +29,7 @@ export type OperationSnapshot = {
 export type PublicMarket = {
   id: string;
   address: string;
-  status: "draft" | "active" | "paused";
+  status: "draft" | "active" | "paused" | "settling";
   revision: string;
   settlement_mint: string;
   oracle_price_e8: string;
@@ -40,6 +40,29 @@ export type PublicMarket = {
   initial_margin_bps: number;
   maintenance_margin_bps: number;
   pending_order?: string;
+  slot: number;
+};
+
+export type PublicRecovery = {
+  market_id: string;
+  recovery_key: string;
+  signers: string[];
+  threshold: number;
+  account_count: number;
+  slot: number;
+};
+
+export type PublicWinddown = {
+  market_id: string;
+  price_e8: string;
+  funding_index: string;
+  expected_accounts: number;
+  revealed_accounts: number;
+  paid_accounts: number;
+  gross_positive: string;
+  payout_pool: string;
+  remaining_pool: string;
+  finalized: boolean;
   slot: number;
 };
 

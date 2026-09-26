@@ -39,3 +39,8 @@ const fill = await maker.fills.get(orderAddress);
 ```
 
 These views return decrypted fields only after the authenticated callback is ready. The maker can request a fresh view after a restart.
+
+The maker owner uses `maker.recovery.status()` and
+`maker.recovery.claimTo(usdcTokenAccount)` for a finalized market winddown.
+An operator can read the public recovery status but cannot sign the maker's
+payout claim.

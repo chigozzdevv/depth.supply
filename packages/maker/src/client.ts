@@ -12,6 +12,7 @@ import {
   protocolAddress,
 } from "@depth/bindings";
 import { DepthView } from "@depth/sdk/views";
+import { DepthRecovery } from "@depth/sdk/recovery";
 import type { FillSnapshot, PositionSnapshot } from "@depth/sdk/views";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
@@ -49,6 +50,14 @@ export class MakerClient {
   readonly program: anchor.Program;
   readonly marketAddress = marketAddress();
   readonly protocolAddress = protocolAddress();
+
+  get recovery(): DepthRecovery {
+    return new DepthRecovery(
+      this.program,
+      this.options.connection,
+      this.options.maker
+    );
+  }
 
   private constructor(readonly options: MakerOptions) {
     this.provider = new anchor.AnchorProvider(

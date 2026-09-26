@@ -30,3 +30,16 @@ const position = await depth.position.summary();
 ```
 
 Each result includes `pending`, `ready`, or `stale`, its confirmed slot, and decrypted values only when ready. Use `requestBalanceView()` or `requestMarketView()` to retain the view handle and call `close()` after reading it to recover its rent. A new view can be requested after a reload.
+
+When a committee-authorized market winddown has finalized, the owner can read
+the public recovery claim and withdraw its exact onchain payout:
+
+```ts
+const recovery = await depth.recovery.status();
+if (recovery.status === "claimable") {
+  await depth.recovery.claimTo(myUsdcTokenAccount);
+}
+```
+
+The claim record remains onchain after payment so a later session can confirm
+that the payout was made. Emergency position disclosure is public.
