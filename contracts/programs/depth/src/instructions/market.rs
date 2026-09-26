@@ -52,6 +52,8 @@ pub struct ReviseMarket<'info> {
 
 #[derive(Accounts)]
 pub struct RefreshOracle<'info> {
+    #[account(mut, seeds = [b"protocol"], bump = protocol.bump)]
+    pub protocol: Box<Account<'info, Protocol>>,
     #[account(
         mut,
         seeds = [b"market", SOL_USD_FEED_ID.as_ref()],
@@ -157,27 +159,36 @@ pub fn refresh_oracle_handler(ctx: Context<RefreshOracle>) -> Result<()> {
         ErrorCode::StaleOracle
     );
     let market = &mut ctx.accounts.market;
-    if market.status == MarketStatus::Active
-        && price
-            .publish_time
-            .saturating_sub(market.last_funding_timestamp)
-            >= i64::from(market.config.funding_interval_seconds)
-    {
-        let delta = funding_delta(
-            price.price_e8,
-            price.ema_price_e8,
-            market.config.funding_rate_cap_bps,
-        );
-        let next = market
-            .funding_index
-            .checked_add(delta)
-            .ok_or(ErrorCode::RevisionOverflow)?;
-        require!(
-            (-1_000_000_000_000_000_000i128..=1_000_000_000_000_000_000i128).contains(&next),
-            ErrorCode::RevisionOverflow
-        );
-        market.funding_index = next;
-        market.last_funding_timestamp = price.publish_time;
+    if market.status == MarketStatus::Active {
+        match funding_action(
+            price.publish_time,
+            market.last_funding_timestamp,
+            market.config.funding_interval_seconds,
+        ) {
+            FundingAction::Wait => {}
+            FundingAction::Advance => {
+                let delta = funding_delta(
+                    price.price_e8,
+                    price.ema_price_e8,
+                    market.config.funding_rate_cap_bps,
+                );
+                let next = market
+                    .funding_index
+                    .checked_add(delta)
+                    .ok_or(ErrorCode::RevisionOverflow)?;
+                require!(
+                    (-1_000_000_000_000_000_000i128..=1_000_000_000_000_000_000i128)
+                        .contains(&next),
+                    ErrorCode::RevisionOverflow
+                );
+                market.funding_index = next;
+                market.last_funding_timestamp += i64::from(market.config.funding_interval_seconds);
+            }
+            FundingAction::Pause => {
+                market.status = MarketStatus::Paused;
+                ctx.accounts.protocol.trading_enabled = false;
+            }
+        }
     }
     market.oracle_price_e8 = price.price_e8;
     market.oracle_ema_e8 = price.ema_price_e8;
@@ -313,8 +324,32 @@ pub fn resume_market_handler(ctx: Context<ResumeMarket>) -> Result<()> {
         ErrorCode::VaultUnderfunded
     );
     market.status = MarketStatus::Active;
+    market.last_funding_timestamp = market.oracle_timestamp;
     ctx.accounts.protocol.trading_enabled = true;
     Ok(())
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum FundingAction {
+    Wait,
+    Advance,
+    Pause,
+}
+
+fn funding_action(
+    publish_time: i64,
+    last_funding_time: i64,
+    interval_seconds: u32,
+) -> FundingAction {
+    let elapsed = publish_time.saturating_sub(last_funding_time);
+    let interval = i64::from(interval_seconds);
+    if elapsed >= interval * 2 {
+        FundingAction::Pause
+    } else if elapsed >= interval {
+        FundingAction::Advance
+    } else {
+        FundingAction::Wait
+    }
 }
 
 fn funding_delta(price_e8: u64, ema_price_e8: u64, cap_bps: u16) -> i128 {
@@ -326,7 +361,24 @@ fn funding_delta(price_e8: u64, ema_price_e8: u64, cap_bps: u16) -> i128 {
 
 #[cfg(test)]
 mod tests {
-    use super::funding_delta;
+    use super::{funding_action, funding_delta, FundingAction};
+
+    #[test]
+    fn missed_funding_interval_pauses_without_back_charging() {
+        let last = 1_000;
+        let interval = 3_600;
+        assert_eq!(funding_action(4_599, last, interval), FundingAction::Wait);
+        assert_eq!(
+            funding_action(4_600, last, interval),
+            FundingAction::Advance
+        );
+        assert_eq!(
+            funding_action(8_199, last, interval),
+            FundingAction::Advance
+        );
+        assert_eq!(funding_action(8_200, last, interval), FundingAction::Pause);
+        assert_eq!(funding_action(20_000, last, interval), FundingAction::Pause);
+    }
 
     #[test]
     fn funding_uses_verified_price_premium_and_rate_cap() {

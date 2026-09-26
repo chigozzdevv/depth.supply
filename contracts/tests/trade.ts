@@ -598,7 +598,7 @@ describe("confidential trade settlement", () => {
     };
     await program.methods
       .refreshOracle()
-      .accountsPartial({ market, priceUpdate: oracle })
+      .accountsPartial({ protocol, market, priceUpdate: oracle })
       .rpc();
 
     const backstopNonce = new anchor.BN(66);
@@ -1429,7 +1429,7 @@ describe("confidential trade settlement", () => {
 
     await program.methods
       .refreshOracle()
-      .accountsPartial({ market, priceUpdate: secondOracle })
+      .accountsPartial({ protocol, market, priceUpdate: secondOracle })
       .rpc();
     const riskQuoteNonce = new anchor.BN(79);
     const [riskQuote] = PublicKey.findProgramAddressSync(
@@ -1593,7 +1593,7 @@ describe("confidential trade settlement", () => {
 
     await program.methods
       .refreshOracle()
-      .accountsPartial({ market, priceUpdate: crashOracle })
+      .accountsPartial({ protocol, market, priceUpdate: crashOracle })
       .rpc();
     const liquidationNonce = new anchor.BN(505);
     const [liquidation] = PublicKey.findProgramAddressSync(
@@ -1746,7 +1746,7 @@ describe("confidential trade settlement", () => {
 
     await program.methods
       .refreshOracle()
-      .accountsPartial({ market, priceUpdate: followupOracle })
+      .accountsPartial({ protocol, market, priceUpdate: followupOracle })
       .rpc();
     const healthyNonce = new anchor.BN(506);
     const [healthyCheck] = PublicKey.findProgramAddressSync(
