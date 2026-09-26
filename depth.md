@@ -884,11 +884,11 @@ rather than hiding it in a balance update.
 
 ## SDK and API contract
 
-These names and shapes are a proposed Depth interface. No package or route in
-this section exists yet. The protocol's account, operation, and market states
-are the source of truth. The SDK builds valid transactions and decrypts
-authorized views. The server indexes public facts and helps clients find
-them. An app ID only attributes a trade; it does not authorize it.
+The SDK packages implement transaction submission and authorized private
+views, and the server implements direct public reads. Deployment manifests,
+event pagination, and signed webhooks remain proposed. The protocol's account,
+operation, and market states are the source of truth. An app ID only attributes
+a trade; it does not authorize it.
 
 ### Common client rules
 
@@ -1190,11 +1190,10 @@ a live onchain read from a stale indexed or cached read.
 
 ## Project organization
 
-The current Depth folder contains this specification and early contract code.
-This is the target organization for the Solana project. Each package has a clear
-owner for generated bindings,
-public schemas, and SDK code. `contracts/` is the Arcium and Anchor project
-root; its required internal layout remains together.
+This repository contains the specification, Solana program, SDK packages, and
+public read server. Each package owns its bindings, public schemas, or SDK code.
+`contracts/` is the Arcium and Anchor project root; its required internal layout
+remains together.
 
 ~~~text
 depth.supply/
@@ -1205,10 +1204,10 @@ depth.supply/
     tests/                  Program and circuit integration tests
   packages/bindings/        generated IDL, addresses, and versioned deployments
   packages/schema/          shared public request and result shapes
-  packages/trader/          trader and app-facing SDK
-  packages/maker/           maker quote and risk client
+  packages/sdk/             trader and app-facing SDK
+  packages/maker-sdk/       maker quote and risk client
   client/                   Depth-hosted trade and maker interfaces
-  server/                   app registry, public indexer, operation tracking
+  server/                   public reads and permissionless settlement keeper
   scripts/                  build, deployment, and verification commands
 ~~~
 

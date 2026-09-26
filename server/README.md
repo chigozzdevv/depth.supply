@@ -1,11 +1,15 @@
 # Depth public API
 
-The service reads confirmed public state directly from the Depth Solana program.
+The Fastify service reads confirmed public state directly from the Depth Solana program.
 It never accepts orders, private keys, or plaintext quote prices.
 
 Run `pnpm install` from the repository root, then set `SOLANA_RPC_URL` and run
 `pnpm --dir server start`. `HOST` defaults to `127.0.0.1` and `PORT` to `8787`.
 The server uses Bun to run TypeScript with the repository's `@/` imports.
+Each feature has a route for Fastify registration, a controller for HTTP behavior,
+a schema for request validation and public response serialization, a service for
+onchain reads and projection, and a model for decoded account data. The shared
+chain client verifies the Depth program owner and account discriminator.
 
 The read routes are `GET /v1/markets`, `/v1/markets/SOL-USD`,
 `/v1/markets/SOL-USD/recovery`, `/v1/markets/SOL-USD/winddown`,
