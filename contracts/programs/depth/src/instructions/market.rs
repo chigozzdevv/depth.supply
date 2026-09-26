@@ -123,6 +123,7 @@ pub fn create_market_handler(ctx: Context<CreateMarket>, config: MarketConfig) -
     market.quoted_notional = 0;
     market.backstop_offer = Pubkey::default();
     market.pending_orders = 0;
+    market.pending_order = Pubkey::default();
     market.status = MarketStatus::Draft;
     market.bump = ctx.bumps.market;
     Ok(())

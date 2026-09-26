@@ -144,7 +144,7 @@ pub fn settle_trade_handler<'info>(
         ErrorCode::MarketNotActive
     );
     require!(
-        market.pending_orders == 1 && order.status == OrderStatus::Matched,
+        market.has_pending(order.key()) && order.status == OrderStatus::Matched,
         ErrorCode::WrongOrderStatus
     );
     require!(
@@ -292,7 +292,7 @@ pub fn settle_trade_callback_handler(
     let quote = &mut ctx.accounts.quote;
     let market = &mut ctx.accounts.market;
     require!(
-        order.status == OrderStatus::Settling && market.pending_orders == 1,
+        order.status == OrderStatus::Settling && market.has_pending(order.key()),
         ErrorCode::WrongOrderStatus
     );
     require!(
@@ -361,7 +361,7 @@ pub fn settle_trade_callback_handler(
         trader.status = MarketAccountStatus::Ready;
         maker.status = MarketAccountStatus::Ready;
         clearing.status = ClearingStatus::Ready;
-        market.pending_orders = 0;
+        market.clear_pending(order.key())?;
     }
     order.pending_computation = Pubkey::default();
     trader.pending_computation = Pubkey::default();
@@ -384,7 +384,7 @@ pub fn cancel_trade_handler(ctx: Context<CancelTrade>) -> Result<()> {
             || order.status == OrderStatus::SealingMaker
             || order.status == OrderStatus::MakerSealed
             || order.status == OrderStatus::SealingClearing)
-            && ctx.accounts.market.pending_orders == 1,
+            && ctx.accounts.market.has_pending(order.key()),
         ErrorCode::WrongOrderStatus
     );
     require_keys_eq!(
@@ -431,6 +431,6 @@ pub fn cancel_trade_handler(ctx: Context<CancelTrade>) -> Result<()> {
     ctx.accounts.maker_account.pending_computation = Pubkey::default();
     ctx.accounts.clearing.status = ClearingStatus::Ready;
     ctx.accounts.clearing.pending_computation = Pubkey::default();
-    ctx.accounts.market.pending_orders = 0;
+    ctx.accounts.market.clear_pending(order.key())?;
     Ok(())
 }

@@ -897,6 +897,9 @@ describe("confidential trade settlement", () => {
     expect((await program.account.market.fetch(market)).pendingOrders).to.equal(
       1
     );
+    expect(
+      (await program.account.market.fetch(market)).pendingOrder.equals(order)
+    ).to.equal(true);
     const before = await program.account.marketAccount.fetch(
       traderState.marketAccount
     );
@@ -990,6 +993,7 @@ describe("confidential trade settlement", () => {
     expect(orderState.status).to.deep.equal({ filled: {} });
     const marketState = await program.account.market.fetch(market);
     expect(marketState.pendingOrders).to.equal(0);
+    expect(marketState.pendingOrder.equals(PublicKey.default)).to.equal(true);
     expect(marketState.activeQuoteCount).to.equal(0);
     expect(
       (await program.account.quoteRecord.fetch(quote)).status

@@ -1,5 +1,7 @@
 use anchor_lang::prelude::*;
 
+use crate::error::ErrorCode;
+
 #[account]
 #[derive(InitSpace)]
 pub struct Market {
@@ -20,8 +22,34 @@ pub struct Market {
     pub quoted_notional: u64,
     pub backstop_offer: Pubkey,
     pub pending_orders: u16,
+    pub pending_order: Pubkey,
     pub status: MarketStatus,
     pub bump: u8,
+}
+
+impl Market {
+    pub fn begin_pending(&mut self, order: Pubkey) -> Result<()> {
+        require!(
+            order != Pubkey::default()
+                && self.pending_orders == 0
+                && self.pending_order == Pubkey::default(),
+            ErrorCode::WrongOrderStatus
+        );
+        self.pending_orders = 1;
+        self.pending_order = order;
+        Ok(())
+    }
+
+    pub fn has_pending(&self, order: Pubkey) -> bool {
+        self.pending_orders == 1 && self.pending_order == order
+    }
+
+    pub fn clear_pending(&mut self, order: Pubkey) -> Result<()> {
+        require!(self.has_pending(order), ErrorCode::WrongOrderStatus);
+        self.pending_orders = 0;
+        self.pending_order = Pubkey::default();
+        Ok(())
+    }
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
@@ -406,4 +434,62 @@ pub enum ViewStatus {
     Pending,
     Ready,
     Stale,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pending_lock_cannot_be_cleared_by_another_order() {
+        let mut market = Market {
+            market_id: [0; 32],
+            settlement_mint: Pubkey::default(),
+            vault: Pubkey::default(),
+            config: MarketConfig {
+                initial_margin_bps: 0,
+                maintenance_margin_bps: 0,
+                liquidation_fee_bps: 0,
+                trade_fee_bps: 0,
+                insurance_fee_bps: 0,
+                max_account_notional: 0,
+                max_market_notional: 0,
+                max_oracle_age_seconds: 0,
+                max_confidence_bps: 0,
+                max_quote_deviation_bps: 0,
+                max_quote_lifetime_seconds: 0,
+                max_order_queue_seconds: 0,
+                funding_interval_seconds: 0,
+                funding_rate_cap_bps: 0,
+                quote_tiers: [0; 4],
+                backstop_min_collateral: 0,
+            },
+            revision: 0,
+            funding_index: 0,
+            last_funding_timestamp: 0,
+            oracle_price_e8: 0,
+            oracle_ema_e8: 0,
+            oracle_confidence_e8: 0,
+            oracle_timestamp: 0,
+            oracle_slot: 0,
+            active_quotes: [Pubkey::default(); 4],
+            active_quote_count: 0,
+            quoted_notional: 0,
+            backstop_offer: Pubkey::default(),
+            pending_orders: 0,
+            pending_order: Pubkey::default(),
+            status: MarketStatus::Draft,
+            bump: 0,
+        };
+        let first = Pubkey::new_unique();
+        let second = Pubkey::new_unique();
+        market.begin_pending(first).unwrap();
+        assert!(!market.has_pending(second));
+        assert!(market.begin_pending(second).is_err());
+        assert!(market.clear_pending(second).is_err());
+        assert!(market.has_pending(first));
+        market.clear_pending(first).unwrap();
+        market.begin_pending(second).unwrap();
+        assert!(market.has_pending(second));
+    }
 }

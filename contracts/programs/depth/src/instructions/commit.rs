@@ -264,6 +264,7 @@ pub fn seal_market_handler(ctx: Context<SealMarket>, computation_offset: u64) ->
     let trader = &ctx.accounts.trader_account;
     let maker = &ctx.accounts.maker_account;
     let clearing = &ctx.accounts.clearing;
+    require!(market.has_pending(order.key()), ErrorCode::WrongOrderStatus);
     require!(
         order.status == OrderStatus::RiskApproved || order.status == OrderStatus::TraderSealed,
         ErrorCode::WrongOrderStatus
@@ -375,6 +376,7 @@ pub fn seal_market_callback_handler(
     let maker = &mut ctx.accounts.maker_account;
     let clearing = &mut ctx.accounts.clearing;
     let market = &mut ctx.accounts.market;
+    require!(market.has_pending(order.key()), ErrorCode::WrongOrderStatus);
     let is_trader = order.status == OrderStatus::SealingTrader;
     require!(
         is_trader || order.status == OrderStatus::SealingMaker,
@@ -426,7 +428,7 @@ pub fn seal_market_callback_handler(
         trader.status = MarketAccountStatus::Ready;
         maker.status = MarketAccountStatus::Ready;
         clearing.status = ClearingStatus::Ready;
-        market.pending_orders = 0;
+        market.clear_pending(order.key())?;
     }
     reset_locks(order, trader, maker, clearing);
     Ok(())
@@ -445,6 +447,7 @@ pub fn seal_clearing_handler<'info>(
     let trader = &ctx.accounts.trader_account;
     let maker = &ctx.accounts.maker_account;
     let clearing = &ctx.accounts.clearing;
+    require!(market.has_pending(order.key()), ErrorCode::WrongOrderStatus);
     require!(
         order.status == OrderStatus::MakerSealed,
         ErrorCode::WrongOrderStatus
@@ -589,6 +592,7 @@ pub fn seal_clearing_callback_handler(
     let maker = &mut ctx.accounts.maker_account;
     let clearing = &mut ctx.accounts.clearing;
     let market = &mut ctx.accounts.market;
+    require!(market.has_pending(order.key()), ErrorCode::WrongOrderStatus);
     require!(
         order.status == OrderStatus::SealingClearing,
         ErrorCode::WrongOrderStatus
@@ -710,6 +714,6 @@ pub fn seal_clearing_callback_handler(
     trader.status = MarketAccountStatus::Ready;
     maker.status = MarketAccountStatus::Ready;
     clearing.status = ClearingStatus::Ready;
-    market.pending_orders = 0;
+    market.clear_pending(order.key())?;
     Ok(())
 }

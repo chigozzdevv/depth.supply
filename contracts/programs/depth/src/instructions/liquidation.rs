@@ -241,7 +241,7 @@ pub fn liquidate_handler(
     offer.status = BackstopStatus::Locked;
     offer.pending_computation = computation;
     write_offer(&ctx.accounts.offer, &offer)?;
-    ctx.accounts.market.pending_orders = 1;
+    ctx.accounts.market.begin_pending(order.key())?;
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
     let mut args = ArgBuilder::new();
     for account in [&ctx.accounts.target_account, &ctx.accounts.backstop_account] {
@@ -329,7 +329,7 @@ pub fn liquidate_callback_handler(
     require!(
         order.kind == OrderKind::Liquidation
             && order.status == OrderStatus::Settling
-            && market.pending_orders == 1,
+            && market.has_pending(order.key()),
         ErrorCode::WrongOrderStatus
     );
     require!(
@@ -373,7 +373,7 @@ pub fn liquidate_callback_handler(
         clearing.status = ClearingStatus::Ready;
         offer.status = BackstopStatus::Active;
         offer.pending_computation = Pubkey::default();
-        market.pending_orders = 0;
+        market.clear_pending(order.key())?;
         if result.field_3 && fresh {
             market.status = MarketStatus::Paused;
             ctx.accounts.protocol.trading_enabled = false;
@@ -428,7 +428,7 @@ pub fn cancel_liquidation_handler(ctx: Context<CancelLiquidation>) -> Result<()>
         return Ok(());
     }
     require!(
-        ctx.accounts.market.pending_orders == 1,
+        ctx.accounts.market.has_pending(order.key()),
         ErrorCode::WrongOrderStatus
     );
     let computation = order.pending_computation;
@@ -448,7 +448,7 @@ pub fn cancel_liquidation_handler(ctx: Context<CancelLiquidation>) -> Result<()>
     ctx.accounts.clearing.pending_computation = Pubkey::default();
     ctx.accounts.offer.status = BackstopStatus::Active;
     ctx.accounts.offer.pending_computation = Pubkey::default();
-    ctx.accounts.market.pending_orders = 0;
+    ctx.accounts.market.clear_pending(order.key())?;
     ctx.accounts.market.status = MarketStatus::Paused;
     ctx.accounts.protocol.trading_enabled = false;
     Ok(())

@@ -17748,6 +17748,10 @@
             "type": "u16"
           },
           {
+            "name": "pending_order",
+            "type": "pubkey"
+          },
+          {
             "name": "status",
             "type": {
               "defined": {

@@ -255,7 +255,7 @@ pub fn submit_order_handler<'info>(
     order.bump = ctx.bumps.order;
     ctx.accounts.market_account.status = MarketAccountStatus::Matching;
     ctx.accounts.market_account.pending_computation = ctx.accounts.computation_account.key();
-    market.pending_orders = 1;
+    market.begin_pending(order.key())?;
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     let mut args = ArgBuilder::new()
@@ -342,7 +342,7 @@ pub fn match_order_callback_handler(
     require!(
         order.status == OrderStatus::Matching
             && account.status == MarketAccountStatus::Matching
-            && market.pending_orders == 1,
+            && market.has_pending(order.key()),
         ErrorCode::WrongOrderStatus
     );
     require_keys_eq!(order.market, market.key(), ErrorCode::WrongMarket);
@@ -380,7 +380,7 @@ pub fn match_order_callback_handler(
     } else {
         order.status = OrderStatus::Rejected;
         account.status = MarketAccountStatus::Ready;
-        market.pending_orders = 0;
+        market.clear_pending(order.key())?;
     }
     order.pending_computation = Pubkey::default();
     account.pending_computation = Pubkey::default();
@@ -395,7 +395,7 @@ pub fn cancel_order_handler(ctx: Context<CancelOrder>) -> Result<()> {
         Clock::get()?.unix_timestamp >= order.deadline,
         ErrorCode::OrderNotExpired
     );
-    require!(market.pending_orders == 1, ErrorCode::WrongOrderStatus);
+    require!(market.has_pending(order.key()), ErrorCode::WrongOrderStatus);
     require_keys_eq!(order.market, market.key(), ErrorCode::WrongMarket);
     require_keys_eq!(order.trader, account.owner, ErrorCode::WrongMarginTransfer);
     require!(
@@ -411,6 +411,6 @@ pub fn cancel_order_handler(ctx: Context<CancelOrder>) -> Result<()> {
     order.pending_computation = Pubkey::default();
     account.status = MarketAccountStatus::Ready;
     account.pending_computation = Pubkey::default();
-    market.pending_orders = 0;
+    market.clear_pending(order.key())?;
     Ok(())
 }

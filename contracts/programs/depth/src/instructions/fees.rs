@@ -276,7 +276,8 @@ pub fn claim_trade_fees_handler<'info>(
             && order.claim_stage == FeeClaimStage::Idle
             && order.pending_computation == Pubkey::default()
             && order.market == ctx.accounts.market.key()
-            && ctx.accounts.market.pending_orders == 0,
+            && ctx.accounts.market.pending_orders == 0
+            && ctx.accounts.market.pending_order == Pubkey::default(),
         ErrorCode::WrongOrderStatus
     );
     require!(
@@ -317,7 +318,9 @@ pub fn claim_trade_fees_handler<'info>(
     ctx.accounts.order.pending_computation = computation;
     ctx.accounts.order.claim_stage = FeeClaimStage::Computing;
     ctx.accounts.order.claim_deadline = Clock::get()?.unix_timestamp.saturating_add(120);
-    ctx.accounts.market.pending_orders = 1;
+    ctx.accounts
+        .market
+        .begin_pending(ctx.accounts.order.key())?;
     ctx.accounts.clearing.status = ClearingStatus::Claiming;
     ctx.accounts.clearing.pending_computation = computation;
     ctx.accounts.protocol_balance.status = BalanceStatus::Claiming;
@@ -388,7 +391,7 @@ pub fn claim_trade_fees_callback_handler(
         ErrorCode::WrongOrderStatus
     );
     require!(
-        ctx.accounts.market.pending_orders == 1
+        ctx.accounts.market.has_pending(order.key())
             && clearing.status == ClearingStatus::Claiming
             && clearing.pending_computation == computation,
         ErrorCode::WrongClearingStatus
@@ -438,7 +441,7 @@ pub fn claim_trade_fees_callback_handler(
         clearing.status = ClearingStatus::Ready;
         protocol_balance.status = BalanceStatus::Ready;
         app_balance.status = BalanceStatus::Ready;
-        ctx.accounts.market.pending_orders = 0;
+        ctx.accounts.market.clear_pending(order.key())?;
     }
     Ok(())
 }
@@ -465,7 +468,7 @@ pub fn seal_trade_fees_handler<'info>(
             && order.claim_stage == FeeClaimStage::Ready
             && order.pending_computation == Pubkey::default()
             && order.market == ctx.accounts.market.key()
-            && ctx.accounts.market.pending_orders == 1,
+            && ctx.accounts.market.has_pending(order.key()),
         ErrorCode::WrongOrderStatus
     );
     require!(
@@ -588,7 +591,7 @@ pub fn seal_trade_fees_callback_handler(
             && !order.fees_claimed
             && order.claim_stage == FeeClaimStage::Sealing
             && order.pending_computation == computation
-            && ctx.accounts.market.pending_orders == 1,
+            && ctx.accounts.market.has_pending(order.key()),
         ErrorCode::WrongOrderStatus
     );
     require!(
@@ -652,7 +655,7 @@ pub fn seal_trade_fees_callback_handler(
     protocol_balance.status = BalanceStatus::Ready;
     app_balance.pending_computation = Pubkey::default();
     app_balance.status = BalanceStatus::Ready;
-    ctx.accounts.market.pending_orders = 0;
+    ctx.accounts.market.clear_pending(order.key())?;
     Ok(())
 }
 
@@ -670,7 +673,7 @@ pub fn cancel_fee_claim_handler(ctx: Context<CancelFeeClaim>) -> Result<()> {
         ErrorCode::WrongOrderStatus
     );
     require!(
-        ctx.accounts.market.pending_orders == 1
+        ctx.accounts.market.has_pending(order.key())
             && ctx.accounts.clearing.status == ClearingStatus::Claiming
             && ctx.accounts.clearing.pending_computation == computation,
         ErrorCode::WrongClearingStatus
@@ -691,6 +694,6 @@ pub fn cancel_fee_claim_handler(ctx: Context<CancelFeeClaim>) -> Result<()> {
     ctx.accounts.protocol_balance.status = BalanceStatus::Ready;
     ctx.accounts.app_balance.pending_computation = Pubkey::default();
     ctx.accounts.app_balance.status = BalanceStatus::Ready;
-    ctx.accounts.market.pending_orders = 0;
+    ctx.accounts.market.clear_pending(order.key())?;
     Ok(())
 }

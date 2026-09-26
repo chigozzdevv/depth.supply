@@ -17754,6 +17754,10 @@ export type Depth = {
             "type": "u16"
           },
           {
+            "name": "pendingOrder",
+            "type": "pubkey"
+          },
+          {
             "name": "status",
             "type": {
               "defined": {
