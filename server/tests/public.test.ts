@@ -33,6 +33,34 @@ test("public quote projection cannot expose encrypted prices", async () => {
   assert.doesNotMatch(JSON.stringify(quote), /ciphertexts|private|bid|ask/);
 });
 
+test("market projection identifies the pending onchain workflow", async () => {
+  const order = PublicKey.unique();
+  const reader = new ChainReader({} as Connection);
+  Object.assign(reader, {
+    account: async () => ({
+      slot: 82,
+      value: {
+        status: { active: {} },
+        revision: { toString: () => "3" },
+        settlementMint: PublicKey.unique(),
+        oraclePriceE8: { toString: () => "20000000000" },
+        oracleTimestamp: { toString: () => "100" },
+        fundingIndex: { toString: () => "0" },
+        pendingOrder: order,
+        config: {
+          tradeFeeBps: 5,
+          insuranceFeeBps: 1,
+          initialMarginBps: 1_000,
+          maintenanceMarginBps: 500,
+        },
+      },
+    }),
+  });
+  const market = await reader.market();
+  assert.equal(market?.pending_order, order.toBase58());
+  assert.equal(market?.slot, 82);
+});
+
 test("operation status is read from the program account", async () => {
   const coder = new BorshAccountsCoder(DEPTH_IDL as Idl);
   const discriminator = coder.accountDiscriminator("OrderRecord");
