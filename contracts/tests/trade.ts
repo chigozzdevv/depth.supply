@@ -683,6 +683,39 @@ describe("confidential trade settlement", () => {
     ]);
     const expiry = Math.floor(Date.now() / 1000) + 115;
     offset = harness.offset();
+    const quoteSnapshot = await program.account.market.fetch(market);
+    let staleQuoteRejected = false;
+    try {
+      await program.methods
+        .submitQuote(
+          offset,
+          quoteNonce,
+          new anchor.BN(1_100_000),
+          1,
+          new anchor.BN(expiry),
+          quoteSnapshot.revision.add(new anchor.BN(1)),
+          quoteSnapshot.oracleTimestamp,
+          prices.ciphertexts,
+          prices.inputKey,
+          prices.inputNonce
+        )
+        .accountsPartial({
+          ...harness.queue(offset, "prepare_quote"),
+          payer: operator.publicKey,
+          market,
+          marketAccount: makerState.marketAccount,
+          grant: operatorGrant,
+          quote,
+        })
+        .signers([operator])
+        .rpc(options);
+    } catch {
+      staleQuoteRejected = true;
+    }
+    expect(staleQuoteRejected).to.equal(true);
+    expect(await program.account.quoteRecord.fetchNullable(quote)).to.equal(
+      null
+    );
     await program.methods
       .submitQuote(
         offset,
@@ -690,6 +723,12 @@ describe("confidential trade settlement", () => {
         new anchor.BN(1_100_000),
         1,
         new anchor.BN(expiry),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
         prices.ciphertexts,
         prices.inputKey,
         prices.inputNonce
@@ -772,6 +811,45 @@ describe("confidential trade settlement", () => {
     ]);
     const deadline = Math.floor(Date.now() / 1000) + 260;
     offset = harness.offset();
+    const orderSnapshot = await program.account.market.fetch(market);
+    let staleOrderRejected = false;
+    try {
+      await program.methods
+        .submitOrder(
+          offset,
+          orderNonce,
+          trader.publicKey,
+          1,
+          new anchor.BN(1),
+          new anchor.BN(deadline),
+          orderSnapshot.revision,
+          orderSnapshot.oracleTimestamp.sub(new anchor.BN(1)),
+          input.ciphertexts,
+          input.inputKey,
+          input.inputNonce
+        )
+        .accountsPartial({
+          ...harness.queue(offset, "match_order"),
+          trader: trader.publicKey,
+          protocol,
+          appConfig,
+          market,
+          marketAccount: traderState.marketAccount,
+          order,
+        })
+        .remainingAccounts([
+          { pubkey: backstopOffer, isSigner: false, isWritable: false },
+          { pubkey: quote, isSigner: false, isWritable: false },
+        ])
+        .signers([trader])
+        .rpc(options);
+    } catch {
+      staleOrderRejected = true;
+    }
+    expect(staleOrderRejected).to.equal(true);
+    expect(await program.account.orderRecord.fetchNullable(order)).to.equal(
+      null
+    );
     await program.methods
       .submitOrder(
         offset,
@@ -780,6 +858,12 @@ describe("confidential trade settlement", () => {
         1,
         new anchor.BN(1),
         new anchor.BN(deadline),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
         input.ciphertexts,
         input.inputKey,
         input.inputNonce
@@ -1241,6 +1325,12 @@ describe("confidential trade settlement", () => {
         new anchor.BN(1_100_000),
         1,
         new anchor.BN(Math.floor(Date.now() / 1000) + 115),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
         exitPrices.ciphertexts,
         exitPrices.inputKey,
         exitPrices.inputNonce
@@ -1294,6 +1384,12 @@ describe("confidential trade settlement", () => {
         1,
         new anchor.BN(3),
         new anchor.BN(Math.floor(Date.now() / 1000) + 260),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
         rejectedInput.ciphertexts,
         rejectedInput.inputKey,
         rejectedInput.inputNonce
@@ -1347,6 +1443,12 @@ describe("confidential trade settlement", () => {
         1,
         new anchor.BN(3),
         new anchor.BN(Math.floor(Date.now() / 1000) + 260),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
         exitInput.ciphertexts,
         exitInput.inputKey,
         exitInput.inputNonce
@@ -1555,6 +1657,12 @@ describe("confidential trade settlement", () => {
         new anchor.BN(10_000_000),
         2,
         new anchor.BN(Math.floor(Date.now() / 1000) + 115),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
         riskPrices.ciphertexts,
         riskPrices.inputKey,
         riskPrices.inputNonce
@@ -1608,6 +1716,12 @@ describe("confidential trade settlement", () => {
         1,
         new anchor.BN(3),
         new anchor.BN(Math.floor(Date.now() / 1000) + 260),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
         riskInput.ciphertexts,
         riskInput.inputKey,
         riskInput.inputNonce

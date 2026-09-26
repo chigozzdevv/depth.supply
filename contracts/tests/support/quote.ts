@@ -141,6 +141,12 @@ export async function exerciseQuote(
       new anchor.BN(1_000_000),
       1,
       new anchor.BN(expiry),
+      (
+        await program.account.market.fetch(market)
+      ).revision,
+      (
+        await program.account.market.fetch(market)
+      ).oracleTimestamp,
       ciphertexts,
       Array.from(inputPublicKey),
       new anchor.BN(inputNonceBytes, "le")
