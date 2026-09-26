@@ -908,6 +908,8 @@ replacement, and cancellation within its market, capacity, and expiry
 limits. A separate owner-granted view scope permits reading that
 maker's own sealed fills and positions. The Solana program checks
 both scopes. An operator cannot sign a trade or release collateral.
+Revocation blocks new operator requests. A view queued before revocation may
+finish, while a quote still needs an active grant before reserving maker capital.
 The maker SDK never receives external hedge-venue credentials from Depth.
 
 For an encrypted trade, the wallet authorization binds the ciphertext
