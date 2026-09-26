@@ -38,21 +38,11 @@ pub struct InitLiquidateCompDef<'info> {
 pub struct Liquidate<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
-    pub market: Box<Account<'info, Market>>,
-    #[account(mut, seeds = [b"clearing", market.key().as_ref()], bump = clearing.bump)]
-    pub clearing: Box<Account<'info, ClearingAccount>>,
-    #[account(mut, seeds = [b"market-account", market.key().as_ref(), target_owner.as_ref()], bump = target_account.bump)]
-    pub target_account: Box<Account<'info, MarketAccount>>,
-    #[account(mut, seeds = [b"market-account", market.key().as_ref(), backstop_account.owner.as_ref()], bump = backstop_account.bump)]
-    pub backstop_account: Box<Account<'info, MarketAccount>>,
-    #[account(mut)]
-    /// CHECK: The handler validates and deserializes the market's backstop offer.
-    pub offer: UncheckedAccount<'info>,
-    #[account(init, payer = payer, space = 8 + OrderRecord::INIT_SPACE, seeds = [b"order", market.key().as_ref(), target_owner.as_ref(), nonce.to_le_bytes().as_ref()], bump)]
+    pub trade: LiquidationTrade<'info>,
+    #[account(init, payer = payer, space = 8 + OrderRecord::INIT_SPACE, seeds = [b"order", trade.market.key().as_ref(), target_owner.as_ref(), nonce.to_le_bytes().as_ref()], bump)]
     pub order: Box<Account<'info, OrderRecord>>,
     #[account(init_if_needed, space = 9, payer = payer, seeds = [&SIGN_PDA_SEED], bump, address = derive_sign_pda!())]
-    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(mut, address = derive_mempool_pda!(mxe_account))]
@@ -74,6 +64,21 @@ pub struct Liquidate<'info> {
     pub clock_account: Box<Account<'info, ClockAccount>>,
     pub system_program: Program<'info, System>,
     pub arcium_program: Program<'info, Arcium>,
+}
+
+#[derive(Accounts)]
+pub struct LiquidationTrade<'info> {
+    #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(mut, seeds = [b"clearing", market.key().as_ref()], bump = clearing.bump)]
+    pub clearing: Box<Account<'info, ClearingAccount>>,
+    #[account(mut, seeds = [b"market-account", market.key().as_ref(), target_account.owner.as_ref()], bump = target_account.bump)]
+    pub target_account: Box<Account<'info, MarketAccount>>,
+    #[account(mut, seeds = [b"market-account", market.key().as_ref(), backstop_account.owner.as_ref()], bump = backstop_account.bump)]
+    pub backstop_account: Box<Account<'info, MarketAccount>>,
+    #[account(mut)]
+    /// CHECK: The handler validates and deserializes the market's backstop offer.
+    pub offer: UncheckedAccount<'info>,
 }
 
 #[callback_accounts("liquidate")]
@@ -149,7 +154,7 @@ pub fn liquidate_handler(
     nonce: u64,
     deadline: i64,
 ) -> Result<()> {
-    let market = &ctx.accounts.market;
+    let market = &ctx.accounts.trade.market;
     let clock = Clock::get()?;
     require!(
         market.oracle_timestamp > 0
@@ -169,15 +174,15 @@ pub fn liquidate_handler(
                 <= i64::from(market.config.max_order_queue_seconds),
         ErrorCode::InvalidOrder
     );
-    let target = &ctx.accounts.target_account;
-    let backstop = &ctx.accounts.backstop_account;
-    let clearing = &ctx.accounts.clearing;
+    let target = &ctx.accounts.trade.target_account;
+    let backstop = &ctx.accounts.trade.backstop_account;
+    let clearing = &ctx.accounts.trade.clearing;
     require_keys_eq!(
-        ctx.accounts.offer.key(),
+        ctx.accounts.trade.offer.key(),
         market.backstop_offer,
         ErrorCode::InvalidBackstop
     );
-    let mut offer = read_offer(&ctx.accounts.offer)?;
+    let mut offer = read_offer(&ctx.accounts.trade.offer)?;
     require!(
         target.status == MarketAccountStatus::Ready
             && backstop.status == MarketAccountStatus::Ready
@@ -214,7 +219,7 @@ pub fn liquidate_handler(
     order.market = market.key();
     order.nonce = nonce;
     order.deadline = deadline;
-    order.selected_quote = ctx.accounts.offer.key();
+    order.selected_quote = ctx.accounts.trade.offer.key();
     order.market_revision = market.revision;
     order.oracle_timestamp = market.oracle_timestamp;
     order.oracle_price_e8 = market.oracle_price_e8;
@@ -231,27 +236,30 @@ pub fn liquidate_handler(
     let oracle_price = market.oracle_price_e8;
     let funding_index = market.funding_index;
     let config = market.config;
-    ctx.accounts.target_account.status = MarketAccountStatus::Trading;
-    ctx.accounts.target_account.pending_computation = computation;
-    ctx.accounts.target_account.last_liquidation_timestamp = market.oracle_timestamp;
-    ctx.accounts.backstop_account.status = MarketAccountStatus::Trading;
-    ctx.accounts.backstop_account.pending_computation = computation;
-    ctx.accounts.clearing.status = ClearingStatus::Trading;
-    ctx.accounts.clearing.pending_computation = computation;
+    ctx.accounts.trade.target_account.status = MarketAccountStatus::Trading;
+    ctx.accounts.trade.target_account.pending_computation = computation;
+    ctx.accounts.trade.target_account.last_liquidation_timestamp = market.oracle_timestamp;
+    ctx.accounts.trade.backstop_account.status = MarketAccountStatus::Trading;
+    ctx.accounts.trade.backstop_account.pending_computation = computation;
+    ctx.accounts.trade.clearing.status = ClearingStatus::Trading;
+    ctx.accounts.trade.clearing.pending_computation = computation;
     offer.status = BackstopStatus::Locked;
     offer.pending_computation = computation;
-    write_offer(&ctx.accounts.offer, &offer)?;
-    ctx.accounts.market.begin_pending(order.key())?;
+    write_offer(&ctx.accounts.trade.offer, &offer)?;
+    ctx.accounts.trade.market.begin_pending(order.key())?;
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
     let mut args = ArgBuilder::new();
-    for account in [&ctx.accounts.target_account, &ctx.accounts.backstop_account] {
+    for account in [
+        &ctx.accounts.trade.target_account,
+        &ctx.accounts.trade.backstop_account,
+    ] {
         args = args.plaintext_u128(u128::from_le_bytes(account.nonce));
         for field in account.ciphertexts {
             args = args.encrypted_u64(field);
         }
     }
-    args = args.plaintext_u128(u128::from_le_bytes(ctx.accounts.clearing.nonce));
-    for field in ctx.accounts.clearing.ciphertexts {
+    args = args.plaintext_u128(u128::from_le_bytes(ctx.accounts.trade.clearing.nonce));
+    for field in ctx.accounts.trade.clearing.ciphertexts {
         args = args.encrypted_u64(field);
     }
     let args = args
@@ -277,23 +285,23 @@ pub fn liquidate_handler(
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: ctx.accounts.market.key(),
+                    pubkey: ctx.accounts.trade.market.key(),
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: ctx.accounts.clearing.key(),
+                    pubkey: ctx.accounts.trade.clearing.key(),
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: ctx.accounts.target_account.key(),
+                    pubkey: ctx.accounts.trade.target_account.key(),
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: ctx.accounts.backstop_account.key(),
+                    pubkey: ctx.accounts.trade.backstop_account.key(),
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: ctx.accounts.offer.key(),
+                    pubkey: ctx.accounts.trade.offer.key(),
                     is_writable: true,
                 },
                 CallbackAccount {

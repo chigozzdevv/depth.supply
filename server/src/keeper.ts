@@ -218,7 +218,17 @@ export class Keeper {
     if (stage === "settle_trade") {
       signature = await this.program.methods
         .settleTrade(offset)
-        .accountsPartial(accounts)
+        .accountsPartial({
+          ...queue,
+          payer: this.wallet.publicKey,
+          trade: {
+            market: this.market,
+            clearing: this.clearing,
+            traderAccount,
+            makerAccount,
+            order: orderId,
+          },
+        })
         .remainingAccounts([
           { pubkey: order.selectedQuote, isSigner: false, isWritable: false },
         ])

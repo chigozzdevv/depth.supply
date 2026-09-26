@@ -2941,6 +2941,534 @@ export type Depth = {
       ]
     },
     {
+      "name": "claimWinddown",
+      "discriminator": [
+        4,
+        135,
+        120,
+        14,
+        129,
+        107,
+        100,
+        96
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "settlementMint",
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "winddown",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "marketAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110,
+                  45,
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "marketAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "destination",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimWinddownAppFee",
+      "discriminator": [
+        38,
+        11,
+        228,
+        185,
+        70,
+        112,
+        91,
+        41
+      ],
+      "accounts": [
+        {
+          "name": "app",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "settlementMint",
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "winddown",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110,
+                  45,
+                  102,
+                  101,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "claim.order",
+                "account": "winddownFeeClaim"
+              }
+            ]
+          }
+        },
+        {
+          "name": "destination",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "claimWinddownProtocolFees",
+      "discriminator": [
+        191,
+        169,
+        230,
+        29,
+        134,
+        62,
+        147,
+        203
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "settlementMint",
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "winddown",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "destination",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "closeBackstop",
       "discriminator": [
         230,
@@ -3307,6 +3835,38 @@ export type Depth = {
           }
         },
         {
+          "name": "recoveryConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  111,
+                  118,
+                  101,
+                  114,
+                  121,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
           "name": "systemProgram",
           "address": "11111111111111111111111111111111"
         }
@@ -3318,6 +3878,24 @@ export type Depth = {
             "defined": {
               "name": "marketConfig"
             }
+          }
+        },
+        {
+          "name": "recoveryKey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "recoverySigners",
+          "type": {
+            "array": [
+              "pubkey",
+              5
+            ]
           }
         }
       ]
@@ -4848,6 +5426,128 @@ export type Depth = {
       ]
     },
     {
+      "name": "finalizeWinddown",
+      "discriminator": [
+        203,
+        194,
+        140,
+        189,
+        39,
+        21,
+        14,
+        33
+      ],
+      "accounts": [
+        {
+          "name": "protocol",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "winddown",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "relations": [
+            "protocol"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "grantOperator",
       "discriminator": [
         200,
@@ -6236,160 +6936,166 @@ export type Depth = {
           "signer": true
         },
         {
-          "name": "market",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116
-                ]
-              },
-              {
-                "kind": "const",
-                "value": [
-                  239,
-                  13,
-                  139,
-                  111,
-                  218,
-                  44,
-                  235,
-                  164,
-                  29,
-                  161,
-                  93,
-                  64,
-                  149,
-                  209,
-                  218,
-                  57,
-                  42,
-                  13,
-                  47,
-                  142,
-                  208,
-                  198,
-                  199,
-                  188,
-                  15,
-                  76,
-                  250,
-                  200,
-                  194,
-                  128,
-                  181,
-                  109
+          "name": "trade",
+          "accounts": [
+            {
+              "name": "market",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      109,
+                      97,
+                      114,
+                      107,
+                      101,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "const",
+                    "value": [
+                      239,
+                      13,
+                      139,
+                      111,
+                      218,
+                      44,
+                      235,
+                      164,
+                      29,
+                      161,
+                      93,
+                      64,
+                      149,
+                      209,
+                      218,
+                      57,
+                      42,
+                      13,
+                      47,
+                      142,
+                      208,
+                      198,
+                      199,
+                      188,
+                      15,
+                      76,
+                      250,
+                      200,
+                      194,
+                      128,
+                      181,
+                      109
+                    ]
+                  }
                 ]
               }
-            ]
-          }
-        },
-        {
-          "name": "clearing",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  108,
-                  101,
-                  97,
-                  114,
-                  105,
-                  110,
-                  103
+            },
+            {
+              "name": "clearing",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      108,
+                      101,
+                      97,
+                      114,
+                      105,
+                      110,
+                      103
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "market"
+                  }
                 ]
-              },
-              {
-                "kind": "account",
-                "path": "market"
               }
-            ]
-          }
-        },
-        {
-          "name": "targetAccount",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116,
-                  45,
-                  97,
-                  99,
-                  99,
-                  111,
-                  117,
-                  110,
-                  116
+            },
+            {
+              "name": "targetAccount",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      109,
+                      97,
+                      114,
+                      107,
+                      101,
+                      116,
+                      45,
+                      97,
+                      99,
+                      99,
+                      111,
+                      117,
+                      110,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "market"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "target_account.owner",
+                    "account": "marketAccount"
+                  }
                 ]
-              },
-              {
-                "kind": "account",
-                "path": "market"
-              },
-              {
-                "kind": "arg",
-                "path": "targetOwner"
               }
-            ]
-          }
-        },
-        {
-          "name": "backstopAccount",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116,
-                  45,
-                  97,
-                  99,
-                  99,
-                  111,
-                  117,
-                  110,
-                  116
+            },
+            {
+              "name": "backstopAccount",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      109,
+                      97,
+                      114,
+                      107,
+                      101,
+                      116,
+                      45,
+                      97,
+                      99,
+                      99,
+                      111,
+                      117,
+                      110,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "market"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "backstop_account.owner",
+                    "account": "marketAccount"
+                  }
                 ]
-              },
-              {
-                "kind": "account",
-                "path": "market"
-              },
-              {
-                "kind": "account",
-                "path": "backstop_account.owner",
-                "account": "marketAccount"
               }
-            ]
-          }
-        },
-        {
-          "name": "offer",
-          "writable": true
+            },
+            {
+              "name": "offer",
+              "writable": true
+            }
+          ]
         },
         {
           "name": "order",
@@ -6408,7 +7114,8 @@ export type Depth = {
               },
               {
                 "kind": "account",
-                "path": "market"
+                "path": "trade.market",
+                "account": "liquidationTrade"
               },
               {
                 "kind": "arg",
@@ -6953,6 +7660,35 @@ export type Depth = {
                 "kind": "account",
                 "path": "order.nonce",
                 "account": "orderRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "feeRecovery",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  45,
+                  114,
+                  101,
+                  99,
+                  111,
+                  118,
+                  101,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "order"
               }
             ]
           }
@@ -7743,6 +8479,37 @@ export type Depth = {
           }
         },
         {
+          "name": "recoveryConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  111,
+                  118,
+                  101,
+                  114,
+                  121,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
           "name": "clearing",
           "writable": true,
           "pda": {
@@ -8086,6 +8853,37 @@ export type Depth = {
           }
         },
         {
+          "name": "recoveryConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  111,
+                  118,
+                  101,
+                  114,
+                  121,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
           "name": "marketAccount",
           "writable": true,
           "pda": {
@@ -8241,6 +9039,94 @@ export type Depth = {
         {
           "name": "instructionsSysvar",
           "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "recoveryConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  111,
+                  118,
+                  101,
+                  114,
+                  121,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
         },
         {
           "name": "protocol",
@@ -8829,6 +9715,94 @@ export type Depth = {
           "name": "owner",
           "writable": true,
           "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "recoveryConfig",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  111,
+                  118,
+                  101,
+                  114,
+                  121,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
         },
         {
           "name": "protocol",
@@ -11458,6 +12432,408 @@ export type Depth = {
       "args": []
     },
     {
+      "name": "revealWinddown",
+      "discriminator": [
+        40,
+        92,
+        144,
+        247,
+        2,
+        86,
+        245,
+        101
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "winddown",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "marketAccount",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "market_account.owner",
+                "account": "marketAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110,
+                  45,
+                  99,
+                  108,
+                  97,
+                  105,
+                  109
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "marketAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "collateral",
+          "type": "u64"
+        },
+        {
+          "name": "reserved",
+          "type": "u64"
+        },
+        {
+          "name": "position",
+          "type": "i64"
+        },
+        {
+          "name": "entryPrice",
+          "type": "u64"
+        },
+        {
+          "name": "fundingCheckpoint",
+          "type": "i128"
+        },
+        {
+          "name": "salt",
+          "type": "u128"
+        }
+      ]
+    },
+    {
+      "name": "revealWinddownFee",
+      "discriminator": [
+        42,
+        83,
+        121,
+        161,
+        114,
+        178,
+        38,
+        180
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "winddown",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "order",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  114,
+                  100,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "order.trader",
+                "account": "orderRecord"
+              },
+              {
+                "kind": "account",
+                "path": "order.nonce",
+                "account": "orderRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "feeRecovery",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  45,
+                  114,
+                  101,
+                  99,
+                  111,
+                  118,
+                  101,
+                  114,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "order"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110,
+                  45,
+                  102,
+                  101,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "order"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "protocolFee",
+          "type": "u64"
+        },
+        {
+          "name": "appFee",
+          "type": "u64"
+        },
+        {
+          "name": "salt",
+          "type": "u128"
+        }
+      ]
+    },
+    {
       "name": "reviseMarket",
       "discriminator": [
         87,
@@ -13682,189 +15058,194 @@ export type Depth = {
           "signer": true
         },
         {
-          "name": "market",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116
-                ]
-              },
-              {
-                "kind": "const",
-                "value": [
-                  239,
-                  13,
-                  139,
-                  111,
-                  218,
-                  44,
-                  235,
-                  164,
-                  29,
-                  161,
-                  93,
-                  64,
-                  149,
-                  209,
-                  218,
-                  57,
-                  42,
-                  13,
-                  47,
-                  142,
-                  208,
-                  198,
-                  199,
-                  188,
-                  15,
-                  76,
-                  250,
-                  200,
-                  194,
-                  128,
-                  181,
-                  109
+          "name": "trade",
+          "accounts": [
+            {
+              "name": "market",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      109,
+                      97,
+                      114,
+                      107,
+                      101,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "const",
+                    "value": [
+                      239,
+                      13,
+                      139,
+                      111,
+                      218,
+                      44,
+                      235,
+                      164,
+                      29,
+                      161,
+                      93,
+                      64,
+                      149,
+                      209,
+                      218,
+                      57,
+                      42,
+                      13,
+                      47,
+                      142,
+                      208,
+                      198,
+                      199,
+                      188,
+                      15,
+                      76,
+                      250,
+                      200,
+                      194,
+                      128,
+                      181,
+                      109
+                    ]
+                  }
                 ]
               }
-            ]
-          }
-        },
-        {
-          "name": "clearing",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  108,
-                  101,
-                  97,
-                  114,
-                  105,
-                  110,
-                  103
+            },
+            {
+              "name": "clearing",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      99,
+                      108,
+                      101,
+                      97,
+                      114,
+                      105,
+                      110,
+                      103
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "market"
+                  }
                 ]
-              },
-              {
-                "kind": "account",
-                "path": "market"
               }
-            ]
-          }
-        },
-        {
-          "name": "traderAccount",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116,
-                  45,
-                  97,
-                  99,
-                  99,
-                  111,
-                  117,
-                  110,
-                  116
+            },
+            {
+              "name": "traderAccount",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      109,
+                      97,
+                      114,
+                      107,
+                      101,
+                      116,
+                      45,
+                      97,
+                      99,
+                      99,
+                      111,
+                      117,
+                      110,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "market"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "order.trader",
+                    "account": "orderRecord"
+                  }
                 ]
-              },
-              {
-                "kind": "account",
-                "path": "market"
-              },
-              {
-                "kind": "account",
-                "path": "order.trader",
-                "account": "orderRecord"
               }
-            ]
-          }
-        },
-        {
-          "name": "makerAccount",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  97,
-                  114,
-                  107,
-                  101,
-                  116,
-                  45,
-                  97,
-                  99,
-                  99,
-                  111,
-                  117,
-                  110,
-                  116
+            },
+            {
+              "name": "makerAccount",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      109,
+                      97,
+                      114,
+                      107,
+                      101,
+                      116,
+                      45,
+                      97,
+                      99,
+                      99,
+                      111,
+                      117,
+                      110,
+                      116
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "market"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "maker_account.owner",
+                    "account": "marketAccount"
+                  }
                 ]
-              },
-              {
-                "kind": "account",
-                "path": "market"
-              },
-              {
-                "kind": "account",
-                "path": "maker_account.owner",
-                "account": "marketAccount"
               }
-            ]
-          }
-        },
-        {
-          "name": "order",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  111,
-                  114,
-                  100,
-                  101,
-                  114
+            },
+            {
+              "name": "order",
+              "writable": true,
+              "pda": {
+                "seeds": [
+                  {
+                    "kind": "const",
+                    "value": [
+                      111,
+                      114,
+                      100,
+                      101,
+                      114
+                    ]
+                  },
+                  {
+                    "kind": "account",
+                    "path": "market"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "order.trader",
+                    "account": "orderRecord"
+                  },
+                  {
+                    "kind": "account",
+                    "path": "order.nonce",
+                    "account": "orderRecord"
+                  }
                 ]
-              },
-              {
-                "kind": "account",
-                "path": "market"
-              },
-              {
-                "kind": "account",
-                "path": "order.trader",
-                "account": "orderRecord"
-              },
-              {
-                "kind": "account",
-                "path": "order.nonce",
-                "account": "orderRecord"
               }
-            ]
-          }
+            }
+          ]
         },
         {
           "name": "signPdaAccount",
@@ -14215,6 +15596,215 @@ export type Depth = {
               ]
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "startWinddown",
+      "discriminator": [
+        161,
+        187,
+        245,
+        137,
+        48,
+        29,
+        29,
+        15
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "recoveryConfig",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  99,
+                  111,
+                  118,
+                  101,
+                  114,
+                  121,
+                  45,
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "clearing",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  101,
+                  97,
+                  114,
+                  105,
+                  110,
+                  103
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "winddown",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "insurance",
+          "type": "u64"
+        },
+        {
+          "name": "openInterest",
+          "type": "u64"
+        },
+        {
+          "name": "protocolFees",
+          "type": "u64"
+        },
+        {
+          "name": "appFees",
+          "type": "u64"
+        },
+        {
+          "name": "salt",
+          "type": "u128"
         }
       ]
     },
@@ -14918,6 +16508,152 @@ export type Depth = {
       ]
     },
     {
+      "name": "sweepWinddown",
+      "discriminator": [
+        92,
+        57,
+        9,
+        170,
+        122,
+        179,
+        17,
+        178
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "protocol",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "settlementMint",
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "winddown",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  110,
+                  100,
+                  100,
+                  111,
+                  119,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "destination",
+          "writable": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "viewBalanceCallback",
       "discriminator": [
         185,
@@ -15366,6 +17102,19 @@ export type Depth = {
       ]
     },
     {
+      "name": "feeRecoveryRecord",
+      "discriminator": [
+        245,
+        190,
+        128,
+        100,
+        145,
+        200,
+        76,
+        215
+      ]
+    },
+    {
       "name": "fillView",
       "discriminator": [
         251,
@@ -15480,6 +17229,58 @@ export type Depth = {
         21,
         161,
         78
+      ]
+    },
+    {
+      "name": "recoveryConfig",
+      "discriminator": [
+        53,
+        220,
+        64,
+        189,
+        255,
+        179,
+        242,
+        74
+      ]
+    },
+    {
+      "name": "winddown",
+      "discriminator": [
+        212,
+        141,
+        203,
+        9,
+        230,
+        225,
+        164,
+        153
+      ]
+    },
+    {
+      "name": "winddownClaim",
+      "discriminator": [
+        72,
+        63,
+        184,
+        202,
+        251,
+        216,
+        52,
+        64
+      ]
+    },
+    {
+      "name": "winddownFeeClaim",
+      "discriminator": [
+        88,
+        97,
+        79,
+        122,
+        208,
+        221,
+        194,
+        144
       ]
     }
   ],
@@ -15661,121 +17462,126 @@ export type Depth = {
     },
     {
       "code": 6035,
+      "name": "invalidRecoveryCommittee",
+      "msg": "The recovery committee is invalid"
+    },
+    {
+      "code": 6036,
       "name": "wrongPendingComputation",
       "msg": "The balance has a different pending computation"
     },
     {
-      "code": 6036,
+      "code": 6037,
       "name": "wrongBalanceStatus",
       "msg": "The balance is in the wrong state"
     },
     {
-      "code": 6037,
+      "code": 6038,
       "name": "wrongMarketAccountStatus",
       "msg": "The market account is in the wrong state"
     },
     {
-      "code": 6038,
+      "code": 6039,
       "name": "wrongClearingStatus",
       "msg": "The clearing account is in the wrong state"
     },
     {
-      "code": 6039,
+      "code": 6040,
       "name": "wrongPendingBalance",
       "msg": "The market account is bound to a different balance"
     },
     {
-      "code": 6040,
+      "code": 6041,
       "name": "wrongMarket",
       "msg": "The market account is bound to a different market"
     },
     {
-      "code": 6041,
+      "code": 6042,
       "name": "wrongMarginTransferStatus",
       "msg": "The margin transfer is in the wrong state"
     },
     {
-      "code": 6042,
+      "code": 6043,
       "name": "wrongMarginTransfer",
       "msg": "The margin transfer is bound to a different account"
     },
     {
-      "code": 6043,
+      "code": 6044,
       "name": "escrowOverflow",
       "msg": "The escrow total overflowed"
     },
     {
-      "code": 6044,
+      "code": 6045,
       "name": "escrowUnderflow",
       "msg": "The escrow total underflowed"
     },
     {
-      "code": 6045,
+      "code": 6046,
       "name": "wrongRecoveryKey",
       "msg": "The computation used a different recovery key"
     },
     {
-      "code": 6046,
+      "code": 6047,
       "name": "wrongDepositStatus",
       "msg": "The deposit is in the wrong state"
     },
     {
-      "code": 6047,
+      "code": 6048,
       "name": "wrongPendingReceipt",
       "msg": "The balance is bound to a different deposit"
     },
     {
-      "code": 6048,
+      "code": 6049,
       "name": "creditedOverflow",
       "msg": "The credited balance total overflowed"
     },
     {
-      "code": 6049,
+      "code": 6050,
       "name": "vaultUnderfunded",
       "msg": "The vault does not cover every pending and credited claim"
     },
     {
-      "code": 6050,
+      "code": 6051,
       "name": "invalidWithdrawal",
       "msg": "The withdrawal amount must be positive"
     },
     {
-      "code": 6051,
+      "code": 6052,
       "name": "insufficientCreditedTotal",
       "msg": "The total credited amount is too small"
     },
     {
-      "code": 6052,
+      "code": 6053,
       "name": "wrongWithdrawalDestination",
       "msg": "The withdrawal destination differs from the approved destination"
     },
     {
-      "code": 6053,
+      "code": 6054,
       "name": "invalidViewKey",
       "msg": "The view key must be nonzero"
     },
     {
-      "code": 6054,
+      "code": 6055,
       "name": "wrongViewStatus",
       "msg": "The view request is in the wrong state"
     },
     {
-      "code": 6055,
+      "code": 6056,
       "name": "wrongViewKey",
       "msg": "The computation used a different view key"
     },
     {
-      "code": 6056,
+      "code": 6057,
       "name": "tradingActive",
       "msg": "Independent balance recovery is disabled during trading"
     },
     {
-      "code": 6057,
+      "code": 6058,
       "name": "invalidRecoveryState",
       "msg": "The disclosed balance does not match the committed private state"
     },
     {
-      "code": 6058,
+      "code": 6059,
       "name": "staleMarketSnapshot",
       "msg": "The signed market revision or oracle update has changed"
     }
@@ -17230,6 +19036,63 @@ export type Depth = {
       }
     },
     {
+      "name": "feeRecoveryRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "order",
+            "type": "pubkey"
+          },
+          {
+            "name": "recoveryKey",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "ciphertexts",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                3
+              ]
+            }
+          },
+          {
+            "name": "nonce",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "commitment",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "fillView",
       "type": {
         "kind": "struct",
@@ -17995,6 +19858,9 @@ export type Depth = {
           },
           {
             "name": "paused"
+          },
+          {
+            "name": "settling"
           }
         ]
       }
@@ -18112,10 +19978,33 @@ export type Depth = {
           },
           {
             "name": "field1",
-            "type": "u8"
+            "type": {
+              "defined": {
+                "name": "sharedEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "3"
+                  }
+                ]
+              }
+            }
           },
           {
             "name": "field2",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "field3",
+            "type": "u8"
+          },
+          {
+            "name": "field4",
             "type": "bool"
           }
         ]
@@ -19276,6 +21165,44 @@ export type Depth = {
       }
     },
     {
+      "name": "recoveryConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "recoveryKey",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "signers",
+            "type": {
+              "array": [
+                "pubkey",
+                5
+              ]
+            }
+          },
+          {
+            "name": "accountCount",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "releaseBackstopOutput",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
@@ -20051,6 +21978,174 @@ export type Depth = {
           },
           {
             "name": "stale"
+          }
+        ]
+      }
+    },
+    {
+      "name": "winddown",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "priceE8",
+            "type": "u64"
+          },
+          {
+            "name": "fundingIndex",
+            "type": "i128"
+          },
+          {
+            "name": "expectedAccounts",
+            "type": "u32"
+          },
+          {
+            "name": "revealedAccounts",
+            "type": "u32"
+          },
+          {
+            "name": "paidAccounts",
+            "type": "u32"
+          },
+          {
+            "name": "openInterest",
+            "type": "u64"
+          },
+          {
+            "name": "insurance",
+            "type": "u64"
+          },
+          {
+            "name": "protocolFees",
+            "type": "u64"
+          },
+          {
+            "name": "appFees",
+            "type": "u64"
+          },
+          {
+            "name": "revealedProtocolFees",
+            "type": "u64"
+          },
+          {
+            "name": "revealedAppFees",
+            "type": "u64"
+          },
+          {
+            "name": "appClaims",
+            "type": "u32"
+          },
+          {
+            "name": "paidAppClaims",
+            "type": "u32"
+          },
+          {
+            "name": "protocolFeesPaid",
+            "type": "bool"
+          },
+          {
+            "name": "totalCollateral",
+            "type": "u128"
+          },
+          {
+            "name": "grossPositive",
+            "type": "u128"
+          },
+          {
+            "name": "netPosition",
+            "type": "i128"
+          },
+          {
+            "name": "absolutePosition",
+            "type": "u128"
+          },
+          {
+            "name": "payoutPool",
+            "type": "u64"
+          },
+          {
+            "name": "remainingPool",
+            "type": "u64"
+          },
+          {
+            "name": "finalized",
+            "type": "bool"
+          },
+          {
+            "name": "swept",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "winddownClaim",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "winddown",
+            "type": "pubkey"
+          },
+          {
+            "name": "marketAccount",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "positiveEquity",
+            "type": "u128"
+          },
+          {
+            "name": "paid",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "winddownFeeClaim",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "winddown",
+            "type": "pubkey"
+          },
+          {
+            "name": "order",
+            "type": "pubkey"
+          },
+          {
+            "name": "app",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "paid",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

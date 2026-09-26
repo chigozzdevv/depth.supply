@@ -18,18 +18,9 @@ use crate::{
 pub struct SettleTrade<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
-    #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
-    pub market: Box<Account<'info, Market>>,
-    #[account(mut, seeds = [b"clearing", market.key().as_ref()], bump = clearing.bump)]
-    pub clearing: Box<Account<'info, ClearingAccount>>,
-    #[account(mut, constraint = trader_account.market == market.key() @ ErrorCode::WrongMarket, seeds = [b"market-account", market.key().as_ref(), order.trader.as_ref()], bump = trader_account.bump)]
-    pub trader_account: Box<Account<'info, MarketAccount>>,
-    #[account(mut, constraint = maker_account.market == market.key() @ ErrorCode::WrongMarket, seeds = [b"market-account", market.key().as_ref(), maker_account.owner.as_ref()], bump = maker_account.bump)]
-    pub maker_account: Box<Account<'info, MarketAccount>>,
-    #[account(mut, seeds = [b"order", market.key().as_ref(), order.trader.as_ref(), order.nonce.to_le_bytes().as_ref()], bump = order.bump)]
-    pub order: Box<Account<'info, OrderRecord>>,
+    pub trade: TradeSettlement<'info>,
     #[account(init_if_needed, space = 9, payer = payer, seeds = [&SIGN_PDA_SEED], bump, address = derive_sign_pda!())]
-    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(mut, address = derive_mempool_pda!(mxe_account))]
@@ -51,6 +42,20 @@ pub struct SettleTrade<'info> {
     pub clock_account: Box<Account<'info, ClockAccount>>,
     pub system_program: Program<'info, System>,
     pub arcium_program: Program<'info, Arcium>,
+}
+
+#[derive(Accounts)]
+pub struct TradeSettlement<'info> {
+    #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(mut, seeds = [b"clearing", market.key().as_ref()], bump = clearing.bump)]
+    pub clearing: Box<Account<'info, ClearingAccount>>,
+    #[account(mut, constraint = trader_account.market == market.key() @ ErrorCode::WrongMarket, seeds = [b"market-account", market.key().as_ref(), order.trader.as_ref()], bump = trader_account.bump)]
+    pub trader_account: Box<Account<'info, MarketAccount>>,
+    #[account(mut, constraint = maker_account.market == market.key() @ ErrorCode::WrongMarket, seeds = [b"market-account", market.key().as_ref(), maker_account.owner.as_ref()], bump = maker_account.bump)]
+    pub maker_account: Box<Account<'info, MarketAccount>>,
+    #[account(mut, seeds = [b"order", market.key().as_ref(), order.trader.as_ref(), order.nonce.to_le_bytes().as_ref()], bump = order.bump)]
+    pub order: Box<Account<'info, OrderRecord>>,
 }
 
 #[callback_accounts("settle_trade")]
@@ -134,11 +139,11 @@ pub fn settle_trade_handler<'info>(
     );
     let quote = Account::<QuoteRecord>::try_from(&ctx.remaining_accounts[0])?;
     let clock = Clock::get()?;
-    let market = &ctx.accounts.market;
-    let order = &ctx.accounts.order;
-    let trader = &ctx.accounts.trader_account;
-    let maker = &ctx.accounts.maker_account;
-    let clearing = &ctx.accounts.clearing;
+    let market = &ctx.accounts.trade.market;
+    let order = &ctx.accounts.trade.order;
+    let trader = &ctx.accounts.trade.trader_account;
+    let maker = &ctx.accounts.trade.maker_account;
+    let clearing = &ctx.accounts.trade.clearing;
     require!(
         market.status == MarketStatus::Active,
         ErrorCode::MarketNotActive
@@ -197,18 +202,18 @@ pub fn settle_trade_handler<'info>(
         market.active_quotes[..usize::from(market.active_quote_count)].contains(&quote.key()),
         ErrorCode::WrongQuoteSnapshot
     );
-    let order = &mut ctx.accounts.order;
+    let order = &mut ctx.accounts.trade.order;
     order.maker = quote.maker;
     order.maker_version = maker.version;
     order.clearing_version = clearing.version;
     order.funding_index = market.funding_index;
     order.pending_computation = ctx.accounts.computation_account.key();
     order.status = OrderStatus::Settling;
-    ctx.accounts.trader_account.pending_computation = ctx.accounts.computation_account.key();
-    ctx.accounts.maker_account.pending_computation = ctx.accounts.computation_account.key();
-    ctx.accounts.maker_account.status = MarketAccountStatus::Trading;
-    ctx.accounts.clearing.pending_computation = ctx.accounts.computation_account.key();
-    ctx.accounts.clearing.status = ClearingStatus::Trading;
+    ctx.accounts.trade.trader_account.pending_computation = ctx.accounts.computation_account.key();
+    ctx.accounts.trade.maker_account.pending_computation = ctx.accounts.computation_account.key();
+    ctx.accounts.trade.maker_account.status = MarketAccountStatus::Trading;
+    ctx.accounts.trade.clearing.pending_computation = ctx.accounts.computation_account.key();
+    ctx.accounts.trade.clearing.status = ClearingStatus::Trading;
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
 
     let mut args = ArgBuilder::new()
@@ -216,14 +221,17 @@ pub fn settle_trade_handler<'info>(
         .encrypted_u64(order.plan_ciphertexts[0])
         .encrypted_u64(order.plan_ciphertexts[1])
         .encrypted_u64(order.plan_ciphertexts[2]);
-    for account in [&ctx.accounts.trader_account, &ctx.accounts.maker_account] {
+    for account in [
+        &ctx.accounts.trade.trader_account,
+        &ctx.accounts.trade.maker_account,
+    ] {
         args = args.plaintext_u128(u128::from_le_bytes(account.nonce));
         for field in account.ciphertexts {
             args = args.encrypted_u64(field);
         }
     }
-    args = args.plaintext_u128(u128::from_le_bytes(ctx.accounts.clearing.nonce));
-    for field in ctx.accounts.clearing.ciphertexts {
+    args = args.plaintext_u128(u128::from_le_bytes(ctx.accounts.trade.clearing.nonce));
+    for field in ctx.accounts.trade.clearing.ciphertexts {
         args = args.encrypted_u64(field);
     }
     let args = args
@@ -243,19 +251,19 @@ pub fn settle_trade_handler<'info>(
             &ctx.accounts.mxe_account,
             &[
                 CallbackAccount {
-                    pubkey: ctx.accounts.market.key(),
+                    pubkey: ctx.accounts.trade.market.key(),
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: ctx.accounts.clearing.key(),
+                    pubkey: ctx.accounts.trade.clearing.key(),
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: ctx.accounts.trader_account.key(),
+                    pubkey: ctx.accounts.trade.trader_account.key(),
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: ctx.accounts.maker_account.key(),
+                    pubkey: ctx.accounts.trade.maker_account.key(),
                     is_writable: true,
                 },
                 CallbackAccount {
@@ -263,7 +271,7 @@ pub fn settle_trade_handler<'info>(
                     is_writable: true,
                 },
                 CallbackAccount {
-                    pubkey: ctx.accounts.order.key(),
+                    pubkey: ctx.accounts.trade.order.key(),
                     is_writable: true,
                 },
             ],

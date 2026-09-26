@@ -15,10 +15,14 @@ test("keeper advances only the market's pending order", async () => {
   let claimStage = "idle";
   let tradeDeadline = Math.floor(Date.now() / 1_000) + 100;
   let pendingOrder = orderId;
-  const calls: Array<{ stage: string; accounts: Record<string, PublicKey> }> =
-    [];
+  type RecordedAccounts = {
+    payer: PublicKey;
+    trade?: { order: PublicKey };
+    [key: string]: unknown;
+  };
+  const calls: Array<{ stage: string; accounts: RecordedAccounts }> = [];
   const method = (stage: string) => () => ({
-    accountsPartial: (accounts: Record<string, PublicKey>) => ({
+    accountsPartial: (accounts: RecordedAccounts) => ({
       remainingAccounts: () => ({
         rpc: async () => {
           calls.push({ stage, accounts });
@@ -73,7 +77,7 @@ test("keeper advances only the market's pending order", async () => {
   }) as Keeper;
   const settlement = await keeper.advance();
   assert.equal(settlement?.stage, "settle_trade");
-  assert.equal(calls[0].accounts.order.toBase58(), orderId.toBase58());
+  assert.equal(calls[0].accounts.trade?.order.toBase58(), orderId.toBase58());
   assert.equal(calls[0].accounts.payer.toBase58(), payer.toBase58());
   status = "riskApproved";
   assert.equal((await keeper.advance())?.stage, "seal_market");
