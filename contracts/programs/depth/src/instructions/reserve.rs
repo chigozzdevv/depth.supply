@@ -285,7 +285,7 @@ pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64
     let account = &mut ctx.accounts.market_account;
     let clock = Clock::get()?;
     require!(
-        market.status != MarketStatus::Paused,
+        market.status != MarketStatus::Paused && market.status != MarketStatus::Settling,
         ErrorCode::InvalidQuote
     );
     require!(
@@ -494,6 +494,10 @@ pub fn stop_quote_handler(ctx: Context<StopQuote>) -> Result<()> {
 }
 
 pub fn release_quote_handler(ctx: Context<ReleaseQuote>, computation_offset: u64) -> Result<()> {
+    require!(
+        ctx.accounts.market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
     authorize_quote_actor(
         ctx.accounts.payer.key(),
         &ctx.accounts.quote,

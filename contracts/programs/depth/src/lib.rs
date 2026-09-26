@@ -80,8 +80,13 @@ pub mod depth {
         fees::cancel_fee_claim_handler(ctx)
     }
 
-    pub fn create_market(ctx: Context<CreateMarket>, config: MarketConfig) -> Result<()> {
-        market::create_market_handler(ctx, config)
+    pub fn create_market(
+        ctx: Context<CreateMarket>,
+        config: MarketConfig,
+        recovery_key: [u8; 32],
+        recovery_signers: [Pubkey; 5],
+    ) -> Result<()> {
+        market::create_market_handler(ctx, config, recovery_key, recovery_signers)
     }
 
     pub fn revise_market(ctx: Context<ReviseMarket>, config: MarketConfig) -> Result<()> {
@@ -273,6 +278,73 @@ pub mod depth {
             funding_checkpoint,
             salt,
         )
+    }
+
+    pub fn start_winddown(
+        ctx: Context<StartWinddown>,
+        insurance: u64,
+        open_interest: u64,
+        protocol_fees: u64,
+        app_fees: u64,
+        salt: u128,
+    ) -> Result<()> {
+        winddown::start_winddown_handler(
+            ctx,
+            insurance,
+            open_interest,
+            protocol_fees,
+            app_fees,
+            salt,
+        )
+    }
+
+    pub fn reveal_winddown(
+        ctx: Context<RevealWinddown>,
+        collateral: u64,
+        reserved: u64,
+        position: i64,
+        entry_price: u64,
+        funding_checkpoint: i128,
+        salt: u128,
+    ) -> Result<()> {
+        winddown::reveal_winddown_handler(
+            ctx,
+            collateral,
+            reserved,
+            position,
+            entry_price,
+            funding_checkpoint,
+            salt,
+        )
+    }
+
+    pub fn reveal_winddown_fee(
+        ctx: Context<RevealWinddownFee>,
+        protocol_fee: u64,
+        app_fee: u64,
+        salt: u128,
+    ) -> Result<()> {
+        winddown::reveal_winddown_fee_handler(ctx, protocol_fee, app_fee, salt)
+    }
+
+    pub fn finalize_winddown(ctx: Context<FinalizeWinddown>) -> Result<()> {
+        winddown::finalize_winddown_handler(ctx)
+    }
+
+    pub fn claim_winddown(ctx: Context<ClaimWinddown>) -> Result<()> {
+        winddown::claim_winddown_handler(ctx)
+    }
+
+    pub fn claim_winddown_app_fee(ctx: Context<ClaimWinddownAppFee>) -> Result<()> {
+        winddown::claim_winddown_app_fee_handler(ctx)
+    }
+
+    pub fn claim_winddown_protocol_fees(ctx: Context<ClaimWinddownProtocolFees>) -> Result<()> {
+        winddown::claim_winddown_protocol_fees_handler(ctx)
+    }
+
+    pub fn sweep_winddown(ctx: Context<SweepWinddown>) -> Result<()> {
+        winddown::sweep_winddown_handler(ctx)
     }
 
     pub fn init_open_market_comp_def(ctx: Context<InitOpenMarketCompDef>) -> Result<()> {

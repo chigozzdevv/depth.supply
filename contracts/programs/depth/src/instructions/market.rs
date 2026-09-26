@@ -8,7 +8,7 @@ use crate::{
     oracle::read_price,
     state::{
         BackstopOffer, BackstopStatus, ClearingAccount, ClearingStatus, Market, MarketConfig,
-        MarketStatus, Protocol,
+        MarketStatus, Protocol, RecoveryConfig,
     },
 };
 
@@ -30,6 +30,8 @@ pub struct CreateMarket<'info> {
         bump,
     )]
     pub market: Box<Account<'info, Market>>,
+    #[account(init, payer = authority, space = 8 + RecoveryConfig::INIT_SPACE, seeds = [b"recovery-config", market.key().as_ref()], bump)]
+    pub recovery_config: Box<Account<'info, RecoveryConfig>>,
     pub system_program: Program<'info, System>,
 }
 
@@ -103,8 +105,24 @@ pub struct ResumeMarket<'info> {
     pub vault: Box<Account<'info, TokenAccount>>,
 }
 
-pub fn create_market_handler(ctx: Context<CreateMarket>, config: MarketConfig) -> Result<()> {
+pub fn create_market_handler(
+    ctx: Context<CreateMarket>,
+    config: MarketConfig,
+    recovery_key: [u8; 32],
+    recovery_signers: [Pubkey; 5],
+) -> Result<()> {
     validate_config(&config)?;
+    require!(recovery_key != [0; 32], ErrorCode::InvalidRecoveryKey);
+    for (index, signer) in recovery_signers.iter().enumerate() {
+        require!(
+            *signer != Pubkey::default(),
+            ErrorCode::InvalidRecoveryCommittee
+        );
+        require!(
+            !recovery_signers[..index].contains(signer),
+            ErrorCode::InvalidRecoveryCommittee
+        );
+    }
     let market = &mut ctx.accounts.market;
     market.market_id = SOL_USD_FEED_ID;
     market.settlement_mint = ctx.accounts.protocol.settlement_mint;
@@ -126,6 +144,12 @@ pub fn create_market_handler(ctx: Context<CreateMarket>, config: MarketConfig) -
     market.pending_order = Pubkey::default();
     market.status = MarketStatus::Draft;
     market.bump = ctx.bumps.market;
+    let recovery = &mut ctx.accounts.recovery_config;
+    recovery.market = market.key();
+    recovery.recovery_key = recovery_key;
+    recovery.signers = recovery_signers;
+    recovery.account_count = 0;
+    recovery.bump = ctx.bumps.recovery_config;
     Ok(())
 }
 
@@ -149,6 +173,10 @@ pub fn revise_market_handler(ctx: Context<ReviseMarket>, config: MarketConfig) -
 }
 
 pub fn refresh_oracle_handler(ctx: Context<RefreshOracle>) -> Result<()> {
+    require!(
+        ctx.accounts.market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
     let price = read_price(
         &ctx.accounts.price_update.to_account_info(),
         &ctx.accounts.market.config,

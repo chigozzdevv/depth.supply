@@ -194,6 +194,10 @@ pub fn offer_backstop_handler(
     let market = &mut ctx.accounts.market;
     let account = &mut ctx.accounts.market_account;
     let clock = Clock::get()?;
+    require!(
+        market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
     require!(market.pending_orders == 0, ErrorCode::WrongOrderStatus);
     require!(
         market.backstop_offer == Pubkey::default(),
@@ -362,6 +366,10 @@ pub fn release_backstop_handler(
     computation_offset: u64,
 ) -> Result<()> {
     let market = &mut ctx.accounts.market;
+    require!(
+        market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
     let account = &mut ctx.accounts.market_account;
     let offer = &mut ctx.accounts.offer;
     let clock = Clock::get()?;

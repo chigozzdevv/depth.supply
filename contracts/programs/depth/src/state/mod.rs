@@ -77,6 +77,68 @@ pub enum MarketStatus {
     Draft,
     Active,
     Paused,
+    Settling,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct RecoveryConfig {
+    pub market: Pubkey,
+    pub recovery_key: [u8; 32],
+    pub signers: [Pubkey; 5],
+    pub account_count: u32,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct Winddown {
+    pub market: Pubkey,
+    pub price_e8: u64,
+    pub funding_index: i128,
+    pub expected_accounts: u32,
+    pub revealed_accounts: u32,
+    pub paid_accounts: u32,
+    pub open_interest: u64,
+    pub insurance: u64,
+    pub protocol_fees: u64,
+    pub app_fees: u64,
+    pub revealed_protocol_fees: u64,
+    pub revealed_app_fees: u64,
+    pub app_claims: u32,
+    pub paid_app_claims: u32,
+    pub protocol_fees_paid: bool,
+    pub total_collateral: u128,
+    pub gross_positive: u128,
+    pub net_position: i128,
+    pub absolute_position: u128,
+    pub payout_pool: u64,
+    pub remaining_pool: u64,
+    pub finalized: bool,
+    pub swept: bool,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct WinddownClaim {
+    pub winddown: Pubkey,
+    pub market_account: Pubkey,
+    pub owner: Pubkey,
+    pub positive_equity: u128,
+    pub paid: bool,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct WinddownFeeClaim {
+    pub winddown: Pubkey,
+    pub order: Pubkey,
+    pub app: Pubkey,
+    pub amount: u64,
+    pub paid: bool,
+    pub bump: u8,
 }
 
 #[account]
@@ -352,6 +414,17 @@ pub struct OrderRecord {
     pub claim_stage: FeeClaimStage,
     pub kind: OrderKind,
     pub status: OrderStatus,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct FeeRecoveryRecord {
+    pub order: Pubkey,
+    pub recovery_key: [u8; 32],
+    pub ciphertexts: [[u8; 32]; 3],
+    pub nonce: [u8; 16],
+    pub commitment: [u8; 32],
     pub bump: u8,
 }
 

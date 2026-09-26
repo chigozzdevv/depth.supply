@@ -3,8 +3,12 @@ use anchor_spl::token::{self, Mint, Token, TokenAccount, TransferChecked};
 use sha3::{Digest, Sha3_256};
 
 use crate::{
+    constants::SOL_USD_FEED_ID,
     error::ErrorCode,
-    state::{BalanceAccount, BalanceStatus, MarketAccount, MarketAccountStatus, Protocol},
+    state::{
+        BalanceAccount, BalanceStatus, Market, MarketAccount, MarketAccountStatus, MarketStatus,
+        Protocol, RecoveryConfig,
+    },
 };
 
 #[derive(Accounts)]
@@ -47,6 +51,10 @@ pub struct RecoverBalance<'info> {
 pub struct RecoverMarket<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
+    #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(mut, seeds = [b"recovery-config", market.key().as_ref()], bump = recovery_config.bump)]
+    pub recovery_config: Box<Account<'info, RecoveryConfig>>,
     #[account(
         mut,
         seeds = [b"protocol"],
@@ -162,6 +170,15 @@ pub fn recover_market_handler(
         ErrorCode::TradingActive
     );
     require!(
+        ctx.accounts.market.status == MarketStatus::Draft,
+        ErrorCode::MarketNotDraft
+    );
+    require_keys_eq!(
+        ctx.accounts.market_account.market,
+        ctx.accounts.market.key(),
+        ErrorCode::WrongMarket
+    );
+    require!(
         ctx.accounts.market_account.status == MarketAccountStatus::Ready,
         ErrorCode::WrongMarketAccountStatus
     );
@@ -217,6 +234,12 @@ pub fn recover_market_handler(
         ErrorCode::VaultUnderfunded
     );
     ctx.accounts.protocol.credited_total = credited;
+    ctx.accounts.recovery_config.account_count = ctx
+        .accounts
+        .recovery_config
+        .account_count
+        .checked_sub(1)
+        .ok_or(ErrorCode::RevisionOverflow)?;
     Ok(())
 }
 

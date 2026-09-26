@@ -48,6 +48,33 @@ mod circuits {
     }
 
     #[derive(Copy, Clone)]
+    pub struct FeeRecovery {
+        pub protocol_fee: u64,
+        pub app_fee: u64,
+        pub salt: u128,
+    }
+
+    fn fee_hash(state: FeeRecovery, order: [u8; 32]) -> [u8; 32] {
+        let mut bytes = [0u8; 80];
+        let domain = b"depth.fees.v1\0\0\0";
+        let protocol_bytes = state.protocol_fee.to_le_bytes();
+        let app_bytes = state.app_fee.to_le_bytes();
+        let salt_bytes = state.salt.to_le_bytes();
+        for i in 0..16 {
+            bytes[i] = domain[i];
+            bytes[64 + i] = salt_bytes[i];
+        }
+        for i in 0..32 {
+            bytes[16 + i] = order[i];
+        }
+        for i in 0..8 {
+            bytes[48 + i] = protocol_bytes[i];
+            bytes[56 + i] = app_bytes[i];
+        }
+        SHA3_256::new().digest(&bytes)
+    }
+
+    #[derive(Copy, Clone)]
     pub struct ClearingState {
         pub insurance: u64,
         pub open_interest: u64,
@@ -484,7 +511,15 @@ mod circuits {
         app_fee_bps: u16,
         max_deviation_bps: u16,
         max_account_notional: u64,
-    ) -> (Enc<Mxe, Pack<TradePlan>>, u8, bool) {
+        order_key: [u8; 32],
+        recovery_key: ArcisX25519Pubkey,
+    ) -> (
+        Enc<Mxe, Pack<TradePlan>>,
+        Enc<Shared, FeeRecovery>,
+        [u8; 32],
+        u8,
+        bool,
+    ) {
         let order = order_input.to_arcis();
         let quotes = [
             quote_0.to_arcis().unpack(),
@@ -583,8 +618,21 @@ mod circuits {
             app_fee: if filled { execution_app_fee } else { 0 },
             maker_rebate: if filled { execution_maker_rebate } else { 0 },
         };
+        let allocated =
+            plan.insurance_fee as u128 + plan.app_fee as u128 + plan.maker_rebate as u128;
+        let receipt = FeeRecovery {
+            protocol_fee: if filled && allocated <= plan.fee as u128 {
+                (plan.fee as u128 - allocated) as u64
+            } else {
+                0
+            },
+            app_fee: plan.app_fee,
+            salt: ArcisRNG::gen_uniform::<u128>(),
+        };
         (
             Mxe::get().from_arcis(Pack::new(plan)),
+            Shared::new(recovery_key).from_arcis(receipt),
+            fee_hash(receipt, order_key).reveal(),
             selected.reveal(),
             filled.reveal(),
         )

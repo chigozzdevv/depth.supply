@@ -9,7 +9,7 @@ use crate::{
     error::ErrorCode,
     state::{
         BalanceAccount, BalanceStatus, ClearingAccount, ClearingStatus, FeeClaimStage, Market,
-        OrderKind, OrderRecord, OrderStatus, Protocol,
+        MarketStatus, OrderKind, OrderRecord, OrderStatus, Protocol,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -258,6 +258,10 @@ pub fn claim_trade_fees_handler<'info>(
     ctx: Context<'info, ClaimTradeFees<'info>>,
     computation_offset: u64,
 ) -> Result<()> {
+    require!(
+        ctx.accounts.market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
     require!(ctx.remaining_accounts.len() == 1, ErrorCode::InvalidOrder);
     require_keys_eq!(
         ctx.remaining_accounts[0].key(),

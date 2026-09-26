@@ -7,7 +7,7 @@ use crate::{
     error::ErrorCode,
     state::{
         BalanceAccount, BalanceStatus, MarginTransfer, MarginTransferStatus, Market, MarketAccount,
-        MarketAccountStatus, Protocol,
+        MarketAccountStatus, MarketStatus, Protocol,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -279,6 +279,10 @@ pub fn begin_allocation_handler(
     nonce: u64,
     amount: u64,
 ) -> Result<()> {
+    require!(
+        ctx.accounts.market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
     require!(amount > 0, ErrorCode::InvalidDeposit);
     require!(
         ctx.accounts.balance.status == BalanceStatus::Ready,
@@ -349,6 +353,10 @@ pub fn begin_release_handler(
     nonce: u64,
     amount: u64,
 ) -> Result<()> {
+    require!(
+        ctx.accounts.market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
     require!(amount > 0, ErrorCode::InvalidDeposit);
     require!(
         ctx.accounts.market_account.status == MarketAccountStatus::Ready,

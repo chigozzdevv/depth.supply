@@ -9,7 +9,7 @@ use crate::{
     error::ErrorCode,
     state::{
         ClearingAccount, ClearingStatus, DepositReceipt, DepositStatus, Market, MarketStatus,
-        Protocol,
+        Protocol, RecoveryConfig,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -24,6 +24,8 @@ pub struct OpenClearing<'info> {
     pub protocol: Box<Account<'info, Protocol>>,
     #[account(seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
+    #[account(seeds = [b"recovery-config", market.key().as_ref()], bump = recovery_config.bump)]
+    pub recovery_config: Box<Account<'info, RecoveryConfig>>,
     #[account(init, payer = authority, space = 8 + ClearingAccount::INIT_SPACE, seeds = [b"clearing", market.key().as_ref()], bump)]
     pub clearing: Box<Account<'info, ClearingAccount>>,
     #[account(init_if_needed, space = 9, payer = authority, seeds = [&SIGN_PDA_SEED], bump, address = derive_sign_pda!())]
@@ -236,7 +238,10 @@ pub fn open_clearing_handler(
         ctx.accounts.market.status == MarketStatus::Draft,
         ErrorCode::MarketNotDraft
     );
-    require!(recovery_key != [0; 32], ErrorCode::InvalidRecoveryKey);
+    require!(
+        recovery_key == ctx.accounts.recovery_config.recovery_key,
+        ErrorCode::WrongRecoveryKey
+    );
     let clearing = &mut ctx.accounts.clearing;
     clearing.market = ctx.accounts.market.key();
     clearing.recovery_key = recovery_key;
@@ -325,6 +330,10 @@ pub fn credit_insurance_handler(
     ctx: Context<CreditInsurance>,
     computation_offset: u64,
 ) -> Result<()> {
+    require!(
+        ctx.accounts.market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
     require!(
         ctx.accounts.receipt.status == DepositStatus::Pending,
         ErrorCode::WrongDepositStatus

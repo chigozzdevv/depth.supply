@@ -8,7 +8,7 @@ use crate::{
     error::ErrorCode,
     state::{
         BalanceAccount, BalanceStatus, MarginTransfer, MarginTransferStatus, Market, MarketAccount,
-        MarketAccountStatus, Protocol,
+        MarketAccountStatus, MarketStatus, Protocol,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -303,6 +303,10 @@ pub fn settle_allocation_handler(
     ctx: Context<SettleAllocation>,
     computation_offset: u64,
 ) -> Result<()> {
+    require!(
+        ctx.accounts.market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
     require!(
         ctx.accounts.transfer.status == MarginTransferStatus::Escrow
             && ctx.accounts.transfer.to_market,

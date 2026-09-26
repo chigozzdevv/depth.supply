@@ -5,7 +5,7 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 use crate::{
     constants::{COMP_DEF_OFFSET_OPEN_MARKET, SOL_USD_FEED_ID},
     error::ErrorCode,
-    state::{Market, MarketAccount, MarketAccountStatus, Protocol},
+    state::{Market, MarketAccount, MarketAccountStatus, Protocol, RecoveryConfig},
     ArciumSignerAccount, ID, ID_CONST,
 };
 
@@ -19,6 +19,8 @@ pub struct OpenMarketAccount<'info> {
     pub protocol: Box<Account<'info, Protocol>>,
     #[account(seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
+    #[account(seeds = [b"recovery-config", market.key().as_ref()], bump = recovery_config.bump)]
+    pub recovery_config: Box<Account<'info, RecoveryConfig>>,
     #[account(
         init,
         payer = payer,
@@ -74,6 +76,10 @@ pub struct OpenMarketCallback<'info> {
     #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
     /// CHECK: The account constraint validates the instructions sysvar.
     pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(mut, seeds = [b"recovery-config", market.key().as_ref()], bump = recovery_config.bump)]
+    pub recovery_config: Box<Account<'info, RecoveryConfig>>,
     #[account(seeds = [b"protocol"], bump = protocol.bump)]
     pub protocol: Box<Account<'info, Protocol>>,
     #[account(
@@ -128,7 +134,14 @@ pub fn open_market_account_handler(
     computation_offset: u64,
     recovery_key: [u8; 32],
 ) -> Result<()> {
-    require!(recovery_key != [0; 32], ErrorCode::InvalidRecoveryKey);
+    require!(
+        ctx.accounts.market.status != crate::state::MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
+    require!(
+        recovery_key == ctx.accounts.recovery_config.recovery_key,
+        ErrorCode::WrongRecoveryKey
+    );
     let account = &mut ctx.accounts.market_account;
     account.owner = ctx.accounts.payer.key();
     account.market = ctx.accounts.market.key();
@@ -151,6 +164,14 @@ pub fn open_market_account_handler(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[
+                CallbackAccount {
+                    pubkey: ctx.accounts.market.key(),
+                    is_writable: true,
+                },
+                CallbackAccount {
+                    pubkey: ctx.accounts.recovery_config.key(),
+                    is_writable: true,
+                },
                 CallbackAccount {
                     pubkey: ctx.accounts.protocol.key(),
                     is_writable: false,
@@ -180,6 +201,15 @@ pub fn open_market_callback_handler(
         .map_err(|_| ErrorCode::AbortedComputation)?;
     let account = &mut ctx.accounts.market_account;
     require!(
+        ctx.accounts.market.status != crate::state::MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
+    require_keys_eq!(
+        account.market,
+        ctx.accounts.market.key(),
+        ErrorCode::WrongMarket
+    );
+    require!(
         account.status == MarketAccountStatus::Opening,
         ErrorCode::WrongMarketAccountStatus
     );
@@ -199,6 +229,12 @@ pub fn open_market_callback_handler(
     account.commitment = result.field_2;
     account.pending_computation = Pubkey::default();
     account.status = MarketAccountStatus::Ready;
+    ctx.accounts.recovery_config.account_count = ctx
+        .accounts
+        .recovery_config
+        .account_count
+        .checked_add(1)
+        .ok_or(ErrorCode::RevisionOverflow)?;
     Ok(())
 }
 

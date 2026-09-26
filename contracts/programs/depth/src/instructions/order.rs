@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_lang::solana_program::{program::invoke_signed, system_instruction};
 use arcium_anchor::prelude::*;
 use arcium_client::idl::arcium::types::CallbackAccount;
 
@@ -6,8 +7,9 @@ use crate::{
     constants::{COMP_DEF_OFFSET_MATCH_ORDER, SOL_USD_FEED_ID},
     error::ErrorCode,
     state::{
-        AppConfig, BackstopOffer, BackstopStatus, Market, MarketAccount, MarketAccountStatus,
-        MarketStatus, OrderKind, OrderRecord, OrderStatus, Protocol, QuoteRecord, QuoteStatus,
+        AppConfig, BackstopOffer, BackstopStatus, FeeRecoveryRecord, Market, MarketAccount,
+        MarketAccountStatus, MarketStatus, OrderKind, OrderRecord, OrderStatus, Protocol,
+        QuoteRecord, QuoteStatus, RecoveryConfig,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -45,7 +47,7 @@ pub struct SubmitOrder<'info> {
     )]
     pub order: Box<Account<'info, OrderRecord>>,
     #[account(init_if_needed, space = 9, payer = trader, seeds = [&SIGN_PDA_SEED], bump, address = derive_sign_pda!())]
-    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(mut, address = derive_mempool_pda!(mxe_account))]
@@ -92,6 +94,8 @@ pub struct MatchOrderCallback<'info> {
     pub market_account: Box<Account<'info, MarketAccount>>,
     #[account(mut, seeds = [b"order", order.market.as_ref(), order.trader.as_ref(), order.nonce.to_le_bytes().as_ref()], bump = order.bump)]
     pub order: Box<Account<'info, OrderRecord>>,
+    #[account(mut, seeds = [b"fee-recovery", order.key().as_ref()], bump = fee_recovery.bump)]
+    pub fee_recovery: Box<Account<'info, FeeRecoveryRecord>>,
 }
 
 #[init_computation_definition_accounts("match_order", payer)]
@@ -190,8 +194,25 @@ pub fn submit_order_handler<'info>(
     );
     let count = usize::from(market.active_quote_count);
     require!(
-        ctx.remaining_accounts.len() == count + 1,
+        ctx.remaining_accounts.len() == count + 3,
         ErrorCode::WrongQuoteSnapshot
+    );
+    let recovery_info = &ctx.remaining_accounts[count + 1];
+    require_keys_eq!(*recovery_info.owner, ID, ErrorCode::WrongRecoveryKey);
+    require_keys_eq!(
+        recovery_info.key(),
+        Pubkey::find_program_address(&[b"recovery-config", market.key().as_ref()], &ID).0,
+        ErrorCode::WrongRecoveryKey
+    );
+    let recovery_config = Account::<RecoveryConfig>::try_from(recovery_info)?;
+    require_keys_eq!(recovery_config.market, market.key(), ErrorCode::WrongMarket);
+    let fee_info = &ctx.remaining_accounts[count + 2];
+    let (fee_address, fee_bump) =
+        Pubkey::find_program_address(&[b"fee-recovery", ctx.accounts.order.key().as_ref()], &ID);
+    require_keys_eq!(fee_info.key(), fee_address, ErrorCode::InvalidOrder);
+    require!(
+        fee_info.is_writable && fee_info.data_is_empty(),
+        ErrorCode::InvalidOrder
     );
     require_keys_eq!(
         ctx.remaining_accounts[0].key(),
@@ -210,7 +231,13 @@ pub fn submit_order_handler<'info>(
     let mut self_matches = [false; 4];
     let mut keys = [Pubkey::default(); 4];
     let mut quotes = Vec::with_capacity(4);
-    for (index, info) in ctx.remaining_accounts.iter().skip(1).enumerate() {
+    for (index, info) in ctx
+        .remaining_accounts
+        .iter()
+        .skip(1)
+        .take(count)
+        .enumerate()
+    {
         require_keys_eq!(
             info.key(),
             market.active_quotes[index],
@@ -253,6 +280,34 @@ pub fn submit_order_handler<'info>(
     order.kind = OrderKind::Trade;
     order.status = OrderStatus::Matching;
     order.bump = ctx.bumps.order;
+    let order_key = order.key();
+    let fee_space = 8 + FeeRecoveryRecord::INIT_SPACE;
+    let fee_lamports = Rent::get()?.minimum_balance(fee_space);
+    let bump_seed = [fee_bump];
+    invoke_signed(
+        &system_instruction::create_account(
+            &ctx.accounts.trader.key(),
+            &fee_address,
+            fee_lamports,
+            fee_space as u64,
+            &ID,
+        ),
+        &[
+            ctx.accounts.trader.to_account_info(),
+            fee_info.clone(),
+            ctx.accounts.system_program.to_account_info(),
+        ],
+        &[&[b"fee-recovery", order_key.as_ref(), &bump_seed]],
+    )?;
+    FeeRecoveryRecord {
+        order: order_key,
+        recovery_key: recovery_config.recovery_key,
+        ciphertexts: [[0; 32]; 3],
+        nonce: [0; 16],
+        commitment: [0; 32],
+        bump: fee_bump,
+    }
+    .try_serialize(&mut &mut fee_info.try_borrow_mut_data()?[..])?;
     ctx.accounts.market_account.status = MarketAccountStatus::Matching;
     ctx.accounts.market_account.pending_computation = ctx.accounts.computation_account.key();
     market.begin_pending(order.key())?;
@@ -291,8 +346,12 @@ pub fn submit_order_handler<'info>(
         .plaintext_u16(market.config.insurance_fee_bps)
         .plaintext_u16(order.app_fee_bps)
         .plaintext_u16(market.config.max_quote_deviation_bps)
-        .plaintext_u64(market.config.max_account_notional)
-        .build();
+        .plaintext_u64(market.config.max_account_notional);
+    let mut args = args;
+    for byte in order.key().to_bytes() {
+        args = args.plaintext_u8(byte);
+    }
+    let args = args.x25519_pubkey(recovery_config.recovery_key).build();
     queue_computation(
         ctx.accounts,
         computation_offset,
@@ -315,6 +374,10 @@ pub fn submit_order_handler<'info>(
                 },
                 CallbackAccount {
                     pubkey: ctx.accounts.order.key(),
+                    is_writable: true,
+                },
+                CallbackAccount {
+                    pubkey: fee_info.key(),
                     is_writable: true,
                 },
             ],
@@ -358,8 +421,8 @@ pub fn match_order_callback_handler(
         ErrorCode::WrongPendingComputation
     );
     let clock = Clock::get()?;
-    let selected = usize::from(result.field_1);
-    let eligible = result.field_2
+    let selected = usize::from(result.field_3);
+    let eligible = result.field_4
         && selected < usize::from(order.quote_count)
         && order.market_revision == market.revision
         && order.oracle_timestamp == market.oracle_timestamp
@@ -372,9 +435,21 @@ pub fn match_order_callback_handler(
         && market.status == MarketStatus::Active
         && ctx.accounts.protocol.trading_enabled;
     if eligible {
+        require!(
+            result.field_1.encryption_key == ctx.accounts.fee_recovery.recovery_key,
+            ErrorCode::WrongRecoveryKey
+        );
+        require_keys_eq!(
+            ctx.accounts.fee_recovery.order,
+            order.key(),
+            ErrorCode::InvalidOrder
+        );
         order.selected_quote = order.quote_keys[selected];
         order.plan_ciphertexts = result.field_0.ciphertexts;
         order.plan_nonce = result.field_0.nonce.to_le_bytes();
+        ctx.accounts.fee_recovery.ciphertexts = result.field_1.ciphertexts;
+        ctx.accounts.fee_recovery.nonce = result.field_1.nonce.to_le_bytes();
+        ctx.accounts.fee_recovery.commitment = result.field_2;
         order.status = OrderStatus::Matched;
         account.status = MarketAccountStatus::Trading;
     } else {

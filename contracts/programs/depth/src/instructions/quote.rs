@@ -162,7 +162,7 @@ pub fn submit_quote_handler(
         ErrorCode::StaleMarketSnapshot
     );
     require!(
-        market.status != MarketStatus::Paused,
+        market.status != MarketStatus::Paused && market.status != MarketStatus::Settling,
         ErrorCode::InvalidQuote
     );
     require!(tier_count > 0 && tier_count <= 4, ErrorCode::InvalidQuote);

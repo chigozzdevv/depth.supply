@@ -72,6 +72,8 @@ pub enum ErrorCode {
     DepositAmountMismatch,
     #[msg("The recovery key must be nonzero")]
     InvalidRecoveryKey,
+    #[msg("The recovery committee is invalid")]
+    InvalidRecoveryCommittee,
     #[msg("The balance has a different pending computation")]
     WrongPendingComputation,
     #[msg("The balance is in the wrong state")]

@@ -20,6 +20,7 @@ pub mod reserve;
 pub mod settlement;
 pub mod vault;
 pub mod view;
+pub mod winddown;
 pub mod withdraw;
 
 pub use app::*;
@@ -44,4 +45,5 @@ pub use reserve::*;
 pub use settlement::*;
 pub use vault::*;
 pub use view::*;
+pub use winddown::*;
 pub use withdraw::*;
