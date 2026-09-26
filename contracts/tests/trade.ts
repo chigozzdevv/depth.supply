@@ -554,6 +554,35 @@ describe("confidential trade settlement", () => {
     await harness.finalize(offset);
     const makerState = await fundUser(maker, makerRecovery, 1);
     const traderState = await fundUser(trader, traderRecovery, 2);
+    const operator = Keypair.generate();
+    const operatorAirdrop = await provider.connection.requestAirdrop(
+      operator.publicKey,
+      2 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(operatorAirdrop, "confirmed");
+    const [operatorGrant] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("operator"),
+        market.toBuffer(),
+        authority.toBuffer(),
+        operator.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+    await program.methods
+      .grantOperator(
+        new anchor.BN(10_000_000),
+        new anchor.BN(Math.floor(Date.now() / 1000) + 3_600),
+        true
+      )
+      .accountsPartial({
+        maker: authority,
+        market,
+        marketAccount: makerState.marketAccount,
+        operator: operator.publicKey,
+        grant: operatorGrant,
+      })
+      .rpc();
     const claimFees = async (filledOrder: PublicKey) => {
       const claimOffset = harness.offset();
       await program.methods
@@ -667,10 +696,13 @@ describe("confidential trade settlement", () => {
       )
       .accountsPartial({
         ...harness.queue(offset, "prepare_quote"),
-        payer: authority,
+        payer: operator.publicKey,
         market,
+        marketAccount: makerState.marketAccount,
+        grant: operatorGrant,
         quote,
       })
+      .signers([operator])
       .rpc(options);
     await harness.finalize(offset);
     offset = harness.offset();
@@ -678,12 +710,14 @@ describe("confidential trade settlement", () => {
       .reserveQuote(offset)
       .accountsPartial({
         ...harness.queue(offset, "reserve_quote"),
-        payer: authority,
+        payer: operator.publicKey,
         protocol,
         market,
         marketAccount: makerState.marketAccount,
+        grant: operatorGrant,
         quote,
       })
+      .signers([operator])
       .rpc(options);
     await harness.finalize(offset);
     expect(
@@ -1118,6 +1152,67 @@ describe("confidential trade settlement", () => {
     expect(makerFill.side).to.equal(1n);
     expect(makerFill.size).to.equal(5_000_000n);
 
+    const operatorViewNonce = new anchor.BN(604);
+    const [operatorView] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("fill-view"),
+        order.toBuffer(),
+        operator.publicKey.toBuffer(),
+        operatorViewNonce.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    );
+    offset = harness.offset();
+    await program.methods
+      .requestFillView(offset, operatorViewNonce, viewKey)
+      .accountsPartial({
+        ...harness.queue(offset, "view_fill"),
+        payer: operator.publicKey,
+        order,
+        grant: operatorGrant,
+        view: operatorView,
+      })
+      .signers([operator])
+      .rpc(options);
+    await harness.finalize(offset);
+    expect(
+      (await program.account.fillView.fetch(operatorView)).status
+    ).to.deep.equal({
+      ready: {},
+    });
+    await program.methods
+      .revokeOperator()
+      .accountsPartial({ maker: authority, grant: operatorGrant })
+      .rpc();
+    const revokedNonce = new anchor.BN(605);
+    const [revokedView] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("fill-view"),
+        order.toBuffer(),
+        operator.publicKey.toBuffer(),
+        revokedNonce.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    );
+    let revokedViewRejected = false;
+    try {
+      offset = harness.offset();
+      await program.methods
+        .requestFillView(offset, revokedNonce, viewKey)
+        .accountsPartial({
+          ...harness.queue(offset, "view_fill"),
+          payer: operator.publicKey,
+          order,
+          grant: operatorGrant,
+          view: revokedView,
+        })
+        .signers([operator])
+        .rpc(options);
+    } catch {
+      revokedViewRejected = true;
+    }
+    expect(revokedViewRejected).to.equal(true);
+
     const exitQuoteNonce = new anchor.BN(78);
     const [exitQuote] = PublicKey.findProgramAddressSync(
       [
@@ -1154,6 +1249,7 @@ describe("confidential trade settlement", () => {
         ...harness.queue(offset, "prepare_quote"),
         payer: authority,
         market,
+        marketAccount: makerState.marketAccount,
         quote: exitQuote,
       })
       .rpc(options);
@@ -1467,6 +1563,7 @@ describe("confidential trade settlement", () => {
         ...harness.queue(offset, "prepare_quote"),
         payer: authority,
         market,
+        marketAccount: makerState.marketAccount,
         quote: riskQuote,
       })
       .rpc(options);
