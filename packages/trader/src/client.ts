@@ -24,6 +24,8 @@ import { randomBytes } from "node:crypto";
 import { arciumAccount } from "@/arcium";
 import { DepthOperation } from "@/operation";
 import { encodeSide, u64 } from "@/trade";
+import { DepthView } from "@/views";
+import type { BalanceSnapshot, PositionSnapshot } from "@/views";
 import type {
   AccountState,
   AppState,
@@ -159,6 +161,102 @@ export class DepthClient {
       this.options.connection
     );
   }
+
+  async requestBalanceView(): Promise<DepthView> {
+    const owner = this.options.wallet.publicKey;
+    const balance = pda([Buffer.from("balance"), owner.toBuffer()]);
+    const state = await this.read<{ status: Record<string, unknown> }>(
+      "BalanceAccount",
+      balance
+    );
+    if (enumName(state.status) !== "ready") {
+      throw new Error("Balance is processing another operation");
+    }
+    const viewNonce = nonce();
+    const view = pda([
+      Buffer.from("view"),
+      owner.toBuffer(),
+      viewNonce.toArrayLike(Buffer, "le", 8),
+    ]);
+    return this.requestView("balance", view, viewNonce, { balance });
+  }
+
+  async requestMarketView(): Promise<DepthView> {
+    const owner = this.options.wallet.publicKey;
+    const marketAccount = this.accountAddress();
+    const state = await this.read<AccountState>("MarketAccount", marketAccount);
+    if (enumName(state.status) !== "ready") {
+      throw new Error("Market account is processing another operation");
+    }
+    const viewNonce = nonce();
+    const view = pda([
+      Buffer.from("market-view"),
+      marketAccount.toBuffer(),
+      viewNonce.toArrayLike(Buffer, "le", 8),
+    ]);
+    return this.requestView("market", view, viewNonce, {
+      market: this.marketAddress,
+      marketAccount,
+    });
+  }
+
+  private async requestView(
+    kind: "balance" | "market",
+    view: PublicKey,
+    viewNonce: anchor.BN,
+    accounts: Record<string, PublicKey>
+  ): Promise<DepthView> {
+    const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
+    if (!mxePublicKey) throw new Error("MXE public key is unavailable");
+    const secret = x25519.utils.randomSecretKey();
+    const publicKey = x25519.getPublicKey(secret);
+    const offset = nonce();
+    const queue = await this.queue(
+      kind === "balance" ? "view_balance" : "view_market",
+      offset
+    );
+    const builder =
+      kind === "balance"
+        ? this.program.methods.requestBalanceView
+        : this.program.methods.requestMarketView;
+    const signature = await builder(offset, viewNonce, Array.from(publicKey))
+      .accountsPartial({
+        ...queue,
+        payer: this.options.wallet.publicKey,
+        ...accounts,
+        view,
+      })
+      .rpc({ commitment: "confirmed" });
+    return new DepthView(
+      view,
+      signature,
+      kind,
+      this.options.wallet.publicKey,
+      secret,
+      publicKey,
+      mxePublicKey,
+      this.program,
+      this.options.connection
+    );
+  }
+
+  readonly account = {
+    summary: async (
+      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
+    ): Promise<BalanceSnapshot> => {
+      const view = await this.requestBalanceView();
+      return (await view.wait(options)) as BalanceSnapshot;
+    },
+  };
+
+  readonly position = {
+    summary: async (
+      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
+    ): Promise<PositionSnapshot> => {
+      const view = await this.requestMarketView();
+      return (await view.wait(options)) as PositionSnapshot;
+    },
+  };
 
   readonly trade = {
     submit: async (input: TradeInput): Promise<DepthOperation> => {

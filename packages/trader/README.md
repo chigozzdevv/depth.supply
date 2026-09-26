@@ -21,3 +21,12 @@ const snapshot = await order.wait({ timeoutMs: 30_000 });
 ```
 
 Amounts are integer USDC units, and prices use eight decimal places. `submit` returns the onchain order address and submission signature after the queue transaction confirms. Matching and settlement continue asynchronously. A timeout returns the current onchain status; it does not imply a fill. After a restart, `depth.operation(orderAddress)` reads the same record.
+
+Private balance and position reads queue owner-signed Arcium views:
+
+```ts
+const balance = await depth.account.summary();
+const position = await depth.position.summary();
+```
+
+Each result includes `pending`, `ready`, or `stale`, its confirmed slot, and decrypted values only when ready. Use `requestBalanceView()` or `requestMarketView()` to retain the view handle and call `close()` after reading it to recover its rent. A new view can be requested after a reload.
