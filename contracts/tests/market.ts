@@ -2,6 +2,7 @@ import * as anchor from "@anchor-lang/core";
 import { Program } from "@anchor-lang/core";
 import { expect } from "chai";
 import { Depth } from "@/target/types/depth";
+import { recoveryKey } from "@/tests/keys";
 
 const SOL_USD_FEED_ID = Buffer.from(
   "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
@@ -44,7 +45,13 @@ describe("SOL perpetual market", () => {
 
   it("stores bounded market economics and permits draft revisions by the authority", async () => {
     await program.methods
-      .createMarket(config)
+      .createMarket(config, Array.from(recoveryKey), [
+        authority,
+        anchor.web3.PublicKey.unique(),
+        anchor.web3.PublicKey.unique(),
+        anchor.web3.PublicKey.unique(),
+        anchor.web3.PublicKey.unique(),
+      ])
       .accountsPartial({ authority, protocol, market })
       .rpc();
 

@@ -155,6 +155,8 @@ export async function exerciseQuote(
       ...queueAccounts(prepareOffset, "prepare_quote"),
       payer: owner,
       market,
+      marketAccount,
+      grant: null,
       quote,
     })
     .rpc({ skipPreflight: true, commitment: "confirmed" });
@@ -173,6 +175,7 @@ export async function exerciseQuote(
       payer: owner,
       protocol,
       market,
+      grant: null,
       marketAccount,
       quote,
     })
@@ -203,7 +206,7 @@ export async function exerciseQuote(
 
   await program.methods
     .stopQuote()
-    .accountsPartial({ actor: owner, market, quote })
+    .accountsPartial({ actor: owner, market, grant: null, quote })
     .rpc();
   quoteState = await program.account.quoteRecord.fetch(quote);
   expect(quoteState.status).to.deep.equal({ closing: {} });
@@ -218,6 +221,7 @@ export async function exerciseQuote(
       payer: owner,
       protocol,
       market,
+      grant: null,
       marketAccount,
       quote,
     })

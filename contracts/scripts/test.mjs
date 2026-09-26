@@ -97,11 +97,15 @@ const arciumArgs =
   selected < 0
     ? args
     : args.filter((_, index) => index !== selected && index !== selected + 1);
+const tradeArgs = [...arciumArgs];
+for (const option of ["--skip-build", "--skip-keygen"]) {
+  if (!tradeArgs.includes(option)) tradeArgs.push(option);
+}
 const suites = testFile
   ? [[testFile, arciumArgs]]
   : [
       ["base", arciumArgs],
-      ["trade", [...arciumArgs, "--skip-build", "--skip-keygen"]],
+      ["trade", tradeArgs],
     ];
 for (const [suite, suiteArgs] of suites) {
   writeOracleFixture();

@@ -172,6 +172,10 @@ describe("encrypted market clearing", () => {
     expect(decode(state).open_interest).to.equal(0n);
 
     const protocolState = await program.account.protocol.fetch(protocol);
+    const creditedBefore = protocolState.creditedTotal.toNumber();
+    const vaultBefore = (
+      await getAccount(provider.connection, protocolState.vault)
+    ).amount;
     const source = await getOrCreateAssociatedTokenAccount(
       provider.connection,
       payer,
@@ -236,10 +240,10 @@ describe("encrypted market clearing", () => {
     ).to.equal(0);
     expect(
       (await program.account.protocol.fetch(protocol)).creditedTotal.toNumber()
-    ).to.equal(100_000_000);
+    ).to.equal(creditedBefore + 100_000_000);
     expect(
       (await getAccount(provider.connection, protocolState.vault)).amount
-    ).to.equal(100_000_000n);
+    ).to.equal(vaultBefore + 100_000_000n);
 
     const preimage = Buffer.alloc(104);
     Buffer.from("depth.clear.v2\0\0").copy(preimage, 0);
@@ -292,9 +296,9 @@ describe("encrypted market clearing", () => {
     ).to.equal(null);
     expect(
       (await program.account.protocol.fetch(protocol)).creditedTotal.toNumber()
-    ).to.equal(0);
+    ).to.equal(creditedBefore);
     expect(
       (await getAccount(provider.connection, protocolState.vault)).amount
-    ).to.equal(0n);
+    ).to.equal(vaultBefore);
   });
 });

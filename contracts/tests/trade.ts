@@ -11,6 +11,7 @@ import { expect } from "chai";
 import { Depth } from "@/target/types/depth";
 import { Harness } from "@/tests/support/harness";
 import { unpackMarket } from "@/tests/support/packing";
+import { recoveryKey, recoveryPrivateKey } from "@/tests/keys";
 
 const feed = Buffer.from(
   "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
@@ -85,6 +86,16 @@ function unpackFill(words: bigint[]) {
   };
 }
 
+async function expectRejected(task: Promise<unknown>): Promise<void> {
+  let rejected = false;
+  try {
+    await task;
+  } catch {
+    rejected = true;
+  }
+  expect(rejected).to.equal(true);
+}
+
 describe("confidential trade settlement", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
   const provider = anchor.getProvider() as anchor.AnchorProvider;
@@ -103,6 +114,15 @@ describe("confidential trade settlement", () => {
     [Buffer.from("market"), feed],
     program.programId
   );
+  const [recoveryConfig] = PublicKey.findProgramAddressSync(
+    [Buffer.from("recovery-config"), market.toBuffer()],
+    program.programId
+  );
+  const feeRecoveryFor = (order: PublicKey) =>
+    PublicKey.findProgramAddressSync(
+      [Buffer.from("fee-recovery"), order.toBuffer()],
+      program.programId
+    )[0];
   const [clearing] = PublicKey.findProgramAddressSync(
     [Buffer.from("clearing"), market.toBuffer()],
     program.programId
@@ -152,8 +172,12 @@ describe("confidential trade settlement", () => {
       ) as [anchor.BN, anchor.BN, anchor.BN, anchor.BN],
       backstopMinCollateral: new anchor.BN(100_000_000),
     };
+    const recoverySigners = Array.from({ length: 4 }, () => Keypair.generate());
     await program.methods
-      .createMarket(config)
+      .createMarket(config, Array.from(recoveryKey), [
+        authority,
+        ...recoverySigners.map((signer) => signer.publicKey),
+      ])
       .accountsPartial({ authority, protocol, market })
       .rpc();
     const harness = await Harness.create(provider, program);
@@ -350,8 +374,8 @@ describe("confidential trade settlement", () => {
       excessiveFeeRejected = true;
     }
     expect(excessiveFeeRejected).to.equal(true);
-    const makerRecoveryPrivate = new Uint8Array(32).fill(7);
-    const traderRecoveryPrivate = new Uint8Array(32).fill(9);
+    const makerRecoveryPrivate = recoveryPrivateKey;
+    const traderRecoveryPrivate = recoveryPrivateKey;
     const makerRecovery = Array.from(x25519.getPublicKey(makerRecoveryPrivate));
     const traderRecovery = Array.from(
       x25519.getPublicKey(traderRecoveryPrivate)
@@ -496,7 +520,7 @@ describe("confidential trade settlement", () => {
       return { balance, marketAccount, source: source.address };
     };
 
-    const clearingRecoveryPrivate = new Uint8Array(32).fill(11);
+    const clearingRecoveryPrivate = recoveryPrivateKey;
     const clearingRecovery = Array.from(
       x25519.getPublicKey(clearingRecoveryPrivate)
     );
@@ -872,6 +896,8 @@ describe("confidential trade settlement", () => {
         .remainingAccounts([
           { pubkey: backstopOffer, isSigner: false, isWritable: false },
           { pubkey: quote, isSigner: false, isWritable: false },
+          { pubkey: recoveryConfig, isSigner: false, isWritable: false },
+          { pubkey: feeRecoveryFor(order), isSigner: false, isWritable: true },
         ])
         .signers([trader])
         .rpc(options);
@@ -912,6 +938,8 @@ describe("confidential trade settlement", () => {
       .remainingAccounts([
         { pubkey: backstopOffer, isSigner: false, isWritable: false },
         { pubkey: quote, isSigner: false, isWritable: false },
+        { pubkey: recoveryConfig, isSigner: false, isWritable: false },
+        { pubkey: feeRecoveryFor(order), isSigner: false, isWritable: true },
       ])
       .signers([trader])
       .rpc(options);
@@ -955,11 +983,13 @@ describe("confidential trade settlement", () => {
       .accountsPartial({
         ...harness.queue(offset, "settle_trade"),
         payer: authority,
-        market,
-        clearing,
-        traderAccount: traderState.marketAccount,
-        makerAccount: makerState.marketAccount,
-        order,
+        trade: {
+          market,
+          clearing,
+          traderAccount: traderState.marketAccount,
+          makerAccount: makerState.marketAccount,
+          order,
+        },
       })
       .remainingAccounts([
         { pubkey: quote, isSigner: false, isWritable: false },
@@ -1178,6 +1208,7 @@ describe("confidential trade settlement", () => {
         ...harness.queue(offset, "view_market"),
         payer: trader.publicKey,
         market,
+        grant: null,
         marketAccount: traderState.marketAccount,
         view: marketView,
       })
@@ -1219,6 +1250,7 @@ describe("confidential trade settlement", () => {
         ...harness.queue(offset, "view_fill"),
         payer: trader.publicKey,
         order,
+        grant: null,
         view: fillView,
       })
       .signers([trader])
@@ -1257,6 +1289,7 @@ describe("confidential trade settlement", () => {
         ...harness.queue(offset, "view_fill"),
         payer: authority,
         order,
+        grant: null,
         view: makerFillView,
       })
       .rpc(options);
@@ -1376,6 +1409,7 @@ describe("confidential trade settlement", () => {
         payer: authority,
         market,
         marketAccount: makerState.marketAccount,
+        grant: null,
         quote: exitQuote,
       })
       .rpc(options);
@@ -1388,6 +1422,7 @@ describe("confidential trade settlement", () => {
         payer: authority,
         protocol,
         market,
+        grant: null,
         marketAccount: makerState.marketAccount,
         quote: exitQuote,
       })
@@ -1442,6 +1477,12 @@ describe("confidential trade settlement", () => {
       .remainingAccounts([
         { pubkey: backstopOffer, isSigner: false, isWritable: false },
         { pubkey: exitQuote, isSigner: false, isWritable: false },
+        { pubkey: recoveryConfig, isSigner: false, isWritable: false },
+        {
+          pubkey: feeRecoveryFor(rejectedOrder),
+          isSigner: false,
+          isWritable: true,
+        },
       ])
       .signers([trader])
       .rpc(options);
@@ -1501,9 +1542,15 @@ describe("confidential trade settlement", () => {
       .remainingAccounts([
         { pubkey: backstopOffer, isSigner: false, isWritable: false },
         { pubkey: exitQuote, isSigner: false, isWritable: false },
+        { pubkey: recoveryConfig, isSigner: false, isWritable: false },
+        {
+          pubkey: feeRecoveryFor(exitOrder),
+          isSigner: false,
+          isWritable: true,
+        },
       ])
       .signers([trader])
-      .rpc(options);
+      .rpc({ commitment: "confirmed" });
     await harness.finalize(offset);
     expect(
       (await program.account.orderRecord.fetch(exitOrder)).status
@@ -1514,11 +1561,13 @@ describe("confidential trade settlement", () => {
       .accountsPartial({
         ...harness.queue(offset, "settle_trade"),
         payer: authority,
-        market,
-        clearing,
-        traderAccount: traderState.marketAccount,
-        makerAccount: makerState.marketAccount,
-        order: exitOrder,
+        trade: {
+          market,
+          clearing,
+          traderAccount: traderState.marketAccount,
+          makerAccount: makerState.marketAccount,
+          order: exitOrder,
+        },
       })
       .remainingAccounts([
         { pubkey: exitQuote, isSigner: false, isWritable: false },
@@ -1607,35 +1656,6 @@ describe("confidential trade settlement", () => {
         appFees
     ).to.equal(212_000_000n);
 
-    await claimFees(exitOrder);
-    const exitClaimedClearing = await program.account.clearingAccount.fetch(
-      clearing
-    );
-    const exitClaimedValues = clearingPacker.unpack(
-      clearingCipher.decrypt(
-        exitClaimedClearing.recoveryCiphertexts.map((word) => Array.from(word)),
-        Uint8Array.from(exitClaimedClearing.recoveryNonce)
-      )
-    );
-    expect(exitClaimedValues.protocol_fees).to.equal(0n);
-    expect(exitClaimedValues.app_fees).to.equal(0n);
-    const protocolAfterClaim = await program.account.balanceAccount.fetch(
-      makerState.balance
-    );
-    const appAfterClaim = await program.account.balanceAccount.fetch(
-      traderState.balance
-    );
-    protocolFees = makerCipher.decrypt(
-      protocolAfterClaim.recoveryCiphertexts.map((word) => Array.from(word)),
-      Uint8Array.from(protocolAfterClaim.recoveryNonce)
-    )[0];
-    appFees = traderCipher.decrypt(
-      appAfterClaim.recoveryCiphertexts.map((word) => Array.from(word)),
-      Uint8Array.from(appAfterClaim.recoveryNonce)
-    )[0];
-    expect(protocolFees).to.equal(603n);
-    expect(appFees).to.equal(199n);
-
     await program.methods
       .pauseMarket()
       .accountsPartial({ actor: authority, protocol, market })
@@ -1708,6 +1728,7 @@ describe("confidential trade settlement", () => {
         payer: authority,
         market,
         marketAccount: makerState.marketAccount,
+        grant: null,
         quote: riskQuote,
       })
       .rpc(options);
@@ -1720,6 +1741,7 @@ describe("confidential trade settlement", () => {
         payer: authority,
         protocol,
         market,
+        grant: null,
         marketAccount: makerState.marketAccount,
         quote: riskQuote,
       })
@@ -1774,6 +1796,12 @@ describe("confidential trade settlement", () => {
       .remainingAccounts([
         { pubkey: backstopOffer, isSigner: false, isWritable: false },
         { pubkey: riskQuote, isSigner: false, isWritable: false },
+        { pubkey: recoveryConfig, isSigner: false, isWritable: false },
+        {
+          pubkey: feeRecoveryFor(riskOrder),
+          isSigner: false,
+          isWritable: true,
+        },
       ])
       .signers([trader])
       .rpc(options);
@@ -1787,11 +1815,13 @@ describe("confidential trade settlement", () => {
       .accountsPartial({
         ...harness.queue(offset, "settle_trade"),
         payer: authority,
-        market,
-        clearing,
-        traderAccount: traderState.marketAccount,
-        makerAccount: makerState.marketAccount,
-        order: riskOrder,
+        trade: {
+          market,
+          clearing,
+          traderAccount: traderState.marketAccount,
+          makerAccount: makerState.marketAccount,
+          order: riskOrder,
+        },
       })
       .remainingAccounts([
         { pubkey: riskQuote, isSigner: false, isWritable: false },
@@ -1863,12 +1893,14 @@ describe("confidential trade settlement", () => {
       .accountsPartial({
         ...harness.queue(offset, "liquidate"),
         payer: authority,
-        market,
-        clearing,
-        targetAccount: traderState.marketAccount,
-        backstopAccount: makerState.marketAccount,
-        offer: backstopOffer,
         order: liquidation,
+        trade: {
+          market,
+          clearing,
+          targetAccount: traderState.marketAccount,
+          backstopAccount: makerState.marketAccount,
+          offer: backstopOffer,
+        },
       })
       .rpc(options);
     await harness.finalize(offset);
@@ -2016,12 +2048,14 @@ describe("confidential trade settlement", () => {
       .accountsPartial({
         ...harness.queue(offset, "liquidate"),
         payer: authority,
-        market,
-        clearing,
-        targetAccount: traderState.marketAccount,
-        backstopAccount: makerState.marketAccount,
-        offer: replacementOffer,
         order: healthyCheck,
+        trade: {
+          market,
+          clearing,
+          targetAccount: traderState.marketAccount,
+          backstopAccount: makerState.marketAccount,
+          offer: replacementOffer,
+        },
       })
       .rpc(options);
     await harness.finalize(offset);
@@ -2072,5 +2106,335 @@ describe("confidential trade settlement", () => {
     expect(
       await program.account.backstopOffer.fetchNullable(replacementOffer)
     ).to.equal(null);
+
+    const [winddown] = PublicKey.findProgramAddressSync(
+      [Buffer.from("winddown"), market.toBuffer()],
+      program.programId
+    );
+    const winddownArgs = [
+      clearingFinal.insurance,
+      clearingFinal.open_interest,
+      clearingFinal.protocol_fees,
+      clearingFinal.app_fees,
+      clearingFinal.salt,
+    ].map((value) => new anchor.BN(value.toString())) as [
+      anchor.BN,
+      anchor.BN,
+      anchor.BN,
+      anchor.BN,
+      anchor.BN
+    ];
+    await expectRejected(
+      program.methods
+        .startWinddown(...winddownArgs)
+        .accountsPartial({
+          payer: authority,
+          protocol,
+          market,
+          clearing,
+          vault,
+          winddown,
+        })
+        .rpc()
+    );
+    await program.methods
+      .startWinddown(...winddownArgs)
+      .accountsPartial({
+        payer: authority,
+        protocol,
+        market,
+        clearing,
+        vault,
+        winddown,
+      })
+      .remainingAccounts(
+        recoverySigners.slice(0, 3).map((signer) => ({
+          pubkey: signer.publicKey,
+          isSigner: true,
+          isWritable: false,
+        }))
+      )
+      .signers(recoverySigners.slice(0, 3))
+      .rpc();
+    expect((await program.account.market.fetch(market)).status).to.deep.equal({
+      settling: {},
+    });
+    const feeClaims: PublicKey[] = [];
+    let recoveredProtocolFees = 0n;
+    let recoveredAppFees = 0n;
+    for (const [index, feeOrder] of [exitOrder, riskOrder].entries()) {
+      const feeRecovery = feeRecoveryFor(feeOrder);
+      const feeReceipt = await program.account.feeRecoveryRecord.fetch(
+        feeRecovery
+      );
+      const [protocolFee, appFee, feeSalt] = clearingCipher.decrypt(
+        feeReceipt.ciphertexts.map((word) => Array.from(word)),
+        Uint8Array.from(feeReceipt.nonce)
+      );
+      const [feeClaim] = PublicKey.findProgramAddressSync(
+        [Buffer.from("winddown-fee"), feeOrder.toBuffer()],
+        program.programId
+      );
+      if (index === 0) {
+        await expectRejected(
+          program.methods
+            .revealWinddownFee(
+              new anchor.BN(protocolFee.toString()),
+              new anchor.BN(appFee.toString()),
+              new anchor.BN((feeSalt + 1n).toString())
+            )
+            .accountsPartial({
+              payer: authority,
+              market,
+              winddown,
+              order: feeOrder,
+              feeRecovery,
+              claim: feeClaim,
+            })
+            .rpc()
+        );
+      }
+      await program.methods
+        .revealWinddownFee(
+          new anchor.BN(protocolFee.toString()),
+          new anchor.BN(appFee.toString()),
+          new anchor.BN(feeSalt.toString())
+        )
+        .accountsPartial({
+          payer: authority,
+          market,
+          winddown,
+          order: feeOrder,
+          feeRecovery,
+          claim: feeClaim,
+        })
+        .rpc();
+      recoveredProtocolFees += protocolFee;
+      recoveredAppFees += appFee;
+      feeClaims.push(feeClaim);
+    }
+    expect(recoveredProtocolFees).to.equal(clearingFinal.protocol_fees);
+    expect(recoveredAppFees).to.equal(clearingFinal.app_fees);
+    const reveal = async (
+      account: PublicKey,
+      values: Awaited<ReturnType<typeof unpackMarket>>
+    ) => {
+      const [claim] = PublicKey.findProgramAddressSync(
+        [Buffer.from("winddown-claim"), account.toBuffer()],
+        program.programId
+      );
+      const args = [
+        values.collateral,
+        values.reserved,
+        values.position,
+        values.entry_price,
+        values.funding_checkpoint,
+        values.salt,
+      ].map((value) => new anchor.BN(value.toString())) as [
+        anchor.BN,
+        anchor.BN,
+        anchor.BN,
+        anchor.BN,
+        anchor.BN,
+        anchor.BN
+      ];
+      await program.methods
+        .revealWinddown(...args)
+        .accountsPartial({
+          payer: authority,
+          market,
+          winddown,
+          marketAccount: account,
+          claim,
+        })
+        .rpc();
+      return claim;
+    };
+    const [invalidClaim] = PublicKey.findProgramAddressSync(
+      [Buffer.from("winddown-claim"), traderState.marketAccount.toBuffer()],
+      program.programId
+    );
+    await expectRejected(
+      program.methods
+        .revealWinddown(
+          new anchor.BN(traderFinal.collateral.toString()),
+          new anchor.BN(traderFinal.reserved.toString()),
+          new anchor.BN(traderFinal.position.toString()),
+          new anchor.BN(traderFinal.entry_price.toString()),
+          new anchor.BN(traderFinal.funding_checkpoint.toString()),
+          new anchor.BN((traderFinal.salt + 1n).toString())
+        )
+        .accountsPartial({
+          payer: authority,
+          market,
+          winddown,
+          marketAccount: traderState.marketAccount,
+          claim: invalidClaim,
+        })
+        .rpc()
+    );
+    const traderClaim = await reveal(traderState.marketAccount, traderFinal);
+    await expectRejected(
+      program.methods
+        .finalizeWinddown()
+        .accountsPartial({ protocol, market, winddown, vault })
+        .rpc()
+    );
+    const makerClaim = await reveal(makerState.marketAccount, releasedState);
+    await program.methods
+      .finalizeWinddown()
+      .accountsPartial({ protocol, market, winddown, vault })
+      .rpc();
+    const finalWinddown = await program.account.winddown.fetch(winddown);
+    expect(finalWinddown.expectedAccounts).to.equal(2);
+    expect(finalWinddown.grossPositive.toString()).to.equal(
+      (traderFinal.collateral + releasedState.collateral).toString()
+    );
+    const creditedBeforeWinddown = (
+      await program.account.protocol.fetch(protocol)
+    ).creditedTotal.toNumber();
+    const vaultBeforeWinddown = (await getAccount(provider.connection, vault))
+      .amount;
+    const claimAccounts = (
+      owner: PublicKey,
+      account: PublicKey,
+      claim: PublicKey,
+      destination: PublicKey
+    ) => ({
+      owner,
+      protocol,
+      settlementMint: mint,
+      vault,
+      market,
+      winddown,
+      marketAccount: account,
+      claim,
+      destination,
+    });
+    await expectRejected(
+      program.methods
+        .claimWinddown()
+        .accountsPartial(
+          claimAccounts(
+            authority,
+            traderState.marketAccount,
+            traderClaim,
+            makerState.source
+          )
+        )
+        .rpc()
+    );
+    await program.methods
+      .claimWinddown()
+      .accountsPartial(
+        claimAccounts(
+          trader.publicKey,
+          traderState.marketAccount,
+          traderClaim,
+          traderState.source
+        )
+      )
+      .signers([trader])
+      .rpc();
+    await program.methods
+      .claimWinddown()
+      .accountsPartial(
+        claimAccounts(
+          authority,
+          makerState.marketAccount,
+          makerClaim,
+          makerState.source
+        )
+      )
+      .rpc();
+    expect(
+      (await program.account.winddown.fetch(winddown)).paidAccounts
+    ).to.equal(2);
+    await expectRejected(
+      program.methods
+        .sweepWinddown()
+        .accountsPartial({
+          authority,
+          protocol,
+          settlementMint: mint,
+          vault,
+          market,
+          winddown,
+          destination: makerState.source,
+        })
+        .rpc()
+    );
+    for (const feeClaim of feeClaims) {
+      await program.methods
+        .claimWinddownAppFee()
+        .accountsPartial({
+          app: trader.publicKey,
+          protocol,
+          settlementMint: mint,
+          vault,
+          market,
+          winddown,
+          claim: feeClaim,
+          destination: traderState.source,
+        })
+        .signers([trader])
+        .rpc();
+    }
+    await expectRejected(
+      program.methods
+        .claimWinddownAppFee()
+        .accountsPartial({
+          app: trader.publicKey,
+          protocol,
+          settlementMint: mint,
+          vault,
+          market,
+          winddown,
+          claim: feeClaims[0],
+          destination: traderState.source,
+        })
+        .signers([trader])
+        .rpc()
+    );
+    await program.methods
+      .claimWinddownProtocolFees()
+      .accountsPartial({
+        authority,
+        protocol,
+        settlementMint: mint,
+        vault,
+        market,
+        winddown,
+        destination: makerState.source,
+      })
+      .rpc();
+    await program.methods
+      .sweepWinddown()
+      .accountsPartial({
+        authority,
+        protocol,
+        settlementMint: mint,
+        vault,
+        market,
+        winddown,
+        destination: makerState.source,
+      })
+      .rpc();
+    expect(
+      (await program.account.winddown.fetch(winddown)).remainingPool.toNumber()
+    ).to.equal(0);
+    expect(
+      (await program.account.protocol.fetch(protocol)).creditedTotal.toNumber()
+    ).to.equal(
+      creditedBeforeWinddown -
+        finalWinddown.payoutPool.toNumber() -
+        Number(recoveredProtocolFees + recoveredAppFees)
+    );
+    expect((await getAccount(provider.connection, vault)).amount).to.equal(
+      vaultBeforeWinddown -
+        BigInt(finalWinddown.payoutPool.toString()) -
+        recoveredProtocolFees -
+        recoveredAppFees
+    );
   });
 });
