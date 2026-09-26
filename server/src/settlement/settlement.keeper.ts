@@ -69,7 +69,10 @@ export class Keeper {
   readonly protocol = protocolAddress();
   readonly clearing = pda([Buffer.from("clearing"), this.market.toBuffer()]);
 
-  constructor(readonly connection: Connection, readonly wallet: anchor.Wallet) {
+  constructor(
+    readonly connection: Connection,
+    readonly wallet: anchor.Wallet,
+  ) {
     this.provider = new anchor.AnchorProvider(connection, wallet, {
       commitment: "confirmed",
       preflightCommitment: "confirmed",
@@ -98,7 +101,7 @@ export class Keeper {
     }
     const definition = getCompDefAccAddress(
       DEPTH_PROGRAM_ID,
-      Buffer.from(getCompDefAccOffset(name)).readUInt32LE()
+      Buffer.from(getCompDefAccOffset(name)).readUInt32LE(),
     );
     if (!(await this.connection.getAccountInfo(definition, "confirmed"))) {
       throw new Error(`${name} computation is not deployed`);
@@ -182,7 +185,7 @@ export class Keeper {
       stage = "settle_trade";
       const quote = await this.read<QuoteState>(
         "QuoteRecord",
-        order.selectedQuote
+        order.selectedQuote,
       );
       if (!quote.market.equals(this.market)) {
         throw new Error("Selected quote belongs to another market");
@@ -253,7 +256,7 @@ export class Keeper {
   private async cancelTrade(
     orderId: PublicKey,
     order: OrderState,
-    traderAccount: PublicKey
+    traderAccount: PublicKey,
   ): Promise<KeeperProgress> {
     const makerAccount = pda([
       Buffer.from("market-account"),
@@ -278,7 +281,7 @@ export class Keeper {
   private async cancelLiquidation(
     orderId: PublicKey,
     order: OrderState,
-    targetAccount: PublicKey
+    targetAccount: PublicKey,
   ): Promise<KeeperProgress> {
     const backstopAccount = pda([
       Buffer.from("market-account"),
@@ -308,7 +311,7 @@ export class Keeper {
   private async claimStep(
     orderId: PublicKey,
     order: OrderState,
-    stage: "seal_trade_fees" | "cancel_fee_claim"
+    stage: "seal_trade_fees" | "cancel_fee_claim",
   ): Promise<KeeperProgress> {
     const protocol = await this.read<ProtocolState>("Protocol", this.protocol);
     const balances = {

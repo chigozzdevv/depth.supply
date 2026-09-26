@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "bun src/index.ts",
-    "keeper": "bun src/worker.ts",
+    "start": "bun src/server.ts",
+    "keeper": "bun src/settlement/settlement.worker.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
@@ -14,6 +14,7 @@
     "@arcium-hq/client": "0.13.2",
     "@depth/bindings": "workspace:*",
     "@depth/schema": "workspace:*",
-    "@solana/web3.js": "1.99.0"
+    "@solana/web3.js": "1.99.0",
+    "fastify": "5.12.4"
   }
 }

@@ -1,6 +1,6 @@
 import * as anchor from "@anchor-lang/core";
 import { Connection, Keypair } from "@solana/web3.js";
-import { Keeper } from "@/keeper";
+import { Keeper } from "@/settlement/settlement.keeper";
 
 const rpcUrl = process.env.DEPTH_RPC_URL;
 const secret = process.env.DEPTH_KEEPER_KEYPAIR;
@@ -9,7 +9,7 @@ if (!rpcUrl || !secret) {
 }
 
 const keypair = Keypair.fromSecretKey(
-  Uint8Array.from(JSON.parse(secret) as number[])
+  Uint8Array.from(JSON.parse(secret) as number[]),
 );
 const wallet = new anchor.Wallet(keypair);
 const keeper = new Keeper(new Connection(rpcUrl, "confirmed"), wallet);
@@ -23,7 +23,7 @@ for (;;) {
     lastError = "";
     if (progress) {
       process.stdout.write(
-        `${progress.stage} ${progress.order} ${progress.signature}\n`
+        `${progress.stage} ${progress.order} ${progress.signature}\n`,
       );
     }
   } catch (error) {

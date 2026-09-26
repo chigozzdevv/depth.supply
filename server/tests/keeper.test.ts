@@ -2,7 +2,7 @@ import { marketAddress } from "@depth/bindings";
 import { PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Keeper } from "@/keeper";
+import { Keeper } from "@/settlement/settlement.keeper";
 
 test("keeper advances only the market's pending order", async () => {
   const market = marketAddress();
@@ -91,6 +91,6 @@ test("keeper advances only the market's pending order", async () => {
   assert.equal(await keeper.advance(), undefined);
   assert.deepEqual(
     calls.map((call) => call.stage),
-    ["settle_trade", "seal_market", "seal_clearing", "seal_trade_fees"]
+    ["settle_trade", "seal_market", "seal_clearing", "seal_trade_fees"],
   );
 });

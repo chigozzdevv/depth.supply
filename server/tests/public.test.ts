@@ -1,169 +1,210 @@
-import { BorshAccountsCoder, type Idl } from "@anchor-lang/core";
-import { DEPTH_IDL, DEPTH_PROGRAM_ID, marketAddress } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID, marketAddress } from "@depth/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import { test } from "node:test";
-import { ChainReader } from "@/chain";
-import { createServer } from "@/http";
+import { buildApp } from "@/app";
+import { ChainClient } from "@/chain/chain.client";
+import { MarketService } from "@/market/market.service";
+import { OperationService } from "@/operation/operation.service";
+import { QuoteService } from "@/quote/quote.service";
+import { RecoveryService } from "@/recovery/recovery.service";
 
-test("public quote projection cannot expose encrypted prices", async () => {
-  const reader = new ChainReader({} as Connection);
-  Object.assign(reader, {
-    account: async () => ({
-      slot: 42,
-      value: {
-        maker: PublicKey.unique(),
-        operator: PublicKey.unique(),
-        market: marketAddress(),
-        status: { active: {} },
-        capacity: { toString: () => "1000" },
-        remainingCapacity: { toString: () => "500" },
-        tierCount: 1,
-        expiry: { toString: () => "200" },
-        ciphertexts: [[1, 2, 3]],
-        bid: "private",
-        ask: "private",
-      },
+function chainWithRead(
+  read: (address: PublicKey, name: string) => Promise<unknown>,
+): ChainClient {
+  const chain = new ChainClient({} as Connection);
+  return Object.assign(chain, { read });
+}
+
+test("chain reader rejects an account owned by another program", async () => {
+  const connection = {
+    getAccountInfoAndContext: async () => ({
+      context: { slot: 8 },
+      value: { owner: PublicKey.unique(), data: Buffer.alloc(8) },
     }),
-  });
-  const quote = await reader.quote(PublicKey.unique());
+  } as unknown as Connection;
+  const chain = new ChainClient(connection);
+  await assert.rejects(chain.read(PublicKey.unique(), "Market"), /not owned/);
+});
+
+test("public quote projection contains no encrypted price fields", async () => {
+  const chain = chainWithRead(async () => ({
+    slot: 42,
+    value: {
+      maker: PublicKey.unique(),
+      operator: PublicKey.unique(),
+      market: marketAddress(),
+      status: { active: {} },
+      capacity: 1_000n,
+      remainingCapacity: 500n,
+      tierCount: 1,
+      expiry: 200n,
+      ciphertexts: [[1, 2, 3]],
+      bid: "private",
+      ask: "private",
+    },
+  }));
+  const quote = await new QuoteService(chain).get(PublicKey.unique());
   assert.equal(quote?.capacity, "1000");
   assert.equal(quote?.slot, 42);
   assert.doesNotMatch(JSON.stringify(quote), /ciphertexts|private|bid|ask/);
 });
 
-test("market projection identifies the pending onchain workflow", async () => {
+test("market and recovery projections expose only public state", async () => {
   const order = PublicKey.unique();
-  const reader = new ChainReader({} as Connection);
-  Object.assign(reader, {
-    account: async () => ({
-      slot: 82,
-      value: {
-        status: { active: {} },
-        revision: { toString: () => "3" },
-        settlementMint: PublicKey.unique(),
-        oraclePriceE8: { toString: () => "20000000000" },
-        oracleTimestamp: { toString: () => "100" },
-        fundingIndex: { toString: () => "0" },
-        pendingOrder: order,
-        config: {
-          tradeFeeBps: 5,
-          insuranceFeeBps: 1,
-          initialMarginBps: 1_000,
-          maintenanceMarginBps: 500,
-        },
-      },
-    }),
-  });
-  const market = await reader.market();
-  assert.equal(market?.pending_order, order.toBase58());
-  assert.equal(market?.slot, 82);
-});
-
-test("public recovery and winddown projections follow program accounts", async () => {
-  const maker = PublicKey.unique();
-  const reader = new ChainReader({} as Connection);
-  Object.assign(reader, {
-    account: async (_address: PublicKey, name: string) => ({
-      slot: 91,
-      value:
-        name === "RecoveryConfig"
+  const signer = PublicKey.unique();
+  const chain = chainWithRead(async (_address, name) => ({
+    slot: 91,
+    value:
+      name === "Market"
+        ? {
+            status: { active: {} },
+            revision: 3n,
+            settlementMint: PublicKey.unique(),
+            oraclePriceE8: 20_000_000_000n,
+            oracleTimestamp: 100n,
+            fundingIndex: 0n,
+            pendingOrder: order,
+            config: {
+              tradeFeeBps: 5,
+              insuranceFeeBps: 1,
+              initialMarginBps: 1_000,
+              maintenanceMarginBps: 500,
+            },
+          }
+        : name === "RecoveryConfig"
           ? {
               market: marketAddress(),
               recoveryKey: new Array(32).fill(7),
-              signers: new Array(5).fill(maker),
+              signers: new Array(5).fill(signer),
               accountCount: 2,
             }
           : {
               market: marketAddress(),
-              priceE8: { toString: () => "20000000000" },
-              fundingIndex: { toString: () => "3" },
+              priceE8: 20_000_000_000n,
+              fundingIndex: 3n,
               expectedAccounts: 2,
               revealedAccounts: 1,
               paidAccounts: 0,
-              grossPositive: { toString: () => "1000" },
-              payoutPool: { toString: () => "900" },
-              remainingPool: { toString: () => "900" },
+              grossPositive: 1_000n,
+              payoutPool: 900n,
+              remainingPool: 900n,
               finalized: false,
               recoveryPrivateKey: "must-not-leak",
             },
-    }),
-  });
-  const recovery = await reader.recovery();
-  assert.equal(recovery?.threshold, 3);
-  assert.equal(recovery?.account_count, 2);
-  const winddown = await reader.winddown();
+  }));
+  const market = await new MarketService(chain).get();
+  assert.equal(market?.pending_order, order.toBase58());
+  const recovery = new RecoveryService(chain);
+  assert.equal((await recovery.config())?.threshold, 3);
+  const winddown = await recovery.winddown();
   assert.equal(winddown?.revealed_accounts, 1);
   assert.doesNotMatch(JSON.stringify(winddown), /recoveryPrivateKey/);
 });
 
-test("operation status is read from the program account", async () => {
-  const coder = new BorshAccountsCoder(DEPTH_IDL as Idl);
-  const discriminator = coder.accountDiscriminator("OrderRecord");
-  const connection = {
-    getAccountInfoAndContext: async () => ({
-      context: { slot: 77 },
+test("operation projection preserves terminal outcomes and checks market identity", async () => {
+  const trader = PublicKey.unique();
+  const order = PublicKey.unique();
+  let currentMarket = marketAddress();
+  const chain = Object.assign(new ChainClient({} as Connection), {
+    identify: async () => ({
+      name: "OrderRecord",
+      slot: 77,
       value: {
-        owner: DEPTH_PROGRAM_ID,
-        data: Buffer.concat([discriminator, Buffer.alloc(16)]),
-      },
-    }),
-  } as unknown as Connection;
-  const reader = new ChainReader(connection);
-  Object.assign(reader, {
-    coder: {
-      accountDiscriminator: (name: string) => coder.accountDiscriminator(name),
-      decode: () => ({
         kind: { trade: {} },
         status: { filled: {} },
-        trader: PublicKey.unique(),
+        trader,
+        market: currentMarket,
         planCiphertexts: [[1, 2, 3]],
-      }),
-    },
+      },
+    }),
   });
-  const operation = await reader.operation(PublicKey.unique());
-  assert.equal(operation?.status, "finalized");
-  assert.equal(operation?.outcome, "filled");
-  assert.equal(operation?.slot, 77);
-  assert.doesNotMatch(JSON.stringify(operation), /planCiphertexts/);
+  const service = new OperationService(chain);
+  const result = await service.get(order);
+  assert.equal(result?.status, "finalized");
+  assert.equal(result?.outcome, "filled");
+  assert.doesNotMatch(JSON.stringify(result), /planCiphertexts/);
+  currentMarket = PublicKey.unique();
+  await assert.rejects(service.get(order), /another market/);
 });
 
-test("HTTP routes return public chain snapshots and reject invalid identifiers", async () => {
-  const reader = {
-    market: async () => undefined,
-    recovery: async () => undefined,
-    winddown: async () => undefined,
-    quote: async () => undefined,
-    app: async () => undefined,
-    operation: async () => undefined,
-  } as unknown as ChainReader;
-  const server = createServer(reader);
-  const request = (method: string, url: string) =>
-    new Promise<{ status: number; body: unknown }>((resolve) => {
-      let status = 0;
-      server.emit(
-        "request",
-        { method, url } as IncomingMessage,
-        {
-          writeHead(code: number) {
-            status = code;
-          },
-          end(body: string) {
-            resolve({ status, body: JSON.parse(body) });
-          },
-        } as ServerResponse
-      );
-    });
-  assert.deepEqual(await request("GET", "/v1/markets"), {
-    status: 200,
-    body: { markets: [] },
+test("Fastify routes validate identifiers and return chain snapshots", async () => {
+  const chain = chainWithRead(async () => undefined);
+  const app = buildApp(chain, false);
+  try {
+    assert.deepEqual((await app.inject("/v1/markets")).json(), { markets: [] });
+    assert.equal((await app.inject("/v1/markets")).statusCode, 200);
+    assert.equal((await app.inject("/v1/quotes/invalid")).statusCode, 400);
+    assert.equal((await app.inject("/v1/markets/BTC-USD")).statusCode, 404);
+    assert.equal(
+      (await app.inject("/v1/markets/SOL-USD/winddown")).statusCode,
+      404,
+    );
+    assert.equal((await app.inject("/v1/quotes/%2F")).statusCode, 400);
+    assert.equal(
+      (await app.inject({ method: "HEAD", url: "/v1/markets" })).statusCode,
+      200,
+    );
+    assert.equal(
+      (await app.inject({ method: "OPTIONS", url: "/v1/markets" })).statusCode,
+      204,
+    );
+    assert.equal(
+      (await app.inject({ method: "POST", url: "/v1/markets" })).statusCode,
+      404,
+    );
+  } finally {
+    await app.close();
+  }
+});
+
+test("Fastify sends only the quote's public projection and masks RPC errors", async () => {
+  const id = PublicKey.unique();
+  let failing = false;
+  const chain = chainWithRead(async () => {
+    if (failing) throw new Error("private RPC diagnostic");
+    return {
+      slot: 22,
+      value: {
+        maker: PublicKey.unique(),
+        operator: PublicKey.unique(),
+        market: marketAddress(),
+        status: { active: {} },
+        capacity: 1_000n,
+        remainingCapacity: 800n,
+        tierCount: 1,
+        expiry: 999n,
+        ciphertexts: "must-not-leak",
+      },
+    };
   });
-  assert.equal((await request("GET", "/v1/quotes/invalid")).status, 400);
-  assert.equal((await request("GET", "/v1/markets/BTC-USD")).status, 404);
-  assert.equal(
-    (await request("GET", "/v1/markets/SOL-USD/winddown")).status,
-    404
+  const app = buildApp(chain, false);
+  try {
+    const response = await app.inject(`/v1/quotes/${id.toBase58()}`);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().remaining_capacity, "800");
+    assert.doesNotMatch(response.body, /ciphertexts|must-not-leak/);
+
+    failing = true;
+    const error = await app.inject(`/v1/quotes/${id.toBase58()}`);
+    assert.equal(error.statusCode, 503);
+    assert.deepEqual(error.json(), { error: "rpc_unavailable" });
+    assert.doesNotMatch(error.body, /private RPC diagnostic/);
+  } finally {
+    await app.close();
+  }
+});
+
+test("chain reader identifies only Depth account discriminators", async () => {
+  const connection = {
+    getAccountInfoAndContext: async () => ({
+      context: { slot: 9 },
+      value: { owner: DEPTH_PROGRAM_ID, data: Buffer.alloc(16) },
+    }),
+  } as unknown as Connection;
+  const result = await new ChainClient(connection).identify(
+    PublicKey.unique(),
+    ["OrderRecord"],
   );
-  assert.equal((await request("POST", "/v1/markets")).status, 405);
+  assert.equal(result, undefined);
 });
