@@ -184,11 +184,6 @@ pub fn view_market_callback_handler(
         ErrorCode::WrongMarket
     );
     require_keys_eq!(
-        view.owner,
-        ctx.accounts.market_account.owner,
-        ErrorCode::WrongViewKey
-    );
-    require_keys_eq!(
         view.pending_computation,
         ctx.accounts.computation_account.key(),
         ErrorCode::WrongPendingComputation

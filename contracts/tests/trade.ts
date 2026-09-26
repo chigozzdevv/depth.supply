@@ -583,6 +583,38 @@ describe("confidential trade settlement", () => {
         grant: operatorGrant,
       })
       .rpc();
+    const marketOperatorNonce = new anchor.BN(902);
+    const [marketOperatorView] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("market-view"),
+        makerState.marketAccount.toBuffer(),
+        marketOperatorNonce.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    );
+    const marketOperatorPrivate = x25519.utils.randomSecretKey();
+    const marketOperatorKey = Array.from(
+      x25519.getPublicKey(marketOperatorPrivate)
+    );
+    offset = harness.offset();
+    await program.methods
+      .requestMarketView(offset, marketOperatorNonce, marketOperatorKey)
+      .accountsPartial({
+        ...harness.queue(offset, "view_market"),
+        payer: operator.publicKey,
+        market,
+        grant: operatorGrant,
+        marketAccount: makerState.marketAccount,
+        view: marketOperatorView,
+      })
+      .signers([operator])
+      .rpc(options);
+    await harness.finalize(offset);
+    const delegatedView = await program.account.marketView.fetch(
+      marketOperatorView
+    );
+    expect(delegatedView.status).to.deep.equal({ ready: {} });
+    expect(delegatedView.owner.equals(operator.publicKey)).to.equal(true);
     const claimFees = async (filledOrder: PublicKey) => {
       const claimOffset = harness.offset();
       await program.methods
