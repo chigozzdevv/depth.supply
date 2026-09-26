@@ -3,11 +3,11 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildApp } from "@/app";
-import { ChainClient } from "@/chain/chain.client";
-import { MarketService } from "@/market/market.service";
-import { OperationService } from "@/operation/operation.service";
-import { QuoteService } from "@/quote/quote.service";
-import { RecoveryService } from "@/recovery/recovery.service";
+import { ChainClient } from "@/shared/chain/chain.client";
+import { MarketService } from "@/features/market/market.service";
+import { OperationService } from "@/features/operation/operation.service";
+import { QuoteService } from "@/features/quote/quote.service";
+import { RecoveryService } from "@/features/recovery/recovery.service";
 
 function chainWithRead(
   read: (address: PublicKey, name: string) => Promise<unknown>,

@@ -1208,6 +1208,8 @@ depth.supply/
   packages/maker-sdk/       maker quote and risk client
   client/                   Depth-hosted trade and maker interfaces
   server/                   public reads and permissionless settlement keeper
+    src/features/           app, market, quote, operation, recovery, settlement
+    src/shared/             chain access, configuration, and HTTP helpers
   scripts/                  build, deployment, and verification commands
 ~~~
 

@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "bun src/server.ts",
-    "keeper": "bun src/settlement/settlement.worker.ts",
+    "keeper": "bun src/features/settlement/settlement.worker.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },

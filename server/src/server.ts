@@ -1,7 +1,7 @@
 import { Connection } from "@solana/web3.js";
 import { buildApp } from "@/app";
-import { ChainClient } from "@/chain/chain.client";
-import { serverConfig } from "@/config/env";
+import { ChainClient } from "@/shared/chain/chain.client";
+import { serverConfig } from "@/shared/config/env";
 
 async function main(): Promise<void> {
   const config = serverConfig();

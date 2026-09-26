@@ -10,8 +10,6 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/depth": ["../packages/bindings/src/depth.ts"],
-      "@/depth.json": ["../packages/bindings/src/depth.json"],
       "@/*": ["src/*"]
     },
     "types": ["node"]

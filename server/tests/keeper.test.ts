@@ -2,7 +2,7 @@ import { marketAddress } from "@depth/bindings";
 import { PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { Keeper } from "@/settlement/settlement.keeper";
+import { Keeper } from "@/features/settlement/settlement.keeper";
 
 test("keeper advances only the market's pending order", async () => {
   const market = marketAddress();
