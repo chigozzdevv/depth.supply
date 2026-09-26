@@ -61,6 +61,43 @@ test("market projection identifies the pending onchain workflow", async () => {
   assert.equal(market?.slot, 82);
 });
 
+test("public recovery and winddown projections follow program accounts", async () => {
+  const maker = PublicKey.unique();
+  const reader = new ChainReader({} as Connection);
+  Object.assign(reader, {
+    account: async (_address: PublicKey, name: string) => ({
+      slot: 91,
+      value:
+        name === "RecoveryConfig"
+          ? {
+              market: marketAddress(),
+              recoveryKey: new Array(32).fill(7),
+              signers: new Array(5).fill(maker),
+              accountCount: 2,
+            }
+          : {
+              market: marketAddress(),
+              priceE8: { toString: () => "20000000000" },
+              fundingIndex: { toString: () => "3" },
+              expectedAccounts: 2,
+              revealedAccounts: 1,
+              paidAccounts: 0,
+              grossPositive: { toString: () => "1000" },
+              payoutPool: { toString: () => "900" },
+              remainingPool: { toString: () => "900" },
+              finalized: false,
+              recoveryPrivateKey: "must-not-leak",
+            },
+    }),
+  });
+  const recovery = await reader.recovery();
+  assert.equal(recovery?.threshold, 3);
+  assert.equal(recovery?.account_count, 2);
+  const winddown = await reader.winddown();
+  assert.equal(winddown?.revealed_accounts, 1);
+  assert.doesNotMatch(JSON.stringify(winddown), /recoveryPrivateKey/);
+});
+
 test("operation status is read from the program account", async () => {
   const coder = new BorshAccountsCoder(DEPTH_IDL as Idl);
   const discriminator = coder.accountDiscriminator("OrderRecord");
@@ -95,6 +132,8 @@ test("operation status is read from the program account", async () => {
 test("HTTP routes return public chain snapshots and reject invalid identifiers", async () => {
   const reader = {
     market: async () => undefined,
+    recovery: async () => undefined,
+    winddown: async () => undefined,
     quote: async () => undefined,
     app: async () => undefined,
     operation: async () => undefined,
@@ -122,5 +161,9 @@ test("HTTP routes return public chain snapshots and reject invalid identifiers",
   });
   assert.equal((await request("GET", "/v1/quotes/invalid")).status, 400);
   assert.equal((await request("GET", "/v1/markets/BTC-USD")).status, 404);
+  assert.equal(
+    (await request("GET", "/v1/markets/SOL-USD/winddown")).status,
+    404
+  );
   assert.equal((await request("POST", "/v1/markets")).status, 405);
 });

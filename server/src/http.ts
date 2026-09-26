@@ -50,6 +50,28 @@ export function createServer(reader: ChainReader): Server {
         send(market ? 200 : 404, market ?? { error: "not_found" });
         return;
       }
+      if (
+        parts.length === 4 &&
+        parts[0] === "v1" &&
+        parts[1] === "markets" &&
+        parts[2] === SOL_USD_MARKET_ID &&
+        parts[3] === "recovery"
+      ) {
+        const recovery = await reader.recovery();
+        send(recovery ? 200 : 404, recovery ?? { error: "not_found" });
+        return;
+      }
+      if (
+        parts.length === 4 &&
+        parts[0] === "v1" &&
+        parts[1] === "markets" &&
+        parts[2] === SOL_USD_MARKET_ID &&
+        parts[3] === "winddown"
+      ) {
+        const winddown = await reader.winddown();
+        send(winddown ? 200 : 404, winddown ?? { error: "not_found" });
+        return;
+      }
       if (parts.length === 3 && parts[0] === "v1" && parts[1] === "quotes") {
         const address = key(parts[2]);
         if (!address) return send(400, { error: "invalid_address" });

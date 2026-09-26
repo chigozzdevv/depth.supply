@@ -11,6 +11,8 @@ import type {
   PublicApp,
   PublicMarket,
   PublicQuote,
+  PublicRecovery,
+  PublicWinddown,
 } from "@depth/schema";
 import { Connection, PublicKey } from "@solana/web3.js";
 
@@ -60,6 +62,24 @@ type OrderData = {
 
 type DepositData = { status: EnumValue; owner: PublicKey };
 type MarginData = { status: EnumValue; owner: PublicKey };
+type RecoveryData = {
+  market: PublicKey;
+  recoveryKey: number[];
+  signers: PublicKey[];
+  accountCount: number;
+};
+type WinddownData = {
+  market: PublicKey;
+  priceE8: NumberValue;
+  fundingIndex: NumberValue;
+  expectedAccounts: number;
+  revealedAccounts: number;
+  paidAccounts: number;
+  grossPositive: NumberValue;
+  payoutPool: NumberValue;
+  remainingPool: NumberValue;
+  finalized: boolean;
+};
 
 const operationAccounts = [
   "OrderRecord",
@@ -123,6 +143,54 @@ export class ChainReader {
       ...(!value.pendingOrder.equals(PublicKey.default)
         ? { pending_order: value.pendingOrder.toBase58() }
         : {}),
+      slot,
+    };
+  }
+
+  async recovery(): Promise<PublicRecovery | undefined> {
+    const market = marketAddress(this.programId);
+    const [address] = PublicKey.findProgramAddressSync(
+      [Buffer.from("recovery-config"), market.toBuffer()],
+      this.programId
+    );
+    const account = await this.account<RecoveryData>(address, "RecoveryConfig");
+    if (!account) return undefined;
+    if (!account.value.market.equals(market)) {
+      throw new Error("Recovery config belongs to another market");
+    }
+    return {
+      market_id: SOL_USD_MARKET_ID,
+      recovery_key: Buffer.from(account.value.recoveryKey).toString("hex"),
+      signers: account.value.signers.map((signer) => signer.toBase58()),
+      threshold: 3,
+      account_count: account.value.accountCount,
+      slot: account.slot,
+    };
+  }
+
+  async winddown(): Promise<PublicWinddown | undefined> {
+    const market = marketAddress(this.programId);
+    const [address] = PublicKey.findProgramAddressSync(
+      [Buffer.from("winddown"), market.toBuffer()],
+      this.programId
+    );
+    const account = await this.account<WinddownData>(address, "Winddown");
+    if (!account) return undefined;
+    if (!account.value.market.equals(market)) {
+      throw new Error("Winddown belongs to another market");
+    }
+    const { value, slot } = account;
+    return {
+      market_id: SOL_USD_MARKET_ID,
+      price_e8: numberString(value.priceE8),
+      funding_index: numberString(value.fundingIndex),
+      expected_accounts: value.expectedAccounts,
+      revealed_accounts: value.revealedAccounts,
+      paid_accounts: value.paidAccounts,
+      gross_positive: numberString(value.grossPositive),
+      payout_pool: numberString(value.payoutPool),
+      remaining_pool: numberString(value.remainingPool),
+      finalized: value.finalized,
       slot,
     };
   }

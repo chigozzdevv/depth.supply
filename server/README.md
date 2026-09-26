@@ -8,8 +8,13 @@ Run `pnpm install` from the repository root, then set `SOLANA_RPC_URL` and run
 The server uses Bun to run TypeScript with the repository's `@/` imports.
 
 The read routes are `GET /v1/markets`, `/v1/markets/SOL-USD`,
+`/v1/markets/SOL-USD/recovery`, `/v1/markets/SOL-USD/winddown`,
 `/v1/quotes/{address}`, `/v1/operations/{address}`, and `/v1/apps/{address}`.
 Responses contain a confirmed Solana slot and only public account fields.
+The recovery route publishes the market's five committee signers, three-signature
+threshold, recovery public key, and registered account count. The winddown
+route reports the fixed settlement price, reveal progress, and remaining payout
+pool once an emergency settlement begins.
 
 ## Settlement keeper
 
