@@ -13,13 +13,9 @@ failure policy. An app that integrates Depth routes a trade into Depth's
 clearing system. Its existing venue may continue to serve other trades, but it
 does not own a Depth position.
 
-This is a proposed protocol specification. The contracts currently implement
-draft market parameters, Pyth price validation, a deposit vault, encrypted
-free balances, market collateral accounts, and recoverable collateral
-transfers. They do not yet clear perpetual trades. The design below
-distinguishes features that current Arcium and Solana documentation supports
-from rules that Depth must implement and prove. No market should claim live
-position privacy or safe clearing until the acceptance checks at the end pass.
+This protocol specification defines the required trading, custody, privacy,
+and recovery behavior. No market should claim live position privacy or safe
+clearing until the acceptance checks at the end pass.
 
 ## People and terms
 
@@ -738,11 +734,15 @@ an empty book. Emergency settlement is a distinct path below.
 ## Funding and prices
 
 The market configuration pins the funding rule. A public cumulative index
-records each completed funding interval. The circuit applies the difference
-between the current index and each account's encrypted checkpoint. Long
-payments equal short receipts after any published rounding rule. A funding
-update cannot draw new tokens from outside the vault or change the market's
-accepted formula without a versioned transition.
+records each completed funding interval. A verified oracle update advances the
+index once when the next interval is due. If two intervals elapse without an
+advance, the market pauses, skips those intervals, and resumes a fresh funding
+schedule from its latest verified oracle update. Missed intervals never produce
+retroactive charges. The circuit applies the difference between the current
+index and each account's encrypted checkpoint. Long payments equal short
+receipts after any published rounding rule. A funding update cannot draw new
+tokens from outside the vault or change the market's accepted formula without a
+versioned transition.
 
 The oracle marks equity and drives liquidation. It does not automatically
 become the execution price. Entry and normal close prices come from maker
@@ -1214,9 +1214,11 @@ The flow is specified from app entry through maker exit. The following
 choices are deliberately open. They need numbers, code, and tests before
 Depth can claim a production-ready market or freeze its SDK types:
 
-1. **First market economics:** Set funding formula, fee schedule, margin levels,
-   quote tiers, capacity caps, and liquidation price rule. These are
-   versioned market data, not settings an app may improvise.
+1. **First market economics:** Calibrate the funding formula, margin levels,
+   quote tiers, capacity caps, and liquidation price rule against observed
+   liquidity and Arcium costs. These are versioned market data, not settings
+   an app may improvise. The fee schedule is fixed in the Fees and losses
+   section.
 2. **Maker service quality:** Set the minimum quote hold period,
    required backstop depth, maker concentration cap, and response to
    empty or one-sided liquidity. Measure whether the side-hidden
