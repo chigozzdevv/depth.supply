@@ -1,0 +1,26 @@
+{
+  "name": "@depth/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
+    "./views": { "types": "./dist/view/view.d.ts", "default": "./dist/view/view.js" },
+    "./recovery": { "types": "./dist/recovery/recovery.d.ts", "default": "./dist/recovery/recovery.js" },
+    "./funding": { "types": "./dist/account/funding.d.ts", "default": "./dist/account/funding.js" }
+  },
+  "scripts": {
+    "build": "node ../../scripts/build-package.mjs sdk",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "@anchor-lang/core": "1.0.2",
+    "@arcium-hq/client": "0.13.2",
+    "@depth/bindings": "workspace:*",
+    "@depth/schema": "workspace:*",
+    "@solana/web3.js": "1.99.0"
+  }
+}

@@ -2,6 +2,7 @@
   "name": "depth-workspace",
   "private": true,
   "scripts": {
+    "build": "node scripts/build-package.mjs bindings schema sdk maker-sdk",
     "sync:bindings": "node scripts/sync-bindings.mjs",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"
