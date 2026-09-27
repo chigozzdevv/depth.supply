@@ -95,3 +95,25 @@ export function transferAddress(
     programId,
   )[0];
 }
+
+export function withdrawalAddress(
+  owner: PublicKey,
+  nonce: bigint,
+  programId = DEPTH_PROGRAM_ID,
+): PublicKey {
+  const bytes = Buffer.alloc(8);
+  bytes.writeBigUInt64LE(nonce);
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("withdrawal"),
+      balanceAddress(owner, programId).toBuffer(),
+      bytes,
+    ],
+    programId,
+  )[0];
+}
+
+export { circuits } from "@/circuits";
+
+export { computations } from "@/computations";
+export { accountOffsets, enumValues } from "@/layout";
