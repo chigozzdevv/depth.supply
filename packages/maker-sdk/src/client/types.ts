@@ -1,7 +1,9 @@
+import type { DeploymentPolicy } from "@depth/sdk";
 import type * as anchor from "@anchor-lang/core";
 import type { Connection, PublicKey } from "@solana/web3.js";
 
 export type MakerOptions = {
+  deployment: DeploymentPolicy;
   wallet: anchor.Wallet;
   maker: PublicKey;
   connection: Connection;
@@ -13,7 +15,7 @@ export type QuoteInput = {
   tiers: QuoteTier[];
   maxCapacity: bigint;
   expiresAt: number;
-  clientNonce?: bigint;
+  clientNonce: bigint;
 };
 
 export type QuoteState = {
@@ -35,6 +37,7 @@ export type MarketState = {
   vault: PublicKey;
   oracleTimestamp: anchor.BN;
   activeQuoteCount: number;
+  activeQuotes: PublicKey[];
   quotedNotional: anchor.BN;
   config: {
     quoteTiers: anchor.BN[];

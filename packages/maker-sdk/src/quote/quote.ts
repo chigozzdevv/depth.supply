@@ -142,6 +142,8 @@ export class QuoteHandle {
     } else if (snapshot.status !== "closing") {
       throw new Error("Quote cannot be cancelled in its current state");
     }
+    const current = await this.status();
+    if (current.attachedOrders > 0) return current;
     const offset = new anchor.BN(randomBytes(8), "le");
     const queue = await this.client.queue("release_quote", offset);
     this.releaseSignature = await this.client.program.methods

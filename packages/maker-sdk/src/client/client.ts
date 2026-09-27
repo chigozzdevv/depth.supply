@@ -16,8 +16,9 @@ import { DepthRecovery } from "@depth/sdk/recovery";
 import type { FillSnapshot, PositionSnapshot } from "@depth/sdk/views";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
-import { FundingClient } from "@depth/sdk";
+import { FundingClient, verifyDeployment } from "@depth/sdk";
 import { mxeAccount, queueAccounts } from "@/chain/arcium";
+import { FillHistory } from "@/fill/history";
 import { QuoteHandle } from "@/quote/quote";
 import type {
   GrantState,
@@ -83,6 +84,7 @@ export class MakerClient {
 
   static async create(options: MakerOptions): Promise<MakerClient> {
     const client = new MakerClient(options);
+    await verifyDeployment(client.provider, options.deployment);
     const [programInfo, mxe, market, protocol] = await Promise.all([
       options.connection.getAccountInfo(DEPTH_PROGRAM_ID, "confirmed"),
       mxeAccount(client.provider).fetch(getMXEAccAddress(DEPTH_PROGRAM_ID)),
@@ -115,7 +117,7 @@ export class MakerClient {
     const account = client.program.coder.accounts.decode<{
       owner: PublicKey;
       market: PublicKey;
-    }>("MarketAccount", accountInfo.data);
+    }>("marketAccount", accountInfo.data);
     if (
       !account.owner.equals(options.maker) ||
       !account.market.equals(client.marketAddress)
@@ -126,15 +128,23 @@ export class MakerClient {
   }
 
   readonly account = {
+    cancelOpen: () => this.funding.cancelOpenBalance(),
     open: async () => this.funding.openBalance(),
     openMarket: async () => this.funding.openMarket(),
-    deposit: async (source: PublicKey, amount: bigint) =>
-      this.funding.deposit(source, amount),
+    deposit: async (source: PublicKey, amount: bigint, clientNonce: bigint) =>
+      this.funding.deposit(source, amount, clientNonce),
+    withdrawalHandle: (clientNonce: bigint) =>
+      this.funding.withdrawalHandle(clientNonce),
     depositHandle: (nonce: bigint) => this.funding.depositHandle(nonce),
-    withdraw: async (destination: PublicKey, amount: bigint) =>
-      this.funding.withdraw(destination, amount),
-    allocate: async (amount: bigint) => this.funding.allocate(amount),
-    release: async (amount: bigint) => this.funding.release(amount),
+    withdraw: async (
+      destination: PublicKey,
+      amount: bigint,
+      clientNonce: bigint,
+    ) => this.funding.withdraw(destination, amount, clientNonce),
+    allocate: async (amount: bigint, clientNonce: bigint) =>
+      this.funding.allocate(amount, clientNonce),
+    release: async (amount: bigint, clientNonce: bigint) =>
+      this.funding.release(amount, clientNonce),
     transferHandle: (nonce: bigint) => this.funding.transferHandle(nonce),
   };
 
@@ -163,7 +173,10 @@ export class MakerClient {
     if (!info || !info.owner.equals(DEPTH_PROGRAM_ID)) {
       throw new Error(`${name} account is unavailable`);
     }
-    return this.program.coder.accounts.decode<T>(name, info.data);
+    return this.program.coder.accounts.decode<T>(
+      name[0].toLowerCase() + name.slice(1),
+      info.data,
+    );
   }
 
   async quoteState(id: PublicKey): Promise<QuoteState> {
@@ -254,6 +267,17 @@ export class MakerClient {
       input: QuoteInput,
       options: { prepareTimeoutMs?: number } = {},
     ): Promise<QuoteHandle> => {
+      const quoteNonce = u64(input.clientNonce, "clientNonce");
+      const id = pda([
+        Buffer.from("quote"),
+        this.marketAddress.toBuffer(),
+        this.options.maker.toBuffer(),
+        quoteNonce.toArrayLike(Buffer, "le", 8),
+      ]);
+      if (await this.options.connection.getAccountInfo(id, "confirmed")) {
+        await this.quoteState(id);
+        return this.quote.get(id);
+      }
       const market = await this.read<MarketState>("Market", this.marketAddress);
       this.validateQuote(input, market);
       const grant = await this.grantFor(input.maxCapacity, input.expiresAt);
@@ -280,16 +304,6 @@ export class MakerClient {
         ...Array.from({ length: 4 }, (_, i) => input.tiers[i]?.askE8 ?? 0n),
       ];
       const ciphertexts = cipher.encrypt(prices, inputNonce);
-      const quoteNonce =
-        input.clientNonce === undefined
-          ? offset()
-          : u64(input.clientNonce, "clientNonce");
-      const id = pda([
-        Buffer.from("quote"),
-        this.marketAddress.toBuffer(),
-        this.options.maker.toBuffer(),
-        quoteNonce.toArrayLike(Buffer, "le", 8),
-      ]);
       const computationOffset = offset();
       const queue = await this.queue("prepare_quote", computationOffset);
       const signature = await this.program.methods
@@ -319,6 +333,40 @@ export class MakerClient {
       return handle;
     },
     get: (id: PublicKey): QuoteHandle => new QuoteHandle(id, undefined, this),
+    active: async (): Promise<QuoteHandle[]> => {
+      const market = await this.read<MarketState>("Market", this.marketAddress);
+      const handles: QuoteHandle[] = [];
+      for (const id of market.activeQuotes.slice(0, market.activeQuoteCount)) {
+        const quote = await this.read<QuoteState>("QuoteRecord", id);
+        if (quote.maker.equals(this.options.maker))
+          handles.push(this.quote.get(id));
+      }
+      return handles;
+    },
+    replace: async (
+      prior: PublicKey,
+      input: QuoteInput,
+      options: { timeoutMs: number },
+    ): Promise<QuoteHandle> => {
+      const previous = this.quote.get(prior);
+      const snapshot = await previous.status();
+      if (
+        !["active", "closing", "releasing", "cancelled", "filled"].includes(
+          snapshot.status,
+        )
+      ) {
+        throw new Error("Prior quote cannot be replaced in its current state");
+      }
+      if (snapshot.status === "active" || snapshot.status === "closing")
+        await previous.cancel();
+      const final = await previous.wait(options);
+      if (final.status !== "cancelled" && final.status !== "filled") {
+        throw new Error(
+          "Prior quote still has reserved capital or attached orders; resume replacement with the same IDs",
+        );
+      }
+      return this.quote.publish(input);
+    },
   };
 
   private async viewGrant(): Promise<PublicKey | undefined> {
@@ -440,6 +488,11 @@ export class MakerClient {
   }
 
   readonly position = {
+    cancelOpen: () => this.funding.cancelOpenMarket(),
+    addMargin: (amount: bigint, clientNonce: bigint) =>
+      this.funding.allocate(amount, clientNonce),
+    removeMargin: (amount: bigint, clientNonce: bigint) =>
+      this.funding.release(amount, clientNonce),
     summary: async (
       options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
     ): Promise<PositionSnapshot> => {
@@ -449,6 +502,10 @@ export class MakerClient {
   };
 
   readonly fills = {
+    list: (options?: Parameters<FillHistory["list"]>[0]) =>
+      new FillHistory(this).list(options),
+    subscribe: (...args: Parameters<FillHistory["subscribe"]>) =>
+      new FillHistory(this).subscribe(...args),
     get: async (
       order: PublicKey,
       options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
