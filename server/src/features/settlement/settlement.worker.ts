@@ -6,6 +6,7 @@ import { keeperConfig } from "@/shared/config/env";
 import { OracleService } from "@/features/oracle/oracle.service";
 import { RiskService } from "@/features/risk/risk.service";
 import { FeeService } from "@/features/fee/fee.service";
+import { FundingService } from "@/features/funding/funding.service";
 
 const config = keeperConfig();
 const wallet = new anchor.Wallet(config.keypair);
@@ -13,8 +14,24 @@ const keeper = new Keeper(new Connection(config.rpcUrl, "confirmed"), wallet);
 const oracle = new OracleService(keeper, config.priceAccount);
 const risk = new RiskService(keeper);
 const fees = new FeeService(keeper);
+const funding = new FundingService(keeper);
+const services = [
+  { advance: () => funding.advance() },
+  {
+    advance: async () => {
+      const signature = await risk.advance();
+      return signature ? { stage: "liquidate", signature } : undefined;
+    },
+  },
+  {
+    advance: async () => {
+      const signature = await fees.advance();
+      return signature ? { stage: "claim_trade_fees", signature } : undefined;
+    },
+  },
+];
 let lastOracle = 0;
-let riskFirst = true;
+let serviceOffset = 0;
 let running = true;
 process.once("SIGINT", () => {
   running = false;
@@ -34,18 +51,16 @@ while (running) {
         lastOracle = Date.now();
         if (signature) process.stdout.write(`refresh_oracle ${signature}\n`);
       }
-      const services = riskFirst ? [risk, fees] : [fees, risk];
-      riskFirst = !riskFirst;
-      for (const service of services) {
-        const signature = await service.advance();
-        if (signature) {
-          process.stdout.write(
-            `${
-              service === risk ? "liquidate" : "claim_trade_fees"
-            } ${signature}\n`,
-          );
+      for (let index = 0; index < services.length; index++) {
+        const position = (serviceOffset + index) % services.length;
+        const result = await services[position].advance();
+        if (result) {
+          serviceOffset = (position + 1) % services.length;
+          process.stdout.write(`${result.stage} ${result.signature}\n`);
           break;
         }
+        if (index === services.length - 1)
+          serviceOffset = (serviceOffset + 1) % services.length;
       }
     }
     delayMs = 1_000;
