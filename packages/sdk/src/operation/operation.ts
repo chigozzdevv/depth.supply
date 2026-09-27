@@ -1,8 +1,12 @@
 import * as anchor from "@anchor-lang/core";
-import { SOL_USD_MARKET_ID } from "@depth/bindings";
+import {
+  marketAccountAddress,
+  marketAddress,
+  SOL_USD_MARKET_ID,
+} from "@depth/bindings";
 import type { OperationSnapshot } from "@depth/schema";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { DepthError } from "@/operation/error";
+import { DepthError, submissionError } from "@/operation/error";
 import type { OrderState } from "@/client/types";
 import type { DepthView, FillSnapshot } from "@/view/view";
 
@@ -23,7 +27,7 @@ export class DepthOperation {
     private readonly requestFillView?: (order: PublicKey) => Promise<DepthView>,
   ) {}
 
-  async status(): Promise<OperationSnapshot> {
+  private async readOrder(): Promise<{ order: OrderState; slot: number }> {
     const response = await this.connection.getAccountInfoAndContext(
       this.id,
       "confirmed",
@@ -52,6 +56,11 @@ export class DepthOperation {
       "orderRecord",
       response.value.data,
     );
+    return { order, slot: response.context.slot };
+  }
+
+  async status(): Promise<OperationSnapshot> {
+    const { order, slot } = await this.readOrder();
     const state = enumName(order.status);
     return {
       id: this.id.toBase58(),
@@ -67,8 +76,49 @@ export class DepthOperation {
       ...(state === "filled" ? { outcome: "filled" as const } : {}),
       ...(state === "cancelled" ? { outcome: "cancelled" as const } : {}),
       ...(this.signature ? { tx_signature: this.signature } : {}),
-      slot: response.context.slot,
+      slot,
     };
+  }
+
+  async cancel(): Promise<OperationSnapshot> {
+    const { order } = await this.readOrder();
+    const owner = (this.program.provider as anchor.AnchorProvider).wallet
+      .publicKey;
+    const state = enumName(order.status);
+    if (
+      enumName(order.kind) !== "trade" ||
+      !order.trader.equals(owner) ||
+      !order.market.equals(marketAddress(this.program.programId))
+    )
+      throw new DepthError(
+        "ORDER_CANCEL_UNAVAILABLE",
+        "validation",
+        "Only the trader can cancel an order in this market",
+        false,
+        "Restore the order with its owner wallet and network",
+        this.id.toBase58(),
+      );
+    if (state === "cancelled") return this.status();
+    if (state !== "matching" && state !== "matched")
+      throw new DepthError(
+        "ORDER_CANCEL_UNAVAILABLE",
+        "validation",
+        "This order can no longer be cancelled",
+        false,
+        "Read the current operation status",
+        this.id.toBase58(),
+      );
+    await this.program.methods
+      .cancelOrder()
+      .accountsPartial({
+        actor: owner,
+        market: order.market,
+        marketAccount: marketAccountAddress(owner, this.program.programId),
+        order: this.id,
+      })
+      .rpc({ commitment: "confirmed" })
+      .catch((error: unknown) => submissionError(this.id.toBase58(), error));
+    return this.status();
   }
 
   subscribe(

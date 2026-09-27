@@ -63,6 +63,8 @@ The requested margin must cover the fee and initial margin on newly opened expos
 
 Submission confirms the queue transaction. `order.confirm()` waits for a finalized fill and returns its order ID; it raises a typed pending or terminal error otherwise. `order.privateResult()` requests a trader-authorized encrypted fill view, decrypts it, and closes the temporary view after a successful read. A pending computation or uncertain cleanup can be retried on the same operation handle. `order.wait()` returns the latest verified snapshot after its default timeout, including a still pending order. After restarting, use `depth.trade.operation(savedNonce)` or `depth.operation(orderAddress)`. `subscribe(listener, { onError })` returns an unsubscribe function. An ambiguous submission raises `DepthError` with an operation ID and reconciliation action; keep the original nonce.
 
+`order.cancel()` cancels an expired order. If the market pauses after an active-market order has matched, it can be cancelled immediately so the trader can submit a fresh reduction or close. A paused-market increase is rejected by the private match check; an exit still needs a fresh oracle and an active quote.
+
 ## Collateral
 
 Open the free balance with `account.open()` and the market account with `position.open()`, then wait for their onchain statuses to become `ready`.

@@ -1,6 +1,11 @@
 import * as anchor from "@anchor-lang/core";
 import { RescueCipher, x25519 } from "@arcium-hq/client";
-import { DEPTH_PROGRAM_ID, circuits } from "@depth/bindings";
+import {
+  DEPTH_PROGRAM_ID,
+  circuits,
+  marketAccountAddress,
+  marketAddress,
+} from "@depth/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -103,7 +108,67 @@ describe("trader wire and operation lifecycle", () => {
     await assert.rejects(
       operation.confirm({ timeoutMs: 0 }),
       (error: unknown) =>
-        error instanceof Error && error.message === "Trade has not finalized yet",
+        error instanceof Error &&
+        error.message === "Trade has not finalized yet",
+    );
+  });
+
+  test("the owner cancels a matched trade through its canonical accounts", async () => {
+    const id = PublicKey.unique();
+    const owner = PublicKey.unique();
+    const market = marketAddress();
+    let trader = owner;
+    let state = "matched";
+    let submissions = 0;
+    let accounts: Record<string, PublicKey> | undefined;
+    const program = {
+      programId: DEPTH_PROGRAM_ID,
+      provider: { wallet: { publicKey: owner } },
+      coder: {
+        accounts: {
+          decode: () => ({
+            trader,
+            market,
+            kind: { trade: {} },
+            status: { [state]: {} },
+          }),
+        },
+      },
+      methods: {
+        cancelOrder: () => ({
+          accountsPartial: (value: Record<string, PublicKey>) => {
+            accounts = value;
+            return {
+              rpc: async () => {
+                submissions += 1;
+                state = "cancelled";
+                return "cancel-signature";
+              },
+            };
+          },
+        }),
+      },
+    } as unknown as anchor.Program;
+    const connection = {
+      getAccountInfoAndContext: async () => ({
+        context: { slot: 45 },
+        value: { owner: DEPTH_PROGRAM_ID, data: Buffer.alloc(8) },
+      }),
+    } as unknown as Connection;
+    const operation = new DepthOperation(id, undefined, program, connection);
+    assert.equal((await operation.cancel()).outcome, "cancelled");
+    assert.equal(submissions, 1);
+    assert.ok(accounts?.actor.equals(owner));
+    assert.ok(accounts?.marketAccount.equals(marketAccountAddress(owner)));
+    assert.ok(accounts?.order.equals(id));
+    assert.equal((await operation.cancel()).outcome, "cancelled");
+    assert.equal(submissions, 1);
+    trader = PublicKey.unique();
+    await assert.rejects(
+      operation.cancel(),
+      (error: unknown) =>
+        error instanceof DepthError &&
+        error.code === "ORDER_CANCEL_UNAVAILABLE",
     );
   });
 });
