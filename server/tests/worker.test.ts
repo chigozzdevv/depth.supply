@@ -1,0 +1,133 @@
+import { PublicKey } from "@solana/web3.js";
+import { SOL_USD_FEED_ID } from "@depth/bindings";
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { OracleService } from "@/features/oracle/oracle.service";
+import { RiskService } from "@/features/risk/risk.service";
+import { FeeService } from "@/features/fee/fee.service";
+import type { ChainSigner } from "@/shared/chain/chain.signer";
+
+const integer = (n: number) => ({
+  toNumber: () => n,
+  toString: () => String(n),
+});
+
+test("oracle updates respect the settlement lock and reject unverified feeds", async () => {
+  const data = Buffer.alloc(134);
+  Buffer.from("22f123639d7ef4cd", "hex").copy(data);
+  data[40] = 1;
+  SOL_USD_FEED_ID.copy(data, 41);
+  data.writeBigInt64LE(100n, 93);
+  let pendingOrders = 1;
+  let timestamp = 99;
+  let calls = 0;
+  const chain = {
+    read: async () => ({
+      pendingOrders,
+      status: { active: {} },
+      oracleTimestamp: integer(timestamp),
+    }),
+    connection: {
+      getAccountInfo: async () => ({
+        owner: new PublicKey("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"),
+        data,
+      }),
+    },
+    program: {
+      methods: {
+        refreshOracle: () => ({
+          accountsPartial: () => ({
+            rpc: async () => {
+              calls++;
+              return "oracle-signature";
+            },
+          }),
+        }),
+      },
+    },
+  } as unknown as ChainSigner;
+  const service = new OracleService(chain, PublicKey.unique());
+  assert.equal(await service.advance(), undefined);
+  pendingOrders = 0;
+  assert.equal(await service.advance(), "oracle-signature");
+  timestamp = 100;
+  assert.equal(await service.advance(), undefined);
+  data[40] = 0;
+  await assert.rejects(service.advance(), /verified SOL/);
+  assert.equal(calls, 1);
+});
+
+test("risk checks skip an already checked account and submit one eligible target", async () => {
+  const market = PublicKey.unique();
+  const target = PublicKey.unique();
+  const maker = PublicKey.unique();
+  const now = Math.floor(Date.now() / 1000);
+  let lastCheck = now;
+  let submissions = 0;
+  const chain = {
+    market,
+    clearing: PublicKey.unique(),
+    wallet: { publicKey: PublicKey.unique() },
+    read: async (name: string, address: PublicKey) => {
+      if (name === "Market")
+        return {
+          pendingOrders: 0,
+          status: { active: {} },
+          backstopOffer: maker,
+          oracleTimestamp: integer(now),
+          config: { maxOracleAgeSeconds: 100, maxOrderQueueSeconds: 30 },
+        };
+      if (name === "BackstopOffer")
+        return {
+          maker,
+          market,
+          status: { active: {} },
+          expiry: integer(now + 60),
+        };
+      if (name === "ClearingAccount") return { status: { ready: {} } };
+      return {
+        owner: address.equals(target) ? target : maker,
+        market,
+        status: { ready: {} },
+        lastLiquidationTimestamp: integer(lastCheck),
+      };
+    },
+    queue: async () => ({}),
+    program: {
+      programId: PublicKey.unique(),
+      methods: {
+        liquidate: () => ({
+          accountsPartial: (accounts: any) => ({
+            rpc: async () => {
+              assert.ok(accounts.trade.targetAccount.equals(target));
+              submissions++;
+              return "risk-signature";
+            },
+          }),
+        }),
+      },
+    },
+  } as unknown as ChainSigner;
+  const service = new RiskService(chain);
+  (service as any).scan = {
+    next: async () => [{ address: target, state: {} }],
+  };
+  assert.equal(await service.advance(), undefined);
+  lastCheck = now - 1;
+  assert.equal(await service.advance(), "risk-signature");
+  assert.equal(submissions, 1);
+});
+
+test("fee worker does not submit a claim until recipient balances exist", async () => {
+  const market = PublicKey.unique();
+  const chain = {
+    market,
+    read: async (name: string) =>
+      name === "Market"
+        ? { pendingOrders: 0, status: { active: {} } }
+        : { authority: PublicKey.unique() },
+    connection: { getAccountInfo: async () => null },
+  } as unknown as ChainSigner;
+  const service = new FeeService(chain);
+  assert.equal(await service.advance(), undefined);
+});

@@ -7,6 +7,7 @@ test("shared configuration validates RPC URLs and the keeper signer", () => {
   const keypair = Keypair.generate();
   const config = keeperConfig({
     DEPTH_RPC_URL: "https://rpc.example.test",
+    DEPTH_PRICE_ACCOUNT: keypair.publicKey.toBase58(),
     DEPTH_KEEPER_KEYPAIR: JSON.stringify(Array.from(keypair.secretKey)),
   });
   assert.equal(config.rpcUrl, "https://rpc.example.test");

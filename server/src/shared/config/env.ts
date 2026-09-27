@@ -1,7 +1,12 @@
-import { Keypair } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 
 export type ServerConfig = { rpcUrl: string; host: string; port: number };
-export type KeeperConfig = { rpcUrl: string; keypair: Keypair };
+export type KeeperConfig = {
+  rpcUrl: string;
+  keypair: Keypair;
+  priceAccount: PublicKey;
+  oracleIntervalMs: number;
+};
 
 function rpcUrl(value: string | undefined, name: string): string {
   if (!value) throw new Error(`${name} is required`);
@@ -38,7 +43,15 @@ export function keeperConfig(
   ) {
     throw new Error("DEPTH_KEEPER_KEYPAIR must be a 64-byte JSON array");
   }
+  if (!env.DEPTH_PRICE_ACCOUNT)
+    throw new Error("DEPTH_PRICE_ACCOUNT is required");
+  const interval = Number(env.DEPTH_ORACLE_INTERVAL_MS ?? "10000");
+  if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 60000) {
+    throw new Error("DEPTH_ORACLE_INTERVAL_MS must be between 1000 and 60000");
+  }
   return {
+    priceAccount: new PublicKey(env.DEPTH_PRICE_ACCOUNT),
+    oracleIntervalMs: interval,
     rpcUrl: url,
     keypair: Keypair.fromSecretKey(Uint8Array.from(bytes)),
   };

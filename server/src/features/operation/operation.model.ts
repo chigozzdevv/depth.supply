@@ -4,6 +4,7 @@ import type { Variant } from "@/shared/chain/chain.format";
 export const operationAccounts = [
   "OrderRecord",
   "DepositReceipt",
+  "WithdrawalReceipt",
   "QuoteRecord",
   "MarginTransfer",
 ] as const;

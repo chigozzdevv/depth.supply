@@ -31,9 +31,25 @@ export class OperationService {
           status === "filled" || status === "cancelled"
             ? "finalized"
             : status === "rejected"
-              ? "rejected"
-              : "queued",
+            ? "rejected"
+            : "queued",
         ...(status === "filled" ? { outcome: "filled" as const } : {}),
+        ...(status === "cancelled" ? { outcome: "cancelled" as const } : {}),
+      };
+    }
+    if (account.name === "WithdrawalReceipt") {
+      const receipt = account.value as DepositAccount;
+      const status = variant(receipt.status);
+      return {
+        ...base,
+        kind: "withdraw",
+        owner: receipt.owner.toBase58(),
+        status:
+          status === "paid" || status === "cancelled"
+            ? "finalized"
+            : status === "rejected"
+            ? "rejected"
+            : "queued",
         ...(status === "cancelled" ? { outcome: "cancelled" as const } : {}),
       };
     }
@@ -63,8 +79,8 @@ export class OperationService {
         status: ["active", "filled", "cancelled"].includes(status)
           ? "finalized"
           : status === "rejected"
-            ? "rejected"
-            : "queued",
+          ? "rejected"
+          : "queued",
         ...(status === "active" ? { outcome: "active" as const } : {}),
         ...(status === "cancelled" ? { outcome: "cancelled" as const } : {}),
       };
@@ -81,8 +97,8 @@ export class OperationService {
         status === "settled" || status === "refunded"
           ? "finalized"
           : status === "rejected"
-            ? "rejected"
-            : "queued",
+          ? "rejected"
+          : "queued",
       ...(status === "refunded" ? { outcome: "cancelled" as const } : {}),
     };
   }
