@@ -90,14 +90,62 @@ export const accountOffsets = {
     "version": 152,
     "status": 160,
     "bump": 161
+  },
+  "DepositReceipt": {
+    "owner": 8,
+    "nonce": 40,
+    "amount": 48,
+    "status": 56,
+    "bump": 57
+  },
+  "MarginTransfer": {
+    "owner": 8,
+    "market": 40,
+    "nonce": 72,
+    "amount": 80,
+    "to_market": 88,
+    "pending_computation": 89,
+    "status": 121,
+    "bump": 122,
+    "market_revision": 123,
+    "oracle_timestamp": 131,
+    "oracle_price_e8": 139,
+    "funding_index": 147,
+    "account_version": 163,
+    "deadline": 171
+  },
+  "OperatorGrant": {
+    "maker": 8,
+    "operator": 40,
+    "market": 72,
+    "max_capacity": 104,
+    "expires_at": 112,
+    "can_view": 120,
+    "active": 121,
+    "version": 122,
+    "bump": 130
   }
 } as const;
 export const enumValues = {
+  "DepositStatus": {
+    "Pending": 0,
+    "Crediting": 1,
+    "Credited": 2,
+    "Refunded": 3
+  },
   "FeeClaimStage": {
     "Idle": 0,
     "Computing": 1,
     "Ready": 2,
     "Sealing": 3
+  },
+  "MarginTransferStatus": {
+    "Debiting": 0,
+    "Escrow": 1,
+    "Crediting": 2,
+    "Settled": 3,
+    "Refunded": 4,
+    "Rejected": 5
   },
   "MarketAccountStatus": {
     "Opening": 0,

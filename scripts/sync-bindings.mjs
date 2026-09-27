@@ -78,6 +78,9 @@ for (const name of [
   "MarketAccount",
   "QuoteRecord",
   "WithdrawalReceipt",
+  "DepositReceipt",
+  "MarginTransfer",
+  "OperatorGrant",
 ]) {
   const type = typeByName.get(name);
   if (type?.kind !== "struct")
@@ -100,6 +103,8 @@ const variants = Object.fromEntries(
           "OrderKind",
           "FeeClaimStage",
           "MarketAccountStatus",
+          "DepositStatus",
+          "MarginTransferStatus",
         ].includes(name) &&
         type.kind === "enum" &&
         type.variants.every((variant) => !variant.fields?.length)
