@@ -1,22 +1,8 @@
 import * as anchor from "@anchor-lang/core";
-import {
-  getArciumProgram,
-  getClusterAccAddress,
-  getCompDefAccAddress,
-  getCompDefAccOffset,
-  getComputationAccAddress,
-  getExecutingPoolAccAddress,
-  getMempoolAccAddress,
-  getMXEAccAddress,
-} from "@arcium-hq/client";
-import {
-  DEPTH_IDL,
-  DEPTH_PROGRAM_ID,
-  marketAddress,
-  protocolAddress,
-} from "@depth/bindings";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
+import { ChainSigner } from "@/shared/chain/chain.signer";
 
 type MarketState = {
   pendingOrder: PublicKey;
@@ -38,7 +24,6 @@ type OrderState = {
 
 type QuoteState = { maker: PublicKey; market: PublicKey };
 type ProtocolState = { authority: PublicKey };
-type MxeState = { cluster: number; mxeProgramId: PublicKey };
 
 export type KeeperProgress = {
   order: string;
@@ -62,60 +47,7 @@ function variant(value: Record<string, unknown>): string {
   return Object.keys(value)[0] ?? "unknown";
 }
 
-export class Keeper {
-  readonly provider: anchor.AnchorProvider;
-  readonly program: anchor.Program;
-  readonly market = marketAddress();
-  readonly protocol = protocolAddress();
-  readonly clearing = pda([Buffer.from("clearing"), this.market.toBuffer()]);
-
-  constructor(
-    readonly connection: Connection,
-    readonly wallet: anchor.Wallet,
-  ) {
-    this.provider = new anchor.AnchorProvider(connection, wallet, {
-      commitment: "confirmed",
-      preflightCommitment: "confirmed",
-    });
-    this.program = new anchor.Program(DEPTH_IDL, this.provider);
-  }
-
-  async read<T>(name: string, address: PublicKey): Promise<T> {
-    const info = await this.connection.getAccountInfo(address, "confirmed");
-    if (!info || !info.owner.equals(DEPTH_PROGRAM_ID)) {
-      throw new Error(`${name} account is unavailable`);
-    }
-    return this.program.coder.accounts.decode<T>(name, info.data);
-  }
-
-  private async queue(name: string, offset: anchor.BN) {
-    const mxeAddress = getMXEAccAddress(DEPTH_PROGRAM_ID);
-    const arcium = getArciumProgram(this.provider) as unknown as {
-      account: {
-        mxeAccount: { fetch(address: PublicKey): Promise<MxeState> };
-      };
-    };
-    const mxe = await arcium.account.mxeAccount.fetch(mxeAddress);
-    if (!mxe.mxeProgramId.equals(DEPTH_PROGRAM_ID)) {
-      throw new Error("MXE is registered for another program");
-    }
-    const definition = getCompDefAccAddress(
-      DEPTH_PROGRAM_ID,
-      Buffer.from(getCompDefAccOffset(name)).readUInt32LE(),
-    );
-    if (!(await this.connection.getAccountInfo(definition, "confirmed"))) {
-      throw new Error(`${name} computation is not deployed`);
-    }
-    return {
-      computationAccount: getComputationAccAddress(mxe.cluster, offset),
-      clusterAccount: getClusterAccAddress(mxe.cluster),
-      mxeAccount: mxeAddress,
-      mempoolAccount: getMempoolAccAddress(mxe.cluster),
-      executingPool: getExecutingPoolAccAddress(mxe.cluster),
-      compDefAccount: definition,
-    };
-  }
-
+export class Keeper extends ChainSigner {
   async advance(): Promise<KeeperProgress | undefined> {
     const market = await this.read<MarketState>("Market", this.market);
     if (market.pendingOrders === 0) {
