@@ -48,6 +48,8 @@ export type MarketState = {
   settlementMint: PublicKey;
   vault: PublicKey;
   oracleTimestamp: anchor.BN;
+  pendingOrders: number;
+  backstopOffer: PublicKey;
   activeQuoteCount: number;
   activeQuotes: PublicKey[];
   quotedNotional: anchor.BN;
@@ -58,7 +60,25 @@ export type MarketState = {
     maxMarketNotional: anchor.BN;
     maxQuoteLifetimeSeconds: number;
     maxOracleAgeSeconds: number;
+    backstopMinCollateral: anchor.BN;
   };
+};
+
+export type BackstopInput = {
+  marketId: typeof SOL_USD_MARKET_ID;
+  maxCapacity: bigint;
+  validForSeconds: number;
+  clientNonce?: bigint;
+};
+
+export type BackstopState = {
+  maker: PublicKey;
+  market: PublicKey;
+  nonce: anchor.BN;
+  capacity: anchor.BN;
+  margin: anchor.BN;
+  expiry: anchor.BN;
+  status: Record<string, unknown>;
 };
 
 export type GrantState = {

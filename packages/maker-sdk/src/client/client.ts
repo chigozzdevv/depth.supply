@@ -20,10 +20,12 @@ import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import { FundingClient, verifyDeployment } from "@depth/sdk";
 import { mxeAccount, queueAccounts } from "@/chain/arcium";
+import { BackstopHandle } from "@/backstop/backstop";
 import { FillHistory } from "@/fill/history";
 import { QuoteHandle } from "@/quote/quote";
 import type {
   GrantState,
+  BackstopInput,
   MakerOptions,
   MarketState,
   QuoteInput,
@@ -55,6 +57,9 @@ export class MakerClient {
   readonly program: anchor.Program;
   readonly marketAddress = marketAddress();
   readonly protocolAddress = protocolAddress();
+  readonly backstop: ((id: PublicKey) => BackstopHandle) & {
+    offer: (input: BackstopInput) => Promise<BackstopHandle>;
+  };
 
   get funding(): FundingClient {
     return new FundingClient(
@@ -83,6 +88,10 @@ export class MakerClient {
       },
     );
     this.program = new anchor.Program(DEPTH_IDL, this.provider);
+    this.backstop = Object.assign(
+      (id: PublicKey) => new BackstopHandle(id, this),
+      { offer: (input: BackstopInput) => BackstopHandle.offer(this, input) },
+    );
   }
 
   static async create(options: MakerOptions): Promise<MakerClient> {

@@ -22,7 +22,7 @@ establish production readiness.
 | Economics | The locked 5 bps base schedule, configurable 0–2 bps app fee, maker rebate, private fee claims, and recipient balance credit. | [App configuration](contracts/programs/depth/src/instructions/app.rs), [fee instructions](contracts/programs/depth/src/instructions/fees.rs), [circuits](contracts/encrypted-ixs/src/lib.rs), [fee worker](server/src/features/fee/fee.service.ts). |
 | Risk | Pyth update validation, margin checks, funding advancement, pause after missed funding intervals, backstop offers, liquidation, insurance accounting, and emergency payout calculation. | [Oracle validation](contracts/programs/depth/src/oracle.rs), [market](contracts/programs/depth/src/instructions/market.rs), [backstop](contracts/programs/depth/src/instructions/backstop.rs), [liquidation](contracts/programs/depth/src/instructions/liquidation.rs). |
 | Recovery | Recovery ciphertexts and commitments, committee signature checks, market-wide reveal and reconciliation, pro rata payouts, separate fee claims, and one-time payout records. | [Recovery](contracts/programs/depth/src/instructions/recovery.rs), [winddown](contracts/programs/depth/src/instructions/winddown.rs), [SDK recovery](packages/sdk/src/recovery/recovery.ts), [operator tooling](packages/sdk/src/recovery/winddown.ts). |
-| Maker operations | Owner funding, independent view-only grants, grant listing, flat or tiered quote publication, activation, replacement, cancellation, private fill retrieval, and finalized fill pagination. | [Operator rules](contracts/programs/depth/src/instructions/operator.rs), [maker client](packages/maker-sdk/src/client/client.ts), [quote handle](packages/maker-sdk/src/quote/quote.ts), [fill history](packages/maker-sdk/src/fill/history.ts). |
+| Maker operations | Owner funding, independent view-only grants, grant listing, flat or tiered quote publication, activation, replacement, cancellation, owner backstop offer and release handles, private fill retrieval, and finalized fill pagination. | [Operator rules](contracts/programs/depth/src/instructions/operator.rs), [maker client](packages/maker-sdk/src/client/client.ts), [quote handle](packages/maker-sdk/src/quote/quote.ts), [backstop handle](packages/maker-sdk/src/backstop/backstop.ts), [fill history](packages/maker-sdk/src/fill/history.ts). |
 | SDK foundations | Generated bindings, encrypted input packing, signed manifest verification, onchain owner discovery of pending receipts, private view decryption, app registration and fee administration, order polling, and retryable read errors. | [Bindings](packages/bindings), [discovery](packages/sdk/src/account/discovery.ts), [app SDK](packages/sdk/src/app/app.ts), [SDK](packages/sdk/src), [schema](packages/schema). |
 | Server | Fastify public market, app, quote, operation, and recovery reads, including complete onchain market policy; settlement, funding, risk, fee, and oracle workers. Features live under `src/features` and infrastructure under `src/shared`. | [Server composition](server/src/app.ts), [features](server/src/features), [shared services](server/src/shared). |
 
@@ -137,7 +137,7 @@ Evidence: [MarketStatus](contracts/programs/depth/src/state/mod.rs),
 | Trader private fill result | `DepthOperation.privateResult()` requests the trader-authorized contract view, decrypts the final fill, resumes a pending view on the same handle, and closes it after reading. | Real localnet integration proof, durable cleanup of orphaned views after process loss, and a common result interface across operation kinds. |
 | Complete maker fill context | `FillSnapshot` contains side, size, margin, execution price, fees, and rebate. It does not include the documented funding checkpoint, resulting position change, or remaining capacity. | Supply the promised context bound to that fill's versions; a later current-position read cannot stand in for historical fill state. |
 | Flat maker quotes | Publication derives eligible policy tiers from a flat bid and ask, accepts a duration, generates a nonce, and returns a handle without waiting for validation. Explicit tier publication remains available. Quote handles expose `confirm()` and capacity. | Uniform preparation, durable pending-quote discovery, and a recoverable replacement operation with no hidden inactive interval. |
-| Maker owner trading and backstop | Owner funding, grant/revoke/list, quote handles, and private views exist; backstop contract exists. | Owner trade facade, simple grant renewal, backstop offer/status/release, and shared account/position summaries. |
+| Maker owner trading and backstop | Owner funding, grant/revoke/list, quote handles, private views, and owner backstop offer/status/release/close handles exist. | Owner trade facade, simple grant renewal, shared account/position summaries, and live Arcium proof for the backstop flow. |
 | Managed fill consumption | Finalized pagination and replay exist; the caller supplies cursor persistence and performs separate private fill reads. | Default durable storage, per-owner/environment cursor isolation, private `onFill` delivery, and restart/error handling. External hedge idempotency remains the maker's responsibility. |
 | Browser and package delivery | Build script targets Node; runtime imports `node:crypto`; SDK packages are marked private. | Browser-compatible runtime and exports, package build/install tests, release configuration, and published distribution. |
 | View retention and cleanup | Views can be closed through lower-level handles; summary methods create fresh views. | Managed lifecycle and explicit authorized cleanup, rent reporting, and recovery guarantees without retaining view secrets. |
@@ -241,8 +241,8 @@ These are not unexpected missing first-release features:
 
 ## Verification during this review
 
-- `pnpm test` passed: **34 TypeScript tests**, comprising 15 trader SDK,
-  5 maker SDK, and 14 server tests.
+- `pnpm test` passed: **37 TypeScript tests**, comprising 15 trader SDK,
+  8 maker SDK, and 14 server tests.
 - `pnpm typecheck` passed across bindings, schema, both SDKs, and server.
 - `cargo test --manifest-path contracts/Cargo.toml -p depth --lib --offline`
   passed all **13 contract unit tests**, including view-only grants.
@@ -255,11 +255,13 @@ These are not unexpected missing first-release features:
 - The full `arcium test` run rebuilt the program and encrypted circuits but
   stopped before executing integration tests. A later run with Surfpool 1.6.0
   from the official release archive also timed out before RPC became ready.
-  Direct pinned Anchor 1.0.2 localnet started Surfpool, then panicked in its
-  localnet command. Contract integration results remain unverified on this host.
+  A subsequent interactive direct Anchor 1.0.2 localnet started Surfpool and
+  passed its RPC health check. The Arcium test wrapper still did not bring its
+  managed localnet online. Contract integration results remain unverified on
+  this host.
 - The current revision implements the keeper continuation, view-only
   grant, app administration, pending discovery, full market projection, and
-  flat maker quote and trader fill-result changes described above.
+  flat maker quote, owner backstop, and trader fill-result changes described above.
   The rest of the target API remains pending.
 
 ## Implementation order
