@@ -1,7 +1,7 @@
 # Depth implementation status
 
-Reviewed on 2026-09-27 against source revision `7007512`, the current working
-tree, the local tests, and the updated [product specification](depth.md).
+Reviewed on 2026-09-27 against the repository source, local tests, and the
+updated [product specification](depth.md).
 
 The program and encrypted circuits contain substantial working protocol logic.
 The complete integration flow in the SDK specification is not implemented yet,
@@ -137,7 +137,7 @@ Evidence: [MarketStatus](contracts/programs/depth/src/state/mod.rs),
 | Trader private fill result | `DepthOperation.privateResult()` requests the trader-authorized contract view, decrypts the final fill, resumes a pending view on the same handle, and closes it after reading. | Real localnet integration proof, durable cleanup of orphaned views after process loss, and a common result interface across operation kinds. |
 | Complete maker fill context | `FillSnapshot` contains side, size, margin, execution price, fees, and rebate. It does not include the documented funding checkpoint, resulting position change, or remaining capacity. | Supply the promised context bound to that fill's versions; a later current-position read cannot stand in for historical fill state. |
 | Flat maker quotes | Publication derives eligible policy tiers from a flat bid and ask, accepts a duration, generates a nonce, and returns a handle without waiting for validation. Explicit tier publication remains available. Quote handles expose `confirm()` and capacity. | Uniform preparation, durable pending-quote discovery, and a recoverable replacement operation with no hidden inactive interval. |
-| Maker owner trading and backstop | Owner funding, grant/revoke/list, quote handles, private views, and owner backstop offer/status/release/close handles exist. | Owner trade facade, simple grant renewal, shared account/position summaries, and live Arcium proof for the backstop flow. |
+| Maker owner trading and backstop | Owner funding, grant/revoke/list, quote handles, private views, and owner backstop offer/status/release/close handles exist. The contract backstop path passes a local Arcium integration test. | Owner trade facade, simple grant renewal, shared account/position summaries, and an integration test of the maker SDK facade. |
 | Managed fill consumption | Finalized pagination and replay exist; the caller supplies cursor persistence and performs separate private fill reads. | Default durable storage, per-owner/environment cursor isolation, private `onFill` delivery, and restart/error handling. External hedge idempotency remains the maker's responsibility. |
 | Browser and package delivery | Build script targets Node; runtime imports `node:crypto`; SDK packages are marked private. | Browser-compatible runtime and exports, package build/install tests, release configuration, and published distribution. |
 | View retention and cleanup | Views can be closed through lower-level handles; summary methods create fresh views. | Managed lifecycle and explicit authorized cleanup, rent reporting, and recovery guarantees without retaining view secrets. |
@@ -241,7 +241,7 @@ These are not unexpected missing first-release features:
 
 ## Verification during this review
 
-- `pnpm test` passed: **37 TypeScript tests**, comprising 15 trader SDK,
+- `pnpm test` passed: **39 TypeScript tests**, comprising 17 trader SDK,
   8 maker SDK, and 14 server tests.
 - `pnpm typecheck` passed across bindings, schema, both SDKs, and server.
 - `cargo test --manifest-path contracts/Cargo.toml -p depth --lib --offline`
@@ -252,13 +252,17 @@ These are not unexpected missing first-release features:
 - TypeScript tests cover selected codecs, mocked RPC transitions, views,
   manifest checks, quote and fill handling, and server behavior. They do not
   execute the complete protocol on a live deployment.
-- The full `arcium test` run rebuilt the program and encrypted circuits but
-  stopped before executing integration tests. A later run with Surfpool 1.6.0
-  from the official release archive also timed out before RPC became ready.
-  A subsequent interactive direct Anchor 1.0.2 localnet started Surfpool and
-  passed its RPC health check. The Arcium test wrapper still did not bring its
-  managed localnet online. Contract integration results remain unverified on
-  this host.
+- The pinned `contracts/scripts/test.mjs` wrapper generated fresh oracle
+  fixtures and ran the live Arcium/Solana integration suites on this host:
+  **4 base tests** and **1 trade test** passed. The trade test executes deposits,
+  private matching, settlement, fees, liquidation, backstop, and emergency
+  winddown with real callbacks. These fixtures cover one trader and maker, not
+  the maximum market state or independent recovery custody.
+- One earlier trade run exceeded Solana's default 200,000 compute units on an
+  encrypted submission. The SDK, maker SDK, server, and direct integration
+  provider now add a 400,000-unit limit for queued Depth instructions unless
+  the caller supplied a limit. The live trade suite passed with this change;
+  the maximum four-quote transaction still fits the serialized size limit.
 - The current revision implements the keeper continuation, view-only
   grant, app administration, pending discovery, full market projection, and
   flat maker quote, owner backstop, and trader fill-result changes described above.
