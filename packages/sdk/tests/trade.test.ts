@@ -5,7 +5,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { randomBytes } from "node:crypto";
-import { DepthOperation } from "@/index";
+import { DepthError, DepthOperation } from "@/index";
 import { encodeSide, u64 } from "@/trade/input";
 
 describe("trader wire and operation lifecycle", () => {
@@ -71,6 +71,13 @@ describe("trader wire and operation lifecycle", () => {
     assert.equal(final.status, "finalized");
     assert.equal(final.outcome, "filled");
     assert.equal(final.slot, 91);
+    assert.equal((await operation.confirm()).orderId.toBase58(), id.toBase58());
+    state = "rejected";
+    await assert.rejects(
+      operation.confirm({ timeoutMs: 0 }),
+      (error: unknown) =>
+        error instanceof DepthError && error.code === "ORDER_REJECTED",
+    );
     owner = PublicKey.unique();
     await assert.rejects(operation.status(), /Order record is unavailable/);
   });
@@ -92,6 +99,11 @@ describe("trader wire and operation lifecycle", () => {
     const snapshot = await operation.wait({ timeoutMs: 0 });
     assert.equal(snapshot.status, "queued");
     assert.equal(snapshot.outcome, undefined);
+    await assert.rejects(
+      operation.confirm({ timeoutMs: 0 }),
+      (error: unknown) =>
+        error instanceof Error && error.message === "Trade has not finalized yet",
+    );
   });
 });
 

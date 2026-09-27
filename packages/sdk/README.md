@@ -53,14 +53,14 @@ const order = await depth.trade.submit({
   clientNonce: savedNonce,
   positionVersion: position.version,
 });
-const snapshot = await order.wait({ timeoutMs: 30_000 });
+const { orderId } = await order.confirm();
 ```
 
 `submit` opens or increases the same side. `reduce` permits only an opposite fill no larger than the current position. `close` requires its entire size, and `reverse` requires a size larger than the old position. Every method binds the encrypted request to the supplied position version. A stale version rejects; direction, size, intent, and price limits stay encrypted.
 
 The requested margin must cover the fee and initial margin on newly opened exposure. A full close requires no opening margin; every settlement still checks the remaining position and maker collateral.
 
-Submission confirms the queue transaction. Only a finalized operation with outcome `filled` confirms execution. A timeout can return a pending snapshot. After restarting, use `depth.trade.operation(savedNonce)` or `depth.operation(orderAddress)`. `subscribe(listener, { onError })` returns an unsubscribe function. An ambiguous submission raises `DepthError` with an operation ID and reconciliation action; keep the original nonce.
+Submission confirms the queue transaction. `order.confirm()` waits for a finalized fill and returns its order ID; it raises a typed pending or terminal error otherwise. `order.wait()` returns the latest verified snapshot after its default timeout, including a still pending order. After restarting, use `depth.trade.operation(savedNonce)` or `depth.operation(orderAddress)`. `subscribe(listener, { onError })` returns an unsubscribe function. An ambiguous submission raises `DepthError` with an operation ID and reconciliation action; keep the original nonce.
 
 ## Collateral
 

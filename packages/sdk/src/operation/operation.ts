@@ -102,18 +102,19 @@ export class DepthOperation {
   }
 
   async wait(options: {
-    timeoutMs: number;
+    timeoutMs?: number;
     pollMs?: number;
     signal?: AbortSignal;
-  }): Promise<OperationSnapshot> {
-    if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 0) {
+  } = {}): Promise<OperationSnapshot> {
+    const timeoutMs = options.timeoutMs ?? 60_000;
+    if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) {
       throw new RangeError("timeoutMs must be a nonnegative integer");
     }
     const pollMs = options.pollMs ?? 1_000;
     if (!Number.isSafeInteger(pollMs) || pollMs < 100) {
       throw new RangeError("pollMs must be at least 100");
     }
-    const deadline = Date.now() + options.timeoutMs;
+    const deadline = Date.now() + timeoutMs;
     let snapshot: OperationSnapshot | undefined;
     for (;;) {
       options.signal?.throwIfAborted();
@@ -155,5 +156,35 @@ export class DepthOperation {
         if (options.signal?.aborted) onAbort();
       });
     }
+  }
+
+  async confirm(options: {
+    timeoutMs?: number;
+    pollMs?: number;
+    signal?: AbortSignal;
+  } = {}): Promise<{ orderId: PublicKey; snapshot: OperationSnapshot }> {
+    const snapshot = await this.wait(options);
+    if (snapshot.status === "finalized" && snapshot.outcome === "filled")
+      return { orderId: this.id, snapshot };
+    const rejected = snapshot.status === "rejected";
+    const cancelled = snapshot.outcome === "cancelled";
+    throw new DepthError(
+      rejected
+        ? "ORDER_REJECTED"
+        : cancelled
+          ? "ORDER_CANCELLED"
+          : "ORDER_PENDING",
+      "confirmation",
+      rejected
+        ? "Trade was rejected"
+        : cancelled
+          ? "Trade was cancelled"
+          : "Trade has not finalized yet",
+      !rejected && !cancelled,
+      rejected || cancelled
+        ? "Read the final order record before submitting a new request"
+        : "Read this operation again with the same order ID",
+      this.id.toBase58(),
+    );
   }
 }
