@@ -37,7 +37,7 @@ pub fn grant_operator_handler(
     let now = Clock::get()?.unix_timestamp;
     require!(
         ctx.accounts.operator.key() != ctx.accounts.maker.key()
-            && max_capacity > 0
+            && (max_capacity > 0 || can_view)
             && max_capacity <= ctx.accounts.market.config.max_account_notional
             && expires_at > now,
         ErrorCode::InvalidOperatorGrant
@@ -119,6 +119,7 @@ fn grant_allows(
         && grant.operator == actor
         && grant.maker == maker
         && grant.market == market
+        && (view || grant.max_capacity > 0)
         && grant.max_capacity >= capacity
         && grant.expires_at >= expires_at
         && grant.expires_at > now
@@ -159,6 +160,36 @@ mod tests {
         ));
         assert!(!grant_allows(
             &grant, operator, maker, market, 1_000, 190, false, 200
+        ));
+    }
+
+    #[test]
+    fn view_only_grant_cannot_authorize_quotes() {
+        let maker = Pubkey::new_unique();
+        let operator = Pubkey::new_unique();
+        let market = Pubkey::new_unique();
+        let grant = OperatorGrant {
+            maker,
+            operator,
+            market,
+            max_capacity: 0,
+            expires_at: 200,
+            can_view: true,
+            active: true,
+            version: 1,
+            bump: 0,
+        };
+        assert!(grant_allows(
+            &grant, operator, maker, market, 0, 150, true, 100
+        ));
+        assert!(!grant_allows(
+            &grant, operator, maker, market, 0, 150, false, 100
+        ));
+        assert!(!grant_allows(
+            &grant, operator, maker, market, 1, 150, false, 100
+        ));
+        assert!(!grant_allows(
+            &grant, operator, maker, market, 0, 201, true, 100
         ));
     }
 }
