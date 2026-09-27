@@ -25,6 +25,8 @@ import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import { verifyDeployment } from "@/chain/manifest";
 import { arciumAccount } from "@/chain/arcium";
+import { AppAdmin } from "@/app/app";
+import { FundingDiscovery } from "@/account/discovery";
 import { FundingClient } from "@/account/funding";
 import { submissionError } from "@/operation/error";
 import { DepthOperation } from "@/operation/operation";
@@ -70,6 +72,15 @@ export class DepthClient {
     );
   }
 
+  get app(): AppAdmin {
+    return new AppAdmin(
+      this.program,
+      this.options.connection,
+      this.options.wallet.publicKey,
+      this.funding,
+    );
+  }
+
   get recovery(): DepthRecovery {
     return new DepthRecovery(
       this.program,
@@ -99,7 +110,9 @@ export class DepthClient {
       this.options.connection.getAccountInfo(DEPTH_PROGRAM_ID, "confirmed"),
       this.read<ProtocolState>("Protocol", this.protocolAddress),
       this.read<MarketState>("Market", this.marketAddress),
-      this.read<AppState>("AppConfig", appAddress(this.options.appId)),
+      this.options.appId
+        ? this.read<AppState>("AppConfig", appAddress(this.options.appId))
+        : Promise.resolve(undefined),
       arciumAccount(this.provider).fetch(this.mxeAddress),
     ]);
     if (!programInfo?.executable)
@@ -107,8 +120,7 @@ export class DepthClient {
     if (
       !market.settlementMint.equals(protocol.settlementMint) ||
       !market.vault.equals(protocol.vault) ||
-      !app.app.equals(this.options.appId) ||
-      !app.active ||
+      (this.options.appId && !app?.app.equals(this.options.appId)) ||
       !mxe.mxeProgramId.equals(DEPTH_PROGRAM_ID)
     ) {
       throw new Error("Depth deployment accounts disagree");
@@ -269,6 +281,12 @@ export class DepthClient {
   }
 
   readonly account = {
+    pending: (options?: Parameters<FundingDiscovery["pending"]>[0]) =>
+      new FundingDiscovery(
+        this.program,
+        this.options.connection,
+        this.options.wallet.publicKey,
+      ).pending(options),
     cancelOpen: () => this.funding.cancelOpenBalance(),
     open: async () => this.funding.openBalance(),
     deposit: async (source: PublicKey, amount: bigint, clientNonce: bigint) =>
@@ -336,6 +354,8 @@ export class DepthClient {
     input: TradeInput,
     intent: TradeIntent,
   ): Promise<DepthOperation> {
+    const appId = this.options.appId;
+    if (!appId) throw new Error("An app ID is required to submit a trade");
     const orderNonce = u64(input.clientNonce, "clientNonce");
     const order = this.orderAddress(input.clientNonce);
     const existing = await this.options.connection.getAccountInfo(
@@ -368,9 +388,9 @@ export class DepthClient {
       this.market(),
       this.read<ProtocolState>("Protocol", this.protocolAddress),
       this.read<AccountState>("MarketAccount", this.accountAddress()),
-      this.read<AppState>("AppConfig", appAddress(this.options.appId)),
+      this.read<AppState>("AppConfig", appAddress(appId)),
     ]);
-    this.validateTrade(input, market.state, protocol, account, app);
+    this.validateTrade(input, market.state, protocol, account, app, appId);
     const quotes = market.state.activeQuotes.slice(
       0,
       market.state.activeQuoteCount,
@@ -418,7 +438,7 @@ export class DepthClient {
       .submitOrder(
         offset,
         orderNonce,
-        this.options.appId,
+        appId,
         app.feeBps,
         app.version,
         new anchor.BN(input.expiresAt),
@@ -432,7 +452,7 @@ export class DepthClient {
         ...queue,
         trader: this.options.wallet.publicKey,
         protocol: this.protocolAddress,
-        appConfig: appAddress(this.options.appId),
+        appConfig: appAddress(appId),
         market: this.marketAddress,
         marketAccount: this.accountAddress(),
         order,
@@ -466,12 +486,13 @@ export class DepthClient {
     protocol: ProtocolState,
     account: AccountState,
     app: AppState,
+    appId: PublicKey,
   ): void {
     const now = Math.floor(Date.now() / 1_000);
     if (!protocol.tradingEnabled || enumName(market.status) !== "active") {
       throw new Error("Market is paused");
     }
-    if (!app.active || !app.app.equals(this.options.appId)) {
+    if (!app.active || !app.app.equals(appId)) {
       throw new Error("App registration is inactive");
     }
     if (

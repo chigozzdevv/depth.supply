@@ -5,11 +5,20 @@ The SDK submits encrypted SOL-USD orders to Solana and reads authenticated priva
 ## Connect
 
 ```ts
-import { createDepth } from "@depth/sdk";
+import { create_depth } from "@depth/sdk";
 
-const depth = await createDepth({
+const admin = await create_depth({
   connection,
-  wallet,
+  wallet: appOwnerWallet,
+  deployment: { manifest, trustedSigner },
+});
+
+const registration = await admin.app.register({ feeBps: 1 });
+const { appId } = await registration.confirm();
+
+const depth = await create_depth({
+  connection,
+  wallet: traderWallet,
   appId,
   deployment: { manifest, trustedSigner },
 });
@@ -65,6 +74,8 @@ Open the free balance with `account.open()` and the market account with `positio
 | `account.withdraw(destination, amount, nonce)` | Read the withdrawal receipt until `paid`, `rejected`, or `cancelled`. |
 
 Persist each nonce before signing. Restore handles with `depositHandle(nonce)`, `transferHandle(nonce)`, or `withdrawalHandle(nonce)`. Deposits and escrow transfers can be refunded to the owner's token account. Queued withdrawals can be cancelled with `handle.cancel()`. A paid withdrawal receipt remains available after later balance updates.
+
+`account.pending({ cursor, limit })` scans this wallet's confirmed onchain deposit, margin-transfer, withdrawal, and order accounts. It returns public receipt IDs and nonces with a continuation cursor, so a wallet can rediscover pending actions after changing browsers. An RPC that cannot serve account scans returns an error rather than an empty history.
 
 `position.addMargin` and `position.removeMargin` use the allocation and release flow. Removing margin checks current funding, reserved margin, and initial-margin health against a fresh oracle snapshot. It never releases unrealized profit. A changed or expired snapshot rejects the debit.
 

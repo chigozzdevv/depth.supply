@@ -7,7 +7,7 @@ export type DepthWallet = anchor.Wallet;
 
 export type DepthOptions = {
   deployment: DeploymentPolicy;
-  appId: PublicKey;
+  appId?: PublicKey;
   wallet: DepthWallet;
   connection: Connection;
 };

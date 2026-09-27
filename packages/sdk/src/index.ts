@@ -4,6 +4,10 @@ export {
   createDepth as create_depth,
 } from "@/client/client";
 export { DepthOperation } from "@/operation/operation";
+export { AppAdmin, AppRegistration, AppUpdate } from "@/app/app";
+export { FundingDiscovery } from "@/account/discovery";
+export type { PendingItem, PendingKind, PendingPage } from "@/account/discovery";
+export type { AppSummary } from "@/app/app";
 export { DepthRecovery } from "@/recovery/recovery";
 export type { RecoverySnapshot } from "@/recovery/recovery";
 export {
