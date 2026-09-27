@@ -1,7 +1,38 @@
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { Keypair } from "@solana/web3.js";
+
+const expectedAnchor = readFileSync("Anchor.toml", "utf8").match(
+  /anchor_version = "([^"]+)"/
+)?.[1];
+if (!expectedAnchor) throw new Error("Anchor.toml must pin an Anchor version");
+const anchorVersion = execFileSync("anchor", ["--version"], {
+  encoding: "utf8",
+}).trim();
+let anchorPath = process.env.PATH;
+let toolDirectory;
+if (!anchorVersion.endsWith(` ${expectedAnchor}`)) {
+  const pinned = join(homedir(), ".avm", "bin", `anchor-${expectedAnchor}`);
+  if (!existsSync(pinned))
+    throw new Error(`Install Anchor ${expectedAnchor}; found ${anchorVersion}`);
+  toolDirectory = mkdtempSync(join(tmpdir(), "depth-anchor-"));
+  symlinkSync(pinned, join(toolDirectory, "anchor"));
+  anchorPath = `${toolDirectory}:${process.env.PATH ?? ""}`;
+  process.once("exit", () =>
+    rmSync(toolDirectory, { recursive: true, force: true })
+  );
+}
 
 const address = Keypair.fromSeed(
   createHash("sha256").update("depth.oracle.fixture.v1").digest()
@@ -81,7 +112,11 @@ function run(args, testFile) {
   return new Promise((resolve) => {
     const child = spawn("arcium", ["test", ...args], {
       stdio: "inherit",
-      env: { ...process.env, DEPTH_TEST_FILE: testFile },
+      env: { ...process.env, PATH: anchorPath, DEPTH_TEST_FILE: testFile },
+    });
+    child.on("error", (error) => {
+      process.stderr.write(`${error.message}\n`);
+      resolve(1);
     });
     child.on("exit", (code) => resolve(code ?? 1));
   });

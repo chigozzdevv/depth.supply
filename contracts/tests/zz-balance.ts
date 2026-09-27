@@ -339,9 +339,19 @@ describe("private balances", () => {
     );
 
     const debitOffset = new anchor.BN(randomBytes(8), "hex");
+    const withdrawalNonce = new anchor.BN(751);
+    const [withdrawal] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("withdrawal"),
+        balance.toBuffer(),
+        withdrawalNonce.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    );
     await program.methods
-      .requestWithdrawal(debitOffset, new anchor.BN(125_000))
+      .requestWithdrawal(debitOffset, withdrawalNonce, new anchor.BN(125_000))
       .accountsPartial({
+        receipt: withdrawal,
         payer: owner,
         protocol,
         destination: source.address,
@@ -366,6 +376,18 @@ describe("private balances", () => {
       "confirmed"
     );
 
+    const withdrawalReceipt = await program.account.withdrawalReceipt.fetch(
+      withdrawal
+    );
+    expect(withdrawalReceipt.status).to.deep.equal({ paid: {} });
+    expect(withdrawalReceipt.amount.toNumber()).to.equal(125_000);
+    expect(withdrawalReceipt.nonce.toNumber()).to.equal(751);
+    expect(
+      withdrawalReceipt.computation.equals(
+        getComputationAccAddress(arciumEnv.arciumClusterOffset, debitOffset)
+      )
+    ).to.equal(true);
+    expect(withdrawalReceipt.destination.equals(source.address)).to.equal(true);
     const withdrawn = await program.account.balanceAccount.fetch(balance);
     expect(withdrawn.status).to.deep.equal({ ready: {} });
     expect(withdrawn.version.toNumber()).to.equal(2);

@@ -1,3 +1,5 @@
+import { createDepth } from "@/sdk";
+import { circuits } from "@/circuits";
 import * as anchor from "@anchor-lang/core";
 import { createPacker, RescueCipher, x25519 } from "@arcium-hq/client";
 import {
@@ -6,7 +8,7 @@ import {
   getOrCreateAssociatedTokenAccount,
   mintTo,
 } from "@solana/spl-token";
-import { Keypair, PublicKey } from "@solana/web3.js";
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { expect } from "chai";
 import { Depth } from "@/target/types/depth";
 import { Harness } from "@/tests/support/harness";
@@ -97,8 +99,17 @@ async function expectRejected(task: Promise<unknown>): Promise<void> {
 }
 
 describe("confidential trade settlement", () => {
-  anchor.setProvider(anchor.AnchorProvider.env());
-  const provider = anchor.getProvider() as anchor.AnchorProvider;
+  const environment = anchor.AnchorProvider.env();
+  const provider = new anchor.AnchorProvider(
+    new Connection(environment.connection.rpcEndpoint, "confirmed"),
+    environment.wallet,
+    { commitment: "confirmed", preflightCommitment: "confirmed" }
+  );
+  anchor.setProvider(provider);
+  afterEach(function () {
+    const error = this.currentTest?.err;
+    if (error && "cause" in error) console.error(error.cause);
+  });
   const program = anchor.workspace.Depth as anchor.Program<Depth>;
   const payer = (provider.wallet as anchor.Wallet & { payer: Keypair }).payer;
   const authority = payer.publicKey;
@@ -182,7 +193,11 @@ describe("confidential trade settlement", () => {
       .rpc();
     const harness = await Harness.create(provider, program);
     type InitAccounts = Parameters<Parameters<Harness["init"]>[2]>[0];
-    const options = { skipPreflight: true, commitment: "confirmed" as const };
+    const options = {
+      skipPreflight: true,
+      commitment: "confirmed" as const,
+      preflightCommitment: "confirmed" as const,
+    };
     const definitions: Array<
       [string, (accounts: InitAccounts) => Promise<unknown>]
     > = [
@@ -223,6 +238,22 @@ describe("confidential trade settlement", () => {
         (a) =>
           program.methods
             .initCreditMarketCompDef()
+            .accountsPartial(a)
+            .rpc(options),
+      ],
+      [
+        "debit_market",
+        (a) =>
+          program.methods
+            .initDebitMarketCompDef()
+            .accountsPartial(a)
+            .rpc(options),
+      ],
+      [
+        "credit_free",
+        (a) =>
+          program.methods
+            .initCreditFreeCompDef()
             .accountsPartial(a)
             .rpc(options),
       ],
@@ -848,6 +879,21 @@ describe("confidential trade settlement", () => {
       active: {},
     });
 
+    const encryptOrder = (values: bigint[]) => {
+      const [side, size, margin, limit_price, max_fee, intent, version] =
+        values;
+      return harness.encrypt(
+        circuits.OrderInput.pack({
+          side: side === 255n ? -1n : side,
+          size,
+          margin,
+          limit_price,
+          max_fee,
+          intent,
+          version,
+        })
+      );
+    };
     const orderNonce = new anchor.BN(501);
     const [order] = PublicKey.findProgramAddressSync(
       [
@@ -858,12 +904,18 @@ describe("confidential trade settlement", () => {
       ],
       program.programId
     );
-    const input = harness.encrypt([
+    const input = encryptOrder([
       1n,
       5_000_000n,
       200_000n,
       20_100_000_000n,
       1_000n,
+      0n,
+      BigInt(
+        (
+          await program.account.marketAccount.fetch(traderState.marketAccount)
+        ).version.toString()
+      ),
     ]);
     const deadline = Math.floor(Date.now() / 1000) + 260;
     offset = harness.offset();
@@ -908,42 +960,35 @@ describe("confidential trade settlement", () => {
     expect(await program.account.orderRecord.fetchNullable(order)).to.equal(
       null
     );
-    await program.methods
-      .submitOrder(
-        offset,
-        orderNonce,
-        trader.publicKey,
-        1,
-        new anchor.BN(1),
-        new anchor.BN(deadline),
+    const sdk = await createDepth({
+      connection: provider.connection,
+      wallet: new anchor.Wallet(trader),
+      appId: trader.publicKey,
+      deployment: { localnet: true },
+    });
+    const submitted = await sdk.trade.submit({
+      marketId: "SOL-USD",
+      direction: "long",
+      size: 5_000_000n,
+      margin: 200_000n,
+      worstPriceE8: 20_100_000_000n,
+      maxFee: 1_000n,
+      expiresAt: deadline,
+      clientNonce: 501n,
+      positionVersion: BigInt(
         (
-          await program.account.market.fetch(market)
-        ).revision,
-        (
-          await program.account.market.fetch(market)
-        ).oracleTimestamp,
-        input.ciphertexts,
-        input.inputKey,
-        input.inputNonce
+          await program.account.marketAccount.fetch(traderState.marketAccount)
+        ).version.toString()
+      ),
+    });
+    expect(submitted.id.equals(order)).to.equal(true);
+    for (let attempt = 0; attempt < 120; attempt++) {
+      if (
+        !("matching" in (await program.account.orderRecord.fetch(order)).status)
       )
-      .accountsPartial({
-        ...harness.queue(offset, "match_order"),
-        trader: trader.publicKey,
-        protocol,
-        appConfig,
-        market,
-        marketAccount: traderState.marketAccount,
-        order,
-      })
-      .remainingAccounts([
-        { pubkey: backstopOffer, isSigner: false, isWritable: false },
-        { pubkey: quote, isSigner: false, isWritable: false },
-        { pubkey: recoveryConfig, isSigner: false, isWritable: false },
-        { pubkey: feeRecoveryFor(order), isSigner: false, isWritable: true },
-      ])
-      .signers([trader])
-      .rpc(options);
-    await harness.finalize(offset);
+        break;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
     let orderState = await program.account.orderRecord.fetch(order);
     expect(orderState.status).to.deep.equal({ matched: {} });
     expect(orderState.selectedQuote.equals(quote)).to.equal(true);
@@ -1366,6 +1411,48 @@ describe("confidential trade settlement", () => {
     }
     expect(revokedViewRejected).to.equal(true);
 
+    await program.methods
+      .refreshOracle()
+      .accountsPartial({ protocol, market, priceUpdate: secondOracle })
+      .rpc();
+    const awaitTransfer = async (
+      handle: { status(): Promise<{ state: string }> },
+      wanted: string
+    ) => {
+      for (let attempt = 0; attempt < 120; attempt++) {
+        const current = await handle.status();
+        if (current.state === wanted) return;
+        if (current.state === "rejected" && wanted !== "rejected")
+          throw new Error("Margin operation rejected");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+      throw new Error(`Margin operation did not reach ${wanted}`);
+    };
+    const unhealthy = await sdk.position.removeMargin(1_999_397n, 701n);
+    await awaitTransfer(unhealthy, "rejected");
+    const marginOut = await sdk.position.removeMargin(100_000n, 702n);
+    await awaitTransfer(marginOut, "escrow");
+    await marginOut.settle();
+    await awaitTransfer(marginOut, "settled");
+    const marginIn = await sdk.position.addMargin(100_000n, 703n);
+    await awaitTransfer(marginIn, "escrow");
+    await marginIn.settle();
+    await awaitTransfer(marginIn, "settled");
+    const toppedUp = await program.account.marketAccount.fetch(
+      traderState.marketAccount
+    );
+    const marginValues = await unpackMarket(
+      traderCipher.decrypt(
+        toppedUp.recoveryCiphertexts.map((word) => Array.from(word)),
+        Uint8Array.from(toppedUp.recoveryNonce)
+      )
+    );
+    expect(marginValues.collateral).to.equal(traderValues.collateral);
+    expect(marginValues.position).to.equal(traderValues.position);
+    expect(
+      (await program.account.protocol.fetch(protocol)).escrowTotal.toNumber()
+    ).to.equal(0);
+
     const exitQuoteNonce = new anchor.BN(78);
     const [exitQuote] = PublicKey.findProgramAddressSync(
       [
@@ -1429,6 +1516,90 @@ describe("confidential trade settlement", () => {
       .rpc(options);
     await harness.finalize(offset);
 
+    const intentCases = [
+      { intent: 0n, side: 255n, size: 5_000_000n, stale: false },
+      { intent: 1n, side: 255n, size: 6_000_000n, stale: false },
+      { intent: 2n, side: 1n, size: 5_000_000n, stale: false },
+      { intent: 2n, side: 255n, size: 4_000_000n, stale: false },
+      { intent: 3n, side: 255n, size: 5_000_000n, stale: false },
+      { intent: 2n, side: 255n, size: 5_000_000n, stale: true },
+      { intent: 255n, side: 255n, size: 5_000_000n, stale: false },
+    ];
+    for (const [index, scenario] of intentCases.entries()) {
+      const before = await program.account.marketAccount.fetch(
+        traderState.marketAccount
+      );
+      const marketBefore = await program.account.market.fetch(market);
+      const intentNonce = new anchor.BN(600 + index);
+      const [intentOrder] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("order"),
+          market.toBuffer(),
+          trader.publicKey.toBuffer(),
+          intentNonce.toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+      const encrypted = encryptOrder([
+        scenario.side,
+        scenario.size,
+        200_000n,
+        scenario.side === 1n ? 20_100_000_000n : 19_900_000_000n,
+        1_000n,
+        scenario.intent,
+        BigInt(before.version.toString()) + (scenario.stale ? 1n : 0n),
+      ]);
+      offset = harness.offset();
+      await program.methods
+        .submitOrder(
+          offset,
+          intentNonce,
+          trader.publicKey,
+          1,
+          new anchor.BN(3),
+          new anchor.BN(Math.floor(Date.now() / 1000) + 260),
+          marketBefore.revision,
+          marketBefore.oracleTimestamp,
+          encrypted.ciphertexts,
+          encrypted.inputKey,
+          encrypted.inputNonce
+        )
+        .accountsPartial({
+          ...harness.queue(offset, "match_order"),
+          trader: trader.publicKey,
+          protocol,
+          appConfig,
+          market,
+          marketAccount: traderState.marketAccount,
+          order: intentOrder,
+        })
+        .remainingAccounts([
+          { pubkey: backstopOffer, isSigner: false, isWritable: false },
+          { pubkey: exitQuote, isSigner: false, isWritable: false },
+          { pubkey: recoveryConfig, isSigner: false, isWritable: false },
+          {
+            pubkey: feeRecoveryFor(intentOrder),
+            isSigner: false,
+            isWritable: true,
+          },
+        ])
+        .signers([trader])
+        .rpc({ ...options, skipPreflight: false });
+      await harness.finalize(offset);
+      expect(
+        (await program.account.orderRecord.fetch(intentOrder)).status,
+        `intent case ${index}`
+      ).to.deep.equal({ rejected: {} });
+      const after = await program.account.marketAccount.fetch(
+        traderState.marketAccount
+      );
+      expect(after.version.toString()).to.equal(before.version.toString());
+      expect(after.ciphertexts).to.deep.equal(before.ciphertexts);
+      expect(
+        (await program.account.market.fetch(market)).pendingOrders
+      ).to.equal(0);
+    }
+
     const rejectedNonce = new anchor.BN(503);
     const [rejectedOrder] = PublicKey.findProgramAddressSync(
       [
@@ -1439,12 +1610,18 @@ describe("confidential trade settlement", () => {
       ],
       program.programId
     );
-    const rejectedInput = harness.encrypt([
+    const rejectedInput = encryptOrder([
       255n,
       5_000_000n,
       200_000n,
       19_900_000_000n,
       1n,
+      2n,
+      BigInt(
+        (
+          await program.account.marketAccount.fetch(traderState.marketAccount)
+        ).version.toString()
+      ),
     ]);
     offset = harness.offset();
     await program.methods
@@ -1504,12 +1681,18 @@ describe("confidential trade settlement", () => {
       ],
       program.programId
     );
-    const exitInput = harness.encrypt([
+    const exitInput = encryptOrder([
       255n,
       5_000_000n,
-      200_000n,
+      1_000n,
       19_900_000_000n,
       1_000n,
+      2n,
+      BigInt(
+        (
+          await program.account.marketAccount.fetch(traderState.marketAccount)
+        ).version.toString()
+      ),
     ]);
     offset = harness.offset();
     await program.methods
@@ -1681,10 +1864,6 @@ describe("confidential trade settlement", () => {
       active: {},
     });
 
-    await program.methods
-      .refreshOracle()
-      .accountsPartial({ protocol, market, priceUpdate: secondOracle })
-      .rpc();
     const riskQuoteNonce = new anchor.BN(79);
     const [riskQuote] = PublicKey.findProgramAddressSync(
       [
@@ -1758,12 +1937,18 @@ describe("confidential trade settlement", () => {
       ],
       program.programId
     );
-    const riskInput = harness.encrypt([
+    const riskInput = encryptOrder([
       1n,
       12_000_000n,
       1_700_000n,
       20_100_000_000n,
       2_000n,
+      0n,
+      BigInt(
+        (
+          await program.account.marketAccount.fetch(traderState.marketAccount)
+        ).version.toString()
+      ),
     ]);
     offset = harness.offset();
     await program.methods

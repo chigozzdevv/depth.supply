@@ -8,7 +8,9 @@
     "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@/circuits": ["../packages/bindings/src/circuits.ts"],
+      "@/sdk": ["../packages/sdk/dist/index.js"]
     }
   },
   "exclude": ["build", "target", "node_modules"]
