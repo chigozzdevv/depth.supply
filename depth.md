@@ -30,7 +30,7 @@ clearing until the acceptance checks at the end pass.
 | Position | The account's net long or short exposure in one market. A maker has positions under the same rules as a trader. |
 | Clearing vault | A Solana token account controlled by the Depth program. It holds deposited settlement tokens. |
 | Private ledger | Encrypted balances, positions, quote prices, and risk data that Depth updates through Arcium computations. |
-| Operation | One submitted change. It can be queued, finalized, rejected, expired, or failed. |
+| Operation | One requested action with durable progress and canonical receipts for its submitted steps; preparation alone is not an onchain operation. |
 | Keeper | Anyone who pays to submit an eligible oracle, funding, or liquidation operation. A keeper cannot choose its own risk result. |
 | Insurance fund | Separately accounted collateral that absorbs losses after the distressed account's margin. |
 
@@ -301,6 +301,7 @@ Depth's intended protection is about trading data, not wallet anonymity.
 | Maker bid and ask prices | Encrypted | Own quote only | Own quote and its fill | Only the executed price after a fill |
 | Open position direction, size, entry, margin, funding, and health | Stored encrypted; metadata may leak clues | No direct view of another position | Knows its own exposure and the paired fill needed to manage it | Authorized view |
 | Deposits, withdrawals, program accounts, and token mint | Generally visible with normal token transfers | Visible | Visible | Visible |
+| Margin-transfer amounts and direction between free and market balances | Public in transfer receipts; the resulting position remains encrypted | Visible | Visible | Visible |
 | A public emergency exit | Reveals the fields needed for onchain settlement | Revealed fields become public | Revealed fields become public | Revealed fields become public |
 
 A winning maker must learn its own fill. It can hedge, share, or act on that
@@ -309,8 +310,10 @@ trade details in its own page already knows them. The hosted Depth interface
 can keep the raw input away from the integrating app if it uses an isolated
 Depth-controlled origin and sends the app only non-sensitive status.
 
-Normal Solana token transfers expose addresses and amounts. A public deposit
-close to an order can reveal a rough size. A visible maker account selected for
+Normal Solana token transfers expose addresses and amounts. Margin-transfer
+receipts also expose the amount moved into or out of a market. A movement
+close to an order can reveal clues about its size even though the position
+record is encrypted. A visible maker account selected for
 a fill can also leak clues. Depth must measure these correlations before
 describing live positions as fully hidden. Token-2022 Confidential Balances can
 hide transfer amounts for supported mints and accounts, but they do not hide
@@ -485,8 +488,8 @@ Snapshots have a fixed, public circuit capacity. If more quotes arrive than
 that capacity, admission follows a published deterministic rule and excess
 quotes wait for the next snapshot. The order submitter cannot choose a
 private subset. Depth does not claim that hiding maker quotes always improves
-the trader's price. The research in this folder treats that as an empirical
-question. Here, encrypted two-sided quotes keep the trader's side from losing
+the trader's price. Price improvement needs empirical validation. Here,
+encrypted two-sided quotes keep the trader's side from losing
 makers and prevent a public winning-maker identifier from directly exposing
 which of a maker's visible bid or ask was taken.
 
@@ -800,15 +803,18 @@ real collateral.
 
 ## Failure, pause, and recovery
 
-Depth tracks an operation as prepared, queued, finalized, rejected, expired,
-or failed. Each operation has one nonce, account and market versions,
-ciphertext hash, quote snapshot, oracle rule, deadline, and Arcium
-computation ID. The indexer is a convenience view. The program state is
-authoritative.
+Preparation is local review state. Submitted operations report canonical
+queued, finalized, rejected, expired, or failed outcomes only when supported
+by the recorded state. Each submitted trade step binds its nonce, account
+and market versions, ciphertext, quote snapshot, oracle rule, deadline, and
+Arcium computation. An action with several steps retains their separate
+receipts and progress. The indexer is a convenience view; the program state
+is authoritative.
 
-If the wallet rejects signing, no operation exists. If a transaction fails
-before queueing, funds remain where they were. If queueing succeeds but the
-compute fails or expires, the pending lock is released through an explicit
+If the wallet rejects the first signature, no onchain operation exists. If a
+transaction fails before queueing, that transaction does not change funds;
+earlier finalized steps of the action remain effective. If queueing succeeds
+but the compute fails or expires, the pending lock is released through an explicit
 reconciliation instruction after the network outcome is verified. The
 original ciphertext is never replayed as a new order. If a callback
 transaction fails, the operation stays pending until it is retried or
@@ -887,309 +893,607 @@ rather than hiding it in a balance update.
 
 ## SDK and API contract
 
-The SDK packages implement transaction submission and authorized private
-views, and the server implements direct public reads. Signed deployment manifests and maker fill pagination are implemented; optional
-HTTP event pagination and signed webhooks remain proposed. The protocol's account,
-operation, and market states are the source of truth. An app ID only attributes
-a trade; it does not authorize it.
+This section defines the target public API and its required behavior. Examples
+are implementation requirements, not a claim that every method is available in
+the current packages. The account, market, and operation records on Solana remain
+authoritative. An app ID attributes a trade; it does not authorize it.
 
-### Common client rules
+### Register an app
 
-The trader SDK and maker SDK load a signed, versioned deployment manifest.
-It pins the Solana network, Depth program, MXE, cluster, computation
-definitions, accepted settlement mints, and market configuration hashes.
-A client rejects a manifest that does not match the onchain registry. It
-does not let an app replace the program or vault address inside an order.
-Both SDKs accept a wallet signer and an RPC connection. A server URL is
-optional for faster public discovery, never a source of balance or fill
-authority.
-
-Every amount is a bigint in the market's published integer unit. A quote's
-size tier and max capacity are notional units; reserved margin is computed
-from the market risk rule. Prices,
-rates, and timestamps have named units in generated types. The SDK does
-not silently round a decimal amount or accept a JavaScript floating-point
-number as collateral. Market and account reads include a state version,
-as-of slot, and freshness status. A cached read can guide a form but
-cannot approve an order, withdrawal, or margin change.
-
-A request is signed by the wallet that owns the account. The trader
-signs trade, margin, deposit, withdrawal, and private-view requests. The
-maker wallet signs deposits, margin changes, withdrawals, and operator
-grants. Its registered quote operator may sign only quote publication,
-replacement, and cancellation within its market, capacity, and expiry
-limits. A separate owner-granted view scope permits reading that
-maker's own sealed fills and positions. The Solana program checks
-both scopes. An operator cannot sign a trade or release collateral.
-Revocation blocks new operator requests. A view queued before revocation may
-finish, while a quote still needs an active grant before reserving maker capital.
-The maker SDK never receives external hedge-venue credentials from Depth.
-
-For an encrypted trade, the wallet authorization binds the ciphertext
-hash, account, market, requested operation kind, quote snapshot, oracle
-rule, app and fee attribution, nonce, expiry, program, and market
-revision. The private encrypted input contains direction, exact
-notional, margin, price bound, and fee bound. The circuit checks those
-bounds against the fill. The SDK displays the plaintext terms it is
-about to encrypt and sign. A wallet signature over ciphertext alone
-cannot prove that a dishonest frontend displayed the true plaintext;
-the hosted interface has to protect its own code and origin. A custom
-app controls its form and is responsible for what it shows users.
-Publicly hashing the small set of private order fields would allow
-guessing, so a plaintext order hash is not used as a privacy shortcut.
-
-A trader chooses a maximum execution price for a long and a minimum
-execution price for a short. A reduce or close request states whether
-any residual reversal is allowed and caps the new exposure. All trade
-requests include a maximum total fee and a deadline. The SDK obtains
-the current snapshot and policy revision before signing. If they change
-before admission, the request rejects; the SDK asks for a new signature
-instead of silently widening a limit.
-
-### Trader and app SDK
+App registration comes first. The owner connects a wallet, registers its fee,
+and receives the app ID from the confirmed registration. Registration also
+prepares the account needed to receive and withdraw app revenue.
 
 ~~~ts
 import { create_depth } from "@depth/sdk";
 
-const depth = await create_depth({
-  app_id,
-  wallet,
-  connection,
-  environment: "mainnet"
+const admin = await create_depth({
+  environment: "devnet",
+  wallet: appOwnerWallet,
 });
 
-const market = await depth.catalog.market("BTC-USD");
-const account = depth.account();
-const balance = await account.summary(); // wallet-authorized private view
-
-const operation = await depth.trade.submit({
-  market_id: market.id,
-  direction: "long",
-  amount: {
-    margin: 700_000_000n,
-    notional: 1_050_000_000n
-  },
-  worst_price: 75_000_000_000n,
-  max_fee: 2_000_000n,
-  expires_at: expiry
+const registration = await admin.app.register({
+  feeBps: 1,
 });
 
-save(operation.id);
-const snapshot = await operation.wait({ timeout_ms: 30_000 });
-if (snapshot.status === "queued") {
-  showPending(snapshot.id);
-}
+const { appId } = await registration.confirm();
 ~~~
 
-The example is illustrative; BTC-USD is not an admitted Depth market.
-The SDK can prepare and show a transaction before submission, but
-wallet approval is still required. A failed wallet approval creates no
-onchain operation. A signed submission returns an operation handle,
-not an execution receipt. The client stores its ID before waiting.
-After a reload or RPC change, it calls
-`depth.operation(operation_id)` and reads the canonical onchain state.
-A timeout returns the latest pending snapshot; it never means a fill.
-If the server and chain disagree, the SDK marks the server view stale
-and uses the chain.
+An existing app owner can retrieve its registration through
+`admin.app.summary()`. App IDs are public configuration, not secrets. A client
+without an app ID supports app administration and account operations; attributing
+a trade requires a valid app ID. An invalid or inactive app never silently falls
+back to another app.
 
-| Trader resource | Proposed actions |
+### Common client rules
+
+Both SDKs resolve the RPC endpoint, public service URL, and signed deployment
+manifest from `environment`. The manifest pins the network, Depth program, MXE,
+cluster, computation definitions, settlement mint, and market configuration.
+The SDK verifies the manifest against its trusted signing keys and the onchain
+registry. An unavailable or mismatched deployment produces a typed error.
+
+An RPC connection, service URL, deployment manifest, and persistence adapter are
+advanced overrides. The normal integration does not construct a Solana
+connection or pass program addresses. Overrides undergo the same validation.
+A public service accelerates discovery; it cannot authorize a balance or fill.
+
+The browser and Node builds accept the wallet capabilities they actually need.
+Client construction does not submit transactions or request signatures.
+Mutations and authorized private reads request approval when needed. A private
+view can involve an Arcium computation, network fees, and a wallet signature;
+a method named `summary()` does not make that work free.
+
+The SDK handles account derivation, required initialization, token accounts,
+integer conversions, nonces, policy reads, encryption, quote snapshots, and
+continuation steps. It displays the terms and costs before signing. It never
+automatically deposits from a wallet, raises a fee cap, widens a price limit,
+or increases an operator's authority to make a request succeed.
+
+A wallet authorization binds the encrypted input, owner, market, operation,
+quote snapshot, app attribution, fee limits, expiry, program, and policy version.
+The circuit verifies the private terms. A custom app can see the plaintext its
+own form collects; a signature over ciphertext cannot prove that a dishonest
+frontend displayed the right terms.
+
+### Amounts, prices, and durations
+
+Exact amounts are `bigint` values in the published unit. SOL/USDC uses six
+decimals for USDC, nine for SOL quantity, and eight for prices. Trade
+`notional`, `margin`, `maxFee`, and quote capacity are USDC base units.
+
+Account transfers and position reductions also accept explicit amount selectors:
+
+~~~ts
+type Amount = bigint | "all" | `${number}%`;
+~~~
+
+Percentage strings such as `"10%"` and `"25%"` must be positive and at most
+100, with at most four decimal places. Parsing and multiplication use integer
+arithmetic, rounding down to the smallest unit. Unsupported precision, zero
+results, and invalid amounts fail before signing.
+
+| Operation | Basis for `"all"` and percentage selectors |
 | --- | --- |
-| `depth.catalog` | `markets()`, `market(id)`, `market_policy(id)` |
-| `depth.account()` | `summary()`, `deposit(amount)`, `withdraw(amount, destination)`, `positions()`, `pending()` |
-| `depth.trade` | `submit(order)`, `reduce(order)`, `close(order)`, `reverse(order)` |
-| `depth.position(id)` | `summary()`, `add_margin(amount)`, `remove_margin(amount)` |
-| `depth.operation(id)` | `status()`, `wait({ timeout_ms })`, `subscribe(listener)`, `private_result()` |
+| `account.withdraw` | The current free balance available for withdrawal. |
+| `account.allocate` or `position.addMargin` | The current free balance available for allocation. |
+| `account.release` or `position.removeMargin` | The amount removable from that market after current obligations and risk checks. |
+| `trade.reduce` | The current absolute SOL position quantity, never the free balance or original entry amount. |
 
-`trade.submit` increases an existing same-side net position if one
-exists. `reduce` cannot open exposure on the opposite side;
-`close` targets the entire current position version; `reverse`
-requires an explicit new-side limit and margin. Each is a distinct
-signed operation so a stale interface cannot accidentally reverse a
-position. `position.summary()` and account private reads require an
-owner-authorized sealed view with a fresh session key. A displayed
-health value always includes its oracle update and state version.
+An exact `bigint` passed to `trade.reduce` is SOL base quantity; the other
+transfer methods use USDC base units. `trade.close` means the entire current
+position. `"all"` never consumes locked or reserved collateral. A prepared
+operation records the source version, selector basis, rounding, and exact
+resolved amount. Submission revalidates it and requires a new review if the
+terms must change. It does not silently recalculate an approved percentage.
 
-`deposit` is a token transfer plus an accepted ledger credit.
-`withdraw` pays only the wallet-authorized recorded destination after
-the private free-balance check. The SDK exposes transaction fees and
-Arcium computation costs before approval. It never calls a deposit
-available merely because a transfer signature exists.
+Trade inputs choose either `slippageBps` or `worstPriceE8`, never both. Slippage
+is converted into a directional execution limit using a disclosed, fresh
+reference. The review identifies that reference, its age, and the resulting
+limit. An oracle price is not presented as an executable maker quote. Matching
+still checks the limit, maximum fee, policy, and deadline.
 
-### Maker SDK and hedge adapter boundary
+Ordinary calls use `validForSeconds`. An explicit `expiresAt` is an advanced,
+mutually exclusive alternative. Preparation fixes the expiry and submission
+rejects an expired preparation. A retry never extends the signed deadline.
+
+### One preparation and operation lifecycle
+
+Every mutation supports the same optional final argument, `{ prepare: true }`.
+Preparation returns a reviewable draft without submitting that mutation.
+If preparation needs a fresh authorized private view, that read and its costs
+are disclosed before requesting its signature.
+
+~~~ts
+const prepared = await admin.account().withdraw("25%", {
+  prepare: true,
+});
+
+const review = prepared.review;
+const withdrawal = await prepared.submit();
+await withdrawal.confirm();
+~~~
+
+The review includes resolved amounts and units, account and market versions,
+price and fee limits, recipient, expiry, required approvals, and the ordered
+steps. Costs distinguish Depth fees, maker rebates, app fees, Arcium charges,
+Solana fees, and account rent, including their currencies and whether each is
+an estimate or a signed cap. Missing estimates are explicit; they are not zero.
+
+Calling the same method without `prepare: true` prepares and submits with the
+same checks. It does not bypass wallet approval. `prepared.submit()` revalidates
+the draft before signing and never changes its economic terms silently.
+
+Every submitted mutation returns an operation handle:
+
+| Method | Required behavior |
+| --- | --- |
+| `status()` | Return the latest verified public progress and canonical receipt references. |
+| `subscribe(handler)` | Deliver deduplicated progress, expose reconnect errors, and return an unsubscribe function. |
+| `wait(options?)` | Wait for progress or a terminal outcome; on timeout return the latest verified pending snapshot, or a typed read error if none was obtained. |
+| `confirm(options?)` | Resolve only with a successful typed receipt; throw a typed failure or pending-timeout error otherwise. |
+| `privateResult()` | Obtain an authorized private result when the operation has one, using a fresh view when needed. |
+| `resume()` | Reconcile canonical progress and continue eligible unfinished steps without repeating a completed effect. |
+| `cancel()` | Request cancellation only when the current operation permits it. |
+| `refund()` | Request the canonical refund only when the recorded operation is refundable. |
+
+Timeout overrides are optional. Defaults account for the operation kind and
+Arcium execution. A timeout is not a rejection or proof that funds can be
+refunded. Unsupported cancellation, refund, or private-result requests return
+typed errors.
+
+Successful receipts carry the identifiers needed next, such as `appId`,
+`quoteId`, and `offerId`. Success refers to the whole requested action: a
+deposit is credited, a quote is active, and a withdrawal is paid. A queued
+transaction or successful intermediate callback is not final success.
+
+A high-level action may contain several transactions. Its operation records
+the child receipts and progress so it can be recovered after a restart.
+Already finalized transfers are not rolled back if a later step fails. For
+example, a failed trade after successful margin allocation leaves that margin
+accounted for and exposes the permitted release path.
+
+### Maker onboarding and quote publication
+
+The maker owner funds the account, allocates collateral, and grants a bot
+limited authority. The bot receives its own signer, not the owner's wallet.
 
 ~~~ts
 import { create_depth_maker } from "@depth/maker-sdk";
 
 const maker = await create_depth_maker({
-  wallet: quote_operator_wallet, // granted quote and own-fill view scopes
-  connection,
-  environment: "mainnet"
+  environment: "devnet",
+  wallet: makerOwnerWallet,
+  appId,
 });
 
-const quote = await maker.quote.publish({
-  market_id: "BTC-USD",
-  tiers: [
-    { size: 1_000_000_000n, bid: 74_900_000_000n,
-      ask: 75_100_000_000n }
-  ],
-  max_capacity: 3_000_000_000n,
-  expires_at: expiry,
-  client_nonce: nonce
+const deposit = await maker.account().deposit(10_000_000_000n);
+await deposit.confirm();
+
+const allocation = await maker.account().allocate({
+  marketId: "SOL-USD",
+  amount: "50%",
+});
+await allocation.confirm();
+
+const authorization = await maker.operator.authorize({
+  operator: botWallet.publicKey,
+  marketId: "SOL-USD",
+  maxCapacity: 5_000_000_000n,
+  validForSeconds: 86_400,
+  canView: true,
+});
+await authorization.confirm();
+
+const bot = await create_depth_maker({
+  environment: "devnet",
+  wallet: botWallet,
+  makerOwner: makerOwnerWallet.publicKey,
 });
 
-await quote.wait({ timeout_ms: 30_000 });
-const stop = maker.fills.subscribe(onFinalizedFill);
+const publication = await bot.quote.publish({
+  marketId: "SOL-USD",
+  bidE8: 19_900_000_000n,
+  askE8: 20_100_000_000n,
+  maxCapacity: 5_000_000_000n,
+  validForSeconds: 30,
+});
+
+const { quoteId } = await publication.confirm();
 ~~~
 
-The maker wallet uses `maker.account.deposit`,
-`maker.account.allocate`, `maker.account.summary`, and
-`maker.account.withdraw`. It uses `maker.operator.authorize` and
-`maker.operator.revoke` to manage quote-bot scopes. A quote bot uses
-`maker.quote.publish`, `replace`, `cancel`, `active`, and
-`capacity`. `maker.fills.list({ cursor })`,
-`maker.fills.get(fill_id)`, and `maker.fills.subscribe(listener)`
-return authenticated fill IDs and sealed details only to the maker
-wallet or a registered, scoped view key. `maker.position` exposes the same margin, reduce, and close actions
-as a trader position, but those require the maker wallet, not the
-quote operator. Read methods paginate where records can grow.
+The flat quote applies the same bid and ask to supported tiers within its
+capacity. The SDK loads the market policy, derives the eligible tier envelope,
+and validates prices, expiry, collateral, and operator limits. A maker does not
+need a separate `marketPolicy()` call to publish safely.
 
-Publication success means the activation callback reserved capital and
-marked the quote active. A submitted or queued quote is not executable.
-`replace` specifies the prior quote version; it cannot alter a quote
-already pinned by an admitted order. `cancel` completes only after
-its callback stops future selection. The SDK reports remaining
-capacity and attached pending operations separately.
+Advanced makers may provide explicit tier prices instead of a flat bid and
+ask. The two input forms are mutually exclusive and enforce the same rules.
+Neither form pretends to guarantee a hedge or change the market's risk policy.
 
-The fill stream may duplicate, reorder, or miss notifications. The
-maker bot persists the last finalized fill ID, fetches missed fills
-after restart, and reconciles its current Depth position before
-sending hedges. It treats each fill ID as an idempotency key in its own
-hedge ledger. An adapter for an external venue is maker-owned code.
-Depth's SDK can export the confirmed fill and current exposure, but
-has no `hedge()` call that pretends an external trade is part of a
-Depth transaction. The bot must handle partial hedge fills, venue
-outage, stale quotes, basis, and its own hedge collateral.
+Quote and view authority remain separate capabilities. Quote-only,
+view-only, and combined grants must be representable and revocable. A bot
+cannot deposit from the owner wallet, allocate or release collateral, withdraw,
+or initiate the owner's trades. Renewal requires a new owner authorization;
+the SDK does not silently extend a grant.
 
-### Operation and private-result model
+### Trader entry and funding
 
-Each operation has a stable ID, kind, owner, market where relevant,
-client nonce, onchain state version, creation and update slots,
-submission signature when present, computation ID when queued, and
-one canonical status. The statuses are `prepared` (local draft
-only), `queued`, `finalized`, `rejected`, `expired`, and
-`failed`. A finalized trade can have a `filled` outcome; a
-finalized quote activation has an `active` outcome. These outcomes
-are not interchangeable with submission status. A rejected or failed
-operation has an error code and no fill. The onchain record, not an
-HTTP response or event alone, determines the terminal state. The
-public operation snapshot has this shape:
+After the app has obtained its app ID, it connects each trader's wallet.
 
 ~~~ts
-type OperationSnapshot = {
-  id: string;
-  kind: "deposit" | "withdraw" | "quote" | "trade" |
-        "margin" | "view" | "risk";
-  owner: string;
-  market_id?: string;
-  status: "prepared" | "queued" | "finalized" |
-          "rejected" | "expired" | "failed";
-  outcome?: "filled" | "active" | "cancelled" | "no_change";
-  state_version?: bigint;
-  slot?: bigint;
-  tx_signature?: string;
-  error?: { code: string; stage: string; retryable: boolean };
-};
+import { create_depth } from "@depth/sdk";
+
+const depth = await create_depth({
+  environment: "devnet",
+  appId,
+  wallet: traderWallet,
+});
+
+const markets = await depth.catalog.markets();
+const market = await depth.catalog.market("SOL-USD");
+const account = await depth.account().summary();
+const positions = await depth.positions.list();
+const pending = await depth.account().pending();
+
+const deposit = await depth.account().deposit(500_000_000n);
+await deposit.confirm();
 ~~~
 
-A receipt adds fields only after an authorized private view. The public
-snapshot never includes trade direction, exact size, quote price, or
-private account balance.
+The SDK resolves the settlement token account, prepares the private account if
+needed, submits the deposit, and follows it through private credit. An app
+should display account state from `summary()` rather than manually combining
+raw encrypted records or receipt statuses.
 
-`wait()` watches the operation, handles RPC reconnects, and resolves
-with a typed snapshot on a terminal state or caller timeout. The
-snapshot always states whether execution actually happened.
-`subscribe()` returns an unsubscribe function and may re-deliver a
-snapshot after reconnection. Consumers deduplicate by operation ID and
-state version. Cancelling the local wait or closing a tab does not
-cancel a queued onchain operation. Retrying a failed order requires
-reconciliation, a new nonce, and a new wallet approval.
+Market discovery, positions, pending operations, and other lists use
+`{ items, nextCursor }` with an optional `cursor` and `limit`. The SDK handles
+internal RPC and service pagination. Incomplete history or an unavailable
+discovery source is an explicit condition, not an empty account.
 
-Arcium supports sealing a result to a client's temporary X25519 key,
-but its example client keeps the corresponding private key in memory.
-Depth cannot rely on such a notice for recovery after a reload.
-The canonical path retains the private fill record and current position
-in MXE-encrypted state. An owner-signed view computation re-seals
-authorized fields to a fresh session public key. Direct sealing within
-the original match callback is optional and needs a separate proof
-that it can select the winning maker's key and fit the callback.
-A maker uses the same pattern for its fill and position views.
-Public operation status remains recoverable without a view key.
-Historical private receipts need a bounded MXE-encrypted receipt
-record keyed by fill ID, with its account allocated before callback,
-a published retention period, and rent and cleanup rules. That layout
-must fit the callback size and actual onchain storage budget. Receipts
-are recoverable only for the published retention period and only once
-the re-seal path is implemented and tested. An app or indexer cannot
-request a view for someone else's wallet.
+### Open and manage a position
+
+~~~ts
+const prepared = await depth.trade.submit(
+  {
+    marketId: "SOL-USD",
+    direction: "long",
+    notional: 1_000_000_000n,
+    margin: 200_000_000n,
+    slippageBps: 50,
+    maxFee: 1_000_000n,
+    validForSeconds: 30,
+  },
+  { prepare: true },
+);
+
+const review = prepared.review;
+const opening = await prepared.submit();
+await opening.confirm();
+
+const fill = await opening.privateResult();
+const position = depth.position(fill.positionId);
+const summary = await position.summary();
+~~~
+
+`notional` is the requested USDC execution notional. The encrypted computation
+derives a representable SOL quantity at the selected price, rounding down to
+the smallest SOL unit so execution does not exceed the requested notional.
+The private result reports the actual quantity and notional. Renaming a
+base-quantity field in the SDK does not implement this behavior.
+
+`margin` is additional collateral to allocate for this action, not a request
+to replace the position's existing margin or the circuit's total collateral
+budget. The SDK orchestrates the allocation and supplies the correct encrypted
+budget. A zero addition is allowed only when existing eligible collateral
+satisfies the action. It never deposits or tops up beyond the approved amount.
+
+An increase uses `trade.submit` again with the same direction and the
+additional notional. An opposite-direction request must use an explicit
+reduction, close, or reversal; it cannot accidentally reverse the position.
+
+~~~ts
+const increase = await depth.trade.submit({
+  marketId: "SOL-USD",
+  direction: "long",
+  notional: 250_000_000n,
+  margin: 50_000_000n,
+  slippageBps: 50,
+  maxFee: 250_000n,
+  validForSeconds: 30,
+});
+await increase.confirm();
+
+const topup = await position.addMargin("25%");
+await topup.confirm();
+
+const release = await position.removeMargin("10%");
+await release.confirm();
+
+const reduction = await depth.trade.reduce({
+  positionId: position.id,
+  amount: "25%",
+  slippageBps: 50,
+  maxFee: 250_000n,
+  validForSeconds: 30,
+});
+await reduction.confirm();
+
+const reversal = await depth.trade.reverse({
+  positionId: position.id,
+  direction: "short",
+  notional: 500_000_000n,
+  margin: 100_000_000n,
+  slippageBps: 50,
+  maxFee: 1_000_000n,
+  validForSeconds: 30,
+});
+await reversal.confirm();
+
+const closing = await depth.trade.close({
+  positionId: position.id,
+  slippageBps: 50,
+  maxFee: 500_000n,
+  validForSeconds: 30,
+});
+await closing.confirm();
+
+const released = await position.removeMargin("all");
+await released.confirm();
+
+const withdrawal = await depth.account().withdraw("all");
+await withdrawal.confirm();
+~~~
+
+The reversal's `notional` is the final exposure on the new side. The SDK and
+circuit account for closing the old exposure as well; they do not interpret it
+as the total opposite-side fill amount. Review and fee limits cover the entire
+execution.
+
+Reduction and close derive the closing direction and current position version
+internally. They require no manual size calculation for a full close or manual
+total-margin budget. They still check execution liquidity, fees, funding,
+oracle validity, and collateral. A close does not automatically withdraw funds;
+remaining collateral is released and withdrawn explicitly.
+
+### Maker maintenance, fills, and exit
+
+~~~ts
+const quote = bot.quote(quoteId);
+const status = await quote.status();
+const capacity = await quote.capacity();
+const active = await bot.quote.active({ marketId: "SOL-USD" });
+
+const replacement = await bot.quote.replace({
+  quoteId,
+  bidE8: 19_950_000_000n,
+  askE8: 20_050_000_000n,
+  maxCapacity: 5_000_000_000n,
+  validForSeconds: 30,
+});
+
+const { quoteId: nextQuoteId } = await replacement.confirm();
+~~~
+
+Replacement resolves the previous quote's market and preserves commitments
+already accepted against it. Any interval with no active replacement is
+reported. Publication, replacement, cancellation, and capacity release remain
+recoverable operations rather than a sequence the bot must reconstruct.
+
+~~~ts
+const page = await bot.fills.list({ marketId: "SOL-USD" });
+const fill = await bot.fills.get(fillId);
+
+const unsubscribe = await bot.fills.subscribe({
+  marketId: "SOL-USD",
+  onFill: onMakerFill,
+  onError: onMakerError,
+});
+~~~
+
+`fillId` comes from a listed fill or event. `onMakerFill` and `onMakerError`
+are the integrating maker's handlers. With view authority, the fill handler
+receives the maker-authorized private execution details needed for hedging.
+The SDK manages pagination, durable cursors, replay, and deduplication, and
+checkpoints only after the handler succeeds. Persistent storage failures and
+history gaps must be surfaced. A storage adapter is an optional deployment
+choice, not a required `saveCursor` callback in every bot.
+
+External hedging is the maker's responsibility. A maker must persist its hedge
+intent and use an idempotent venue order key before acknowledging a fill.
+An SDK cursor cannot make a crash between an external hedge and local
+acknowledgment exactly once. A failed hedge never reverses a finalized Depth
+trade or becomes Depth collateral.
+
+The owner has the same `account()`, `positions.list()`, `position(id)`, and
+`trade.submit/reduce/close/reverse` interfaces as a trader. Its app ID applies
+when it takes liquidity. Owner private summaries include collateral, exposure,
+reserved quote capacity, funding, fees, and current risk.
+
+~~~ts
+const cancellation = await bot.quote(nextQuoteId).cancel();
+await cancellation.confirm();
+
+const revocation = await maker.operator.revoke({
+  operator: botWallet.publicKey,
+  marketId: "SOL-USD",
+});
+await revocation.confirm();
+
+const release = await maker.account().release({
+  marketId: "SOL-USD",
+  amount: "all",
+});
+await release.confirm();
+
+const withdrawal = await maker.account().withdraw("all");
+await withdrawal.confirm();
+~~~
+
+The owner can list grants through `operator.list()` and renew through
+`operator.authorize()`. Revocation blocks new operator requests; it does not
+cancel an accepted fill. The owner can cancel its quotes after revocation.
+Before releasing all capital, it closes any remaining position and releases
+quotes and backstop reservations. `"all"` only releases the currently safe
+amount and does not imply that every obligation has ended.
+
+### Optional backstop participation
+
+~~~ts
+const offering = await maker.backstop.offer({
+  marketId: "SOL-USD",
+  maxCapacity: 1_000_000_000n,
+  validForSeconds: 3_600,
+});
+
+const { offerId } = await offering.confirm();
+const offer = maker.backstop(offerId);
+const status = await offer.status();
+
+const release = await offer.release();
+await release.confirm();
+~~~
+
+Backstop participation is explicit owner authorization. Capacity remains
+reserved while the offer or a committed liquidation requires it. The SDK
+cannot bypass the market's liquidation, expiry, or release rules.
+
+### App administration and revenue
+
+~~~ts
+const app = await admin.app.summary();
+const revenue = await admin.account().summary();
+
+const feeChange = await admin.app.setFee(2);
+await feeChange.confirm();
+
+const withdrawal = await admin.account().withdraw("25%");
+await withdrawal.confirm();
+
+const deactivation = await admin.app.setActive(false);
+await deactivation.confirm();
+
+const activation = await admin.app.setActive(true);
+await activation.confirm();
+~~~
+
+The summary distinguishes earned, pending, and credited withdrawable revenue.
+Withdrawal uses the common amount selectors and reports a typed unavailable
+amount if there is nothing to withdraw. Apps need not manually reproduce
+balance arithmetic. Updating the app fee stays within protocol limits and
+does not rewrite accepted trades. Deactivation blocks new attributed trades;
+it does not block the owner's administration or eligible withdrawals.
+
+### Discovery, private reads, and recovery
+
+`catalog.marketPolicy(marketId)` remains available for advanced risk and
+quoting decisions. Routine trade and quote methods already read and enforce
+the applicable policy. Summaries include units, canonical identifiers,
+versions, as-of slots, and freshness; stale risk data cannot authorize an action.
+
+A wallet reconnects on a different browser by discovering its canonical
+accounts and receipts, then requesting new authorized private views. An
+operation ID stored in a browser is a convenience, not a decryption key or
+the sole recovery path. The SDK must not require the original browser's
+ephemeral encryption secret to recover current balances, positions, or
+retained fills. Stored discovery metadata must not contain private results.
+
+~~~ts
+const pending = await depth.account().pending();
+
+for (const item of pending.items) {
+  const operation = depth.operation(item.id);
+  const state = await operation.status();
+}
+~~~
+
+A pending item can be resumed, cancelled, or refunded only as its canonical
+state permits. The SDK uses a durable root-to-child operation relationship
+and reconciles signatures and nonces before any retry. It reports when a
+signature or funding is needed rather than claiming background completion.
+
+Eligible continuation work should be executable by a keeper after the original
+authorization. That authorization must bind the owner, amount, market,
+destination, expiry, and any execution-cost budget. A keeper cannot change
+those terms or obtain general wallet authority. Steps that require a new
+decision or signature remain owner actions.
+
+~~~ts
+const recovery = await depth.recovery.status({
+  marketId: "SOL-USD",
+});
+
+if (recovery.claimable) {
+  const claim = await depth.recovery.claim({
+    marketId: "SOL-USD",
+  });
+  await claim.confirm();
+}
+~~~
+
+Recovery distinguishes normal pending-operation recovery from permanent MXE
+failure. Emergency recovery follows the published committee, disclosure, and
+market-wide settlement process. It must not silently expose positions because
+an ordinary request timed out. Account and fee claims reconcile canonical
+receipts and cannot be paid twice.
+
+### Public operations, errors, and retention
+
+SDK fields use camelCase. HTTP and generated chain types may use their own
+versioned wire naming, with lossless adapters. A public operation snapshot
+identifies its kind, owner, market where applicable, state version, observed
+slot and commitment, relevant signatures, child receipts, and any public error.
+App, account, trade, quote, operator, backstop, and recovery mutations use the
+same lifecycle while preserving their specific canonical states.
+
+A prepared draft is local review state, not an onchain queued operation.
+Intermediate states are not reported as finalized. Failure reasons must not
+disclose a hidden position, balance, price, or comparison result. Existing
+public token and margin-transfer amounts remain public metadata as described
+in the privacy section.
+
+Typed errors distinguish invalid input, unsupported environment or wallet,
+wallet rejection, insufficient funds, stale state, price or fee limits,
+expired requests, revoked authority, unavailable private views, RPC or service
+failure, pending timeout, and terminal rejection. Errors include a retry or
+recovery action where one is safe; they never imply that a retry is free of
+duplicate-execution risk without reconciliation.
+
+Persistent order, fee, withdrawal, and payout receipts are not pruned in the
+initial design. Their transaction payer funds rent. Any future pruning policy
+must preserve replay protection, auditability, and the promised recovery window
+and be published before activation. Temporary private-view accounts can be
+closed after consumption with the required authorization. The SDK exposes
+cleanup and its costs without silently discarding the only recoverable record.
 
 ### Hosted interface and HTTP service
 
-An app can open the Depth-hosted interface to collect the trade inputs:
+The headless SDK works independently of the hosted interface. The separately
+scoped hosted interface may be opened with:
 
 ~~~ts
-depth.open({ market_id: "BTC-USD" });
+await depth.open({ marketId: "SOL-USD" });
 ~~~
 
-It runs on a Depth-controlled origin isolated from the app. The parent
-may pass a market ID, public app ID, and non-sensitive display context.
-The child checks the exact parent origin against its registered app
-record. The parent checks the child's exact origin. Their versioned
-message protocol has `ready`, `closed`, `operation_submitted`,
-and `operation_status` events. Those carry an operation ID and
-public status only. They do not carry direction, size, margin,
-decrypted position, or wallet signing payload. If the app supplies a
-prepared direction or amount, it already knows that information; the
-interface labels that mode accordingly. A custom SDK interface also
-knows every value collected by its own code.
+An embedded interface uses an isolated Depth-controlled origin, exact origin
+checks, and a versioned message protocol. It shares public progress with the
+integrating app and never sends private inputs or view keys through public
+messages. Hosting this interface is separate from shipping the SDK.
 
-The optional server has versioned public reads:
+The public HTTP service exposes market, app, quote, operation, and recovery
+reads. Owner discovery and paginated public history support wallet recovery
+without making the service a source of ledger authority. Public events and
+signed webhooks, if enabled, are idempotent progress hints. Clients verify
+canonical state and finality independently. No unauthenticated endpoint returns
+private fills, balances, or positions.
 
-| Route | Content |
-| --- | --- |
-| `GET /v1/markets` and `GET /v1/markets/{id}` | Published market configuration, versions, status, and as-of slot |
-| `GET /v1/quotes/{id}` | Public quote envelope, activation state, capacity bound, and expiry; never bid or ask plaintext |
-| `GET /v1/operations/{id}` | Public operation status, signatures, slots, and safe error codes |
-| `GET /v1/apps/{id}` | Verified public app identity and attribution terms |
+### Depth-owned execution
 
-The server may also provide cursor-paginated public event reads and
-signed app webhooks for status changes. A webhook includes event ID,
-operation ID, status, state version, and signature. An app verifies
-the signature, deduplicates the event ID, and confirms the onchain
-state before calling a trade filled. App registration and webhook
-configuration use an owner-signed administrative route. HTTP never
-accepts a plaintext trader order, maker quote price, private-view
-secret, withdrawal authority, or hedge-venue credentials. Clients
-submit state-changing actions as signed Solana transactions. Public
-API availability is not needed to exercise the program.
-
-SDK errors have a stable `code`, `stage`, `operation_id` if one
-exists, `retryable` flag, and `next_action`. Codes distinguish a
-wallet rejection, stale quote or market version, price outside limit,
-insufficient collateral, oracle unavailable, market pause, queue
-expiry, callback failure, private-view authorization failure, and
-RPC/indexer outage. A retriable transport error does not authorize
-blind resubmission. The client first resolves the original nonce and
-operation ID onchain. Protocol and API versions are published in the
-deployment manifest; incompatible clients reject instead of
-guessing how to decode encrypted state.
-
-The trader interface shows available balance, locked margin, current
-oracle reference, funding rule, estimated liquidation level if a
-fresh private view supports it, price and fee limits, and pending
-operations. It labels an indicative price as indicative. The maker
-interface shows quote capacity, active quote versions, finalized fills,
-Depth exposure, locked margin, and risk. Both interfaces distinguish
-a live onchain read from a stale indexed or cached read.
+Keepers maintain oracle and funding state and progress eligible settlement,
+fee claims, liquidations, and authorized continuations. These are protocol
+services, not code every integrating app must reproduce. Configuration and
+emergency authority stay separate from app registration. Neither a service
+operator nor an app can choose payouts, bypass risk checks, or decrypt arbitrary
+accounts through the ordinary SDK.
 
 ## Project organization
 
@@ -1342,6 +1646,32 @@ assume a specific package combination works without that test.
     HTTP responses and signed webhooks are idempotent hints, while
     clients confirm finality from the program. Generated SDK types
     match the deployed IDL and encrypted instruction layouts.
+15. App registration returns its canonical app ID and prepares fee receipt
+    accounts. Environment-based construction, browser wallets, Node maker
+    signers, fee changes, deactivation, and revenue withdrawals work through
+    the documented public API without caller-supplied program addresses.
+16. All mutation kinds support the same preparation and confirmation model.
+    Reviews disclose resolved amounts, approval steps, fees, computation
+    costs, and rent. Percentage rounding, stale preparations, slippage,
+    expiry, and confirmation timeouts cannot silently change signed terms.
+17. Notional-based entry, additional margin, partial reduction, full close,
+    and reversal to a stated final exposure agree between SDK, encrypted
+    inputs, circuits, and receipts. Tests cover rounding and a changing
+    execution price; a field rename is insufficient.
+18. A keeper can complete authorized continuation steps after the owner
+    disconnects, with no power to change destinations, amounts, markets,
+    expiry, or approved costs. Duplicate and late callbacks remain safe.
+    A new browser can rediscover pending work without a saved operation ID.
+19. The documented pause policy permits safe reductions and closes when
+    their oracle, liquidity, and solvency prerequisites remain valid, while
+    rejecting increases and unsafe exits. Every admission and callback stage
+    enforces the same policy without revealing the hidden trade intent.
+20. Quote capacity follows the documented lifecycle after a smaller fill;
+    public capacity changes do not reveal the exact hidden fill amount.
+    Quote-only, view-only, combined, expired, and revoked grants are tested.
+21. Recovery rehearsal uses independently held threshold key material and
+    the published committee process. Possessing one complete recovery key
+    plus several transaction signers is not proof of independent custody.
 
 ## Primary sources
 
