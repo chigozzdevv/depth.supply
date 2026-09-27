@@ -62,14 +62,30 @@ test("market and recovery projections expose only public state", async () => {
             revision: 3n,
             settlementMint: PublicKey.unique(),
             oraclePriceE8: 20_000_000_000n,
+            oracleEmaE8: 19_900_000_000n,
+            oracleConfidenceE8: 100_000_000n,
             oracleTimestamp: 100n,
+            oracleSlot: 80n,
             fundingIndex: 0n,
+            lastFundingTimestamp: 90n,
             pendingOrder: order,
             config: {
               tradeFeeBps: 5,
               insuranceFeeBps: 1,
               initialMarginBps: 1_000,
               maintenanceMarginBps: 500,
+              liquidationFeeBps: 100,
+              maxAccountNotional: 10_000n,
+              maxMarketNotional: 100_000n,
+              maxOracleAgeSeconds: 30,
+              maxConfidenceBps: 100,
+              maxQuoteDeviationBps: 500,
+              maxQuoteLifetimeSeconds: 60,
+              maxOrderQueueSeconds: 60,
+              fundingIntervalSeconds: 3_600,
+              fundingRateCapBps: 100,
+              quoteTiers: [100n, 200n, 500n, 1_000n],
+              backstopMinCollateral: 1_000n,
             },
           }
         : name === "RecoveryConfig"
@@ -95,6 +111,23 @@ test("market and recovery projections expose only public state", async () => {
   }));
   const market = await new MarketService(chain).get();
   assert.equal(market?.pending_order, order.toBase58());
+  assert.deepEqual(market?.quote_tiers, ["100", "200", "500", "1000"]);
+  assert.equal(market?.funding_interval_seconds, 3_600);
+  assert.equal(market?.max_quote_deviation_bps, 500);
+  const app = buildApp(chain, false);
+  try {
+    const response = await app.inject("/v1/markets/SOL-USD");
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json().quote_tiers, [
+      "100",
+      "200",
+      "500",
+      "1000",
+    ]);
+    assert.equal(response.json().max_account_notional, "10000");
+  } finally {
+    await app.close();
+  }
   const recovery = new RecoveryService(chain);
   assert.equal((await recovery.config())?.threshold, 3);
   const winddown = await recovery.winddown();
