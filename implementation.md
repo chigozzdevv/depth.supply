@@ -20,7 +20,7 @@ establish production readiness.
 | Private accounting | Encrypted free and market balances, margin transfers, positions, clearing state, and authorized balance and position views. | [Arcis circuits](contracts/encrypted-ixs/src/lib.rs), [margin instructions](contracts/programs/depth/src/instructions/margin.rs), [SDK views](packages/sdk/src/view/view.ts). |
 | Trading | Encrypted quote validation, capacity reservation, complete bounded quote snapshots, best-price selection, intent checks, settlement, PnL, and funding accounting. | [Orders](contracts/programs/depth/src/instructions/order.rs), [reservations](contracts/programs/depth/src/instructions/reserve.rs), [settlement](contracts/programs/depth/src/instructions/settlement.rs), [commit](contracts/programs/depth/src/instructions/commit.rs). |
 | Economics | The locked 5 bps base schedule, configurable 0–2 bps app fee, maker rebate, private fee claims, and recipient balance credit. | [App configuration](contracts/programs/depth/src/instructions/app.rs), [fee instructions](contracts/programs/depth/src/instructions/fees.rs), [circuits](contracts/encrypted-ixs/src/lib.rs), [fee worker](server/src/features/fee/fee.service.ts). |
-| Risk | Pyth update validation, margin checks, funding advancement, pause after missed funding intervals, backstop offers, liquidation, insurance accounting, and emergency payout calculation. | [Oracle validation](contracts/programs/depth/src/oracle.rs), [market](contracts/programs/depth/src/instructions/market.rs), [backstop](contracts/programs/depth/src/instructions/backstop.rs), [liquidation](contracts/programs/depth/src/instructions/liquidation.rs). |
+| Risk | Pyth update validation, margin checks, funding advancement, pause after missed funding intervals, private reduction and close checks during a pause, backstop offers, liquidation, insurance accounting, and emergency payout calculation. | [Oracle validation](contracts/programs/depth/src/oracle.rs), [market](contracts/programs/depth/src/instructions/market.rs), [orders](contracts/programs/depth/src/instructions/order.rs), [backstop](contracts/programs/depth/src/instructions/backstop.rs), [liquidation](contracts/programs/depth/src/instructions/liquidation.rs). |
 | Recovery | Recovery ciphertexts and commitments, committee signature checks, market-wide reveal and reconciliation, pro rata payouts, separate fee claims, and one-time payout records. | [Recovery](contracts/programs/depth/src/instructions/recovery.rs), [winddown](contracts/programs/depth/src/instructions/winddown.rs), [SDK recovery](packages/sdk/src/recovery/recovery.ts), [operator tooling](packages/sdk/src/recovery/winddown.ts). |
 | Maker operations | Owner funding, independent view-only grants, grant listing, flat or tiered quote publication, activation, replacement, cancellation, owner backstop offer and release handles, private fill retrieval, and finalized fill pagination. | [Operator rules](contracts/programs/depth/src/instructions/operator.rs), [maker client](packages/maker-sdk/src/client/client.ts), [quote handle](packages/maker-sdk/src/quote/quote.ts), [backstop handle](packages/maker-sdk/src/backstop/backstop.ts), [fill history](packages/maker-sdk/src/fill/history.ts). |
 | SDK foundations | Generated bindings, encrypted input packing, signed manifest verification, onchain owner discovery of pending receipts, private view decryption, app registration and fee administration, order polling, and retryable read errors. | [Bindings](packages/bindings), [discovery](packages/sdk/src/account/discovery.ts), [app SDK](packages/sdk/src/app/app.ts), [SDK](packages/sdk/src), [schema](packages/schema). |
@@ -29,26 +29,16 @@ establish production readiness.
 “Exists” describes source functionality and associated test code. It does not
 mean every economic scenario or deployment has been validated.
 
+Paused markets admit a new order only through the encrypted reduce or close
+intent check; an increase is rejected by the match circuit. The same pause
+eligibility is checked through settlement and commit. A pre-pause matched
+trade can be cancelled immediately so its owner can request a safe exit.
+These paths still require a fresh oracle, an active quote, a working Arcium
+cluster, and settlement risk approval.
+
 ## Contract and circuit gaps
 
-### 1. Safe reductions and closes during a pause
-
-The specification preserves safe exits while stopping new risk. In
-`submit_order_handler`, every trade requires `trading_enabled` and an
-`Active` market. `match_order_callback_handler` and the commit checks also gate
-trades on active state. There is no separate reduce-only market mode.
-
-Required work: implement the published pause policy through admission, private
-intent verification, and every settlement stage. A public intent flag alone
-must not substitute for the circuit checking that exposure actually decreases.
-Oracle or compute unavailability must still reject an exit that cannot be
-proved safe.
-
-Evidence: [order handlers](contracts/programs/depth/src/instructions/order.rs),
-[commit checks](contracts/programs/depth/src/instructions/commit.rs),
-[MarketStatus](contracts/programs/depth/src/state/mod.rs).
-
-### 2. Execution notional and reversal semantics differ
+### 1. Execution notional and reversal semantics differ
 
 The current `TradeInput.size` and encrypted `OrderInput.size` are SOL base
 quantity. Matching multiplies this quantity by the selected price to obtain
@@ -63,7 +53,7 @@ the SDK would not implement execution-price notional.
 Evidence: [TradeInput](packages/sdk/src/client/types.ts),
 [match_order circuit](contracts/encrypted-ixs/src/lib.rs).
 
-### 3. Additional-margin orchestration is absent
+### 2. Additional-margin orchestration is absent
 
 Current `margin` is a checked collateral budget: matching compares required
 margin plus fees to it, and settlement checks it against trader collateral.
@@ -78,7 +68,7 @@ would be incorrect.
 Evidence: [trade submission](packages/sdk/src/client/client.ts),
 [match and settlement circuits](contracts/encrypted-ixs/src/lib.rs).
 
-### 4. A quote is retired after its first fill
+### 3. A quote is retired after its first fill
 
 Final trade commit removes the selected quote from active quotes, subtracts
 its entire public capacity envelope, sets `remaining_capacity = 0`, and marks
@@ -94,7 +84,7 @@ Evidence: trade branch of
 [seal_clearing_callback_handler](contracts/programs/depth/src/instructions/commit.rs)
 and [settle_trade](contracts/encrypted-ixs/src/lib.rs).
 
-### 5. Quote overflow does not have the documented waiting queue
+### 4. Quote overflow does not have the documented waiting queue
 
 The active snapshot is bounded to four quotes. Reservation rejects
 `QuoteSnapshotFull` when it is full. Active quotes are deterministically
@@ -107,7 +97,7 @@ claiming it is implemented.
 
 Evidence: [reserve_quote_handler and callback](contracts/programs/depth/src/instructions/reserve.rs).
 
-### 6. Incident states are less specific than the specification
+### 5. Incident states are less specific than the specification
 
 `MarketStatus` is `Draft`, `Active`, `Paused`, or `Settling`. It does not
 persist the distinct public oracle, cluster, collateral-deficit, and callback
@@ -131,7 +121,7 @@ Evidence: [MarketStatus](contracts/programs/depth/src/state/mod.rs),
 | `"all"` and percentage amounts | Only explicit bigint funding amounts exist. | Fresh private available amounts, basis-specific integer parsing and rounding, reservation checks, and stale-review handling. |
 | `prepare: true` and cost review | No common preparation interface exists. | Side-effect boundaries, resolved terms, policy and account versions, approval steps, cost estimates, signed limits, and revalidation. |
 | Slippage, durations, position-derived exits | Callers provide direction, size, total margin budget, price bound, expiry, nonce, and position version. | Slippage conversion, `validForSeconds`, private current-position reads, exact close/reduce/reverse semantics, and circuit work above. |
-| Common operations and default confirmation | `DepthOperation` reads order records and exposes status/subscribe/wait/confirm with a default timeout and typed terminal errors. Funding and quote handles have separate lifecycles. | All operation kinds, `privateResult/resume/cancel/refund` capability checks, child receipt relationships, and consistent errors. |
+| Common operations and default confirmation | `DepthOperation` reads order records and exposes status/subscribe/wait/confirm with a default timeout and typed terminal errors; filled trades expose private results and eligible orders expose owner cancellation. Funding and quote handles have separate lifecycles. | A shared lifecycle for all operation kinds, explicit capability checks, child receipt relationships, and consistent errors. |
 | Cross-browser discovery | `account.pending({cursor,limit})` scans confirmed owner deposit, transfer, withdrawal, and order accounts, checks their canonical addresses, and pages pending IDs and nonces; fresh private views can recover current balances and positions. | Unified operation restoration for every receipt kind, historical discovery, a durable event index, and complete authorized position discovery. |
 | Account and position summaries | Trader summary methods request private views and return their decoded lifecycle snapshots. | Derived available amounts, pending funds and revenue, quote reservations, fee claims, current health, freshness, and unified maker summaries. |
 | Trader private fill result | `DepthOperation.privateResult()` requests the trader-authorized contract view, decrypts the final fill, resumes a pending view on the same handle, and closes it after reading. | Real localnet integration proof, durable cleanup of orphaned views after process loss, and a common result interface across operation kinds. |
@@ -241,7 +231,7 @@ These are not unexpected missing first-release features:
 
 ## Verification during this review
 
-- `pnpm test` passed: **39 TypeScript tests**, comprising 17 trader SDK,
+- `pnpm test` passed: **40 TypeScript tests**, comprising 18 trader SDK,
   8 maker SDK, and 14 server tests.
 - `pnpm typecheck` passed across bindings, schema, both SDKs, and server.
 - `cargo test --manifest-path contracts/Cargo.toml -p depth --lib --offline`
@@ -255,8 +245,9 @@ These are not unexpected missing first-release features:
 - The pinned `contracts/scripts/test.mjs` wrapper generated fresh oracle
   fixtures and ran the live Arcium/Solana integration suites on this host:
   **4 base tests** and **1 trade test** passed. The trade test executes deposits,
-  private matching, settlement, fees, liquidation, backstop, and emergency
-  winddown with real callbacks. These fixtures cover one trader and maker, not
+  private matching, a pause-safe close, matched-order cancellation, settlement,
+  fees, liquidation, backstop, and emergency winddown with real callbacks.
+  These fixtures cover one trader and maker, not
   the maximum market state or independent recovery custody.
 - One earlier trade run exceeded Solana's default 200,000 compute units on an
   encrypted submission. The SDK, maker SDK, server, and direct integration
@@ -270,9 +261,9 @@ These are not unexpected missing first-release features:
 
 ## Implementation order
 
-1. Fix the remaining contract and circuit semantics: pause-safe exits,
-   notional/reversal accounting, quote capacity and overflow, and incident
-   reporting. Prove keeper continuation and view scopes in integration tests.
+1. Fix the remaining contract and circuit semantics: notional/reversal
+   accounting, quote capacity and overflow, and incident reporting. Prove
+   keeper continuation and view scopes in integration tests.
 2. Build the SDK foundation: browser and Node wallets, trusted environment
    resolution, common prepared operations, durable recovery, and amount rules.
 3. Complete app, trader, and maker flows using those primitives, including

@@ -862,6 +862,12 @@ failure, collateral deficit, and malicious callback attempts have
 separate public incident states. A keeper can report them, but only
 verified program checks change custody.
 
+An order matched before a pause may be cancelled immediately so its account
+can submit a new reduce or close request. A request submitted during a pause
+passes an encrypted reduction check; an increase or reversal is rejected.
+Settlement still requires a fresh oracle, an active quote, and sufficient
+collateral.
+
 ## Fees and losses
 
 The first SOL/USDC market charges 5 bps of filled notional: 3 bps to Depth,
