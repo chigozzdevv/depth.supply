@@ -6,10 +6,12 @@ import {
   x25519,
 } from "@arcium-hq/client";
 import {
+  accountOffsets,
   DEPTH_IDL,
   DEPTH_PROGRAM_ID,
   marketAddress,
   protocolAddress,
+  SOL_USD_MARKET_ID,
 } from "@depth/bindings";
 import { DepthView } from "@depth/sdk/views";
 import { DepthRecovery } from "@depth/sdk/recovery";
@@ -25,6 +27,7 @@ import type {
   MakerOptions,
   MarketState,
   QuoteInput,
+  QuoteRequest,
   QuoteState,
 } from "@/client/types";
 
@@ -221,6 +224,49 @@ export class MakerClient {
   }
 
   readonly operator = {
+    list: async () => {
+      if (!this.options.wallet.publicKey.equals(this.options.maker))
+        throw new Error("Only the maker can list its operator grants");
+      const grants = await this.options.connection.getProgramAccounts(
+        DEPTH_PROGRAM_ID,
+        {
+          commitment: "confirmed",
+          filters: [
+            {
+              memcmp: this.program.coder.accounts.memcmp("operatorGrant"),
+            },
+            {
+              memcmp: {
+                offset: accountOffsets.OperatorGrant.maker,
+                bytes: this.options.maker.toBase58(),
+              },
+            },
+            {
+              memcmp: {
+                offset: accountOffsets.OperatorGrant.market,
+                bytes: this.marketAddress.toBase58(),
+              },
+            },
+          ],
+        },
+      );
+      return grants
+        .map(({ pubkey, account }) => ({
+          id: pubkey,
+          state: this.program.coder.accounts.decode<GrantState>(
+            "operatorGrant",
+            account.data,
+          ),
+        }))
+        .filter(
+          ({ state }) =>
+            state.maker.equals(this.options.maker) &&
+            state.market.equals(this.marketAddress),
+        )
+        .sort((a, b) =>
+          a.state.operator.toBase58().localeCompare(b.state.operator.toBase58()),
+        );
+    },
     authorize: async (input: {
       operator: PublicKey;
       maxCapacity: bigint;
@@ -263,11 +309,10 @@ export class MakerClient {
   };
 
   readonly quote = {
-    publish: async (
-      input: QuoteInput,
-      options: { prepareTimeoutMs?: number } = {},
-    ): Promise<QuoteHandle> => {
-      const quoteNonce = u64(input.clientNonce, "clientNonce");
+    publish: async (request: QuoteRequest): Promise<QuoteHandle> => {
+      const clientNonce =
+        request.clientNonce ?? BigInt(new anchor.BN(randomBytes(8), "le").toString());
+      const quoteNonce = u64(clientNonce, "clientNonce");
       const id = pda([
         Buffer.from("quote"),
         this.marketAddress.toBuffer(),
@@ -279,6 +324,10 @@ export class MakerClient {
         return this.quote.get(id);
       }
       const market = await this.read<MarketState>("Market", this.marketAddress);
+      const input: QuoteInput =
+        "tiers" in request
+          ? request
+          : this.flatQuote(request, market, clientNonce);
       this.validateQuote(input, market);
       const grant = await this.grantFor(input.maxCapacity, input.expiresAt);
       const account = await this.read<{ status: Record<string, unknown> }>(
@@ -328,9 +377,7 @@ export class MakerClient {
           quote: id,
         })
         .rpc({ commitment: "confirmed" });
-      const handle = new QuoteHandle(id, signature, this);
-      await handle.activate({ timeoutMs: options.prepareTimeoutMs ?? 30_000 });
-      return handle;
+      return new QuoteHandle(id, signature, this);
     },
     get: (id: PublicKey): QuoteHandle => new QuoteHandle(id, undefined, this),
     active: async (): Promise<QuoteHandle[]> => {
@@ -345,7 +392,7 @@ export class MakerClient {
     },
     replace: async (
       prior: PublicKey,
-      input: QuoteInput,
+      input: QuoteRequest,
       options: { timeoutMs: number },
     ): Promise<QuoteHandle> => {
       const previous = this.quote.get(prior);
@@ -368,6 +415,37 @@ export class MakerClient {
       return this.quote.publish(input);
     },
   };
+
+  private flatQuote(
+    input: Exclude<QuoteRequest, QuoteInput>,
+    market: MarketState,
+    clientNonce: bigint,
+  ): QuoteInput {
+    if (input.marketId !== SOL_USD_MARKET_ID)
+      throw new Error("Only SOL-USD is supported");
+    if (
+      !Number.isSafeInteger(input.validForSeconds) ||
+      input.validForSeconds < 1 ||
+      input.validForSeconds > market.config.maxQuoteLifetimeSeconds
+    )
+      throw new RangeError("Quote duration is outside market policy");
+    const tiers = market.config.quoteTiers
+      .map((size) => BigInt(size.toString()))
+      .filter((size) => size > 0n && size <= input.maxCapacity)
+      .map((size) => ({
+        size,
+        bidE8: input.bidE8,
+        askE8: input.askE8,
+      }));
+    if (!tiers.length)
+      throw new RangeError("Capacity is below the first quote tier");
+    return {
+      tiers,
+      maxCapacity: input.maxCapacity,
+      expiresAt: Math.floor(Date.now() / 1_000) + input.validForSeconds,
+      clientNonce,
+    };
+  }
 
   private async viewGrant(): Promise<PublicKey | undefined> {
     if (this.options.wallet.publicKey.equals(this.options.maker)) {

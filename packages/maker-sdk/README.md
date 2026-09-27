@@ -3,9 +3,9 @@
 The maker SDK manages prefunded encrypted quotes, scoped quote operators, and authenticated fill views on SOL-USD.
 
 ```ts
-import { createDepthMaker } from "@depth/maker-sdk";
+import { create_depth_maker } from "@depth/maker-sdk";
 
-const maker = await createDepthMaker({
+const maker = await create_depth_maker({
   connection,
   wallet,
   maker: makerPublicKey,
@@ -18,7 +18,7 @@ const quote = await maker.quote.publish({
   expiresAt: Math.floor(Date.now() / 1000) + 120,
   clientNonce: savedNonce,
 });
-const state = await quote.wait({ timeoutMs: 30_000 });
+const { quoteId } = await quote.confirm();
 ```
 
 Quote tier sizes and capacity are USDC notional units with six decimals; prices use eight decimals. Tiers must match the market's published configuration. Persist the request nonce before signing. Republishing that nonce returns the existing handle. Local validators accept the explicit `deployment: { localnet: true }` setting.
@@ -27,7 +27,7 @@ Quote tier sizes and capacity are USDC notional units with six decimals; prices 
 
 The maker wallet opens its free balance and market account with `account.open()` and `account.openMarket()`. Deposit and allocate collateral using the same nonce-based receipt flow as the trader SDK. Quote operators cannot move collateral.
 
-`publish` queues validation and attempts reservation when validation completes. A returned handle may still be pending. Resume with `quote.activate({ timeoutMs })`, including after restarting through `maker.quote.get(id)`. Execution is permitted only in the `active` state.
+`publish` queues validation and returns its handle. `quote.confirm()` waits for validation, submits the reservation, and resolves when the quote is active. After restarting, restore the handle with `maker.quote.get(id)` and call `confirm()` again. Execution is permitted only in the `active` state.
 
 `quote.cancel()` stops selection and releases margin when attached orders have resolved. If attached orders remain, it returns their current state; call it again after settlement. `maker.quote.active()` returns this maker's active handles. `maker.quote.replace(priorId, input, { timeoutMs })` stops and releases the exact prior quote before publishing the replacement. If the prior quote is still pending, resume with the same IDs. Replacement is asynchronous and may temporarily leave no active quote.
 

@@ -1,6 +1,7 @@
 import type { DeploymentPolicy } from "@depth/sdk";
 import type * as anchor from "@anchor-lang/core";
 import type { Connection, PublicKey } from "@solana/web3.js";
+import { SOL_USD_MARKET_ID } from "@depth/bindings";
 
 export type MakerOptions = {
   deployment: DeploymentPolicy;
@@ -17,6 +18,17 @@ export type QuoteInput = {
   expiresAt: number;
   clientNonce: bigint;
 };
+
+export type FlatQuoteInput = {
+  marketId: typeof SOL_USD_MARKET_ID;
+  bidE8: bigint;
+  askE8: bigint;
+  maxCapacity: bigint;
+  validForSeconds: number;
+  clientNonce?: bigint;
+};
+
+export type QuoteRequest = QuoteInput | FlatQuoteInput;
 
 export type QuoteState = {
   status: Record<string, unknown>;
@@ -57,4 +69,5 @@ export type GrantState = {
   market: PublicKey;
   maxCapacity: anchor.BN;
   expiresAt: anchor.BN;
+  version: anchor.BN;
 };

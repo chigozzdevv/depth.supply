@@ -2,6 +2,7 @@ import * as anchor from "@anchor-lang/core";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import type { MakerClient } from "@/client/client";
+import { DepthError } from "@depth/sdk";
 
 export type QuoteSnapshot = {
   id: string;
@@ -34,6 +35,41 @@ export class QuoteHandle {
       remainingCapacity: BigInt(state.remainingCapacity.toString()),
       attachedOrders: state.attachedOrders,
     };
+  }
+
+  async capacity(): Promise<bigint> {
+    return (await this.status()).remainingCapacity;
+  }
+
+  async confirm(
+    options: { timeoutMs?: number; pollMs?: number } = {},
+  ): Promise<{ quoteId: PublicKey; snapshot: QuoteSnapshot }> {
+    const timeoutMs = options.timeoutMs ?? 60_000;
+    const started = Date.now();
+    let snapshot = await this.activate({ timeoutMs, pollMs: options.pollMs });
+    if (!["active", "filled", "cancelled", "rejected"].includes(snapshot.status))
+      snapshot = await this.wait({
+        timeoutMs: Math.max(0, timeoutMs - (Date.now() - started)),
+        pollMs: options.pollMs,
+      });
+    if (snapshot.status === "active" || snapshot.status === "filled")
+      return { quoteId: this.id, snapshot };
+    throw new DepthError(
+      snapshot.status === "rejected"
+        ? "QUOTE_REJECTED"
+        : snapshot.status === "cancelled"
+        ? "QUOTE_CANCELLED"
+        : "QUOTE_PENDING",
+      "confirmation",
+      snapshot.status === "rejected"
+        ? "Quote was rejected"
+        : snapshot.status === "cancelled"
+        ? "Quote was cancelled"
+        : "Quote is not active yet",
+      snapshot.status !== "rejected" && snapshot.status !== "cancelled",
+      "Read the quote status and resume activation if it remains pending",
+      this.id.toBase58(),
+    );
   }
 
   async wait(options: {
