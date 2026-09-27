@@ -20687,6 +20687,10 @@ export type Depth = {
             "type": "u64"
           },
           {
+            "name": "reduceOnly",
+            "type": "bool"
+          },
+          {
             "name": "nonce",
             "type": "u64"
           },

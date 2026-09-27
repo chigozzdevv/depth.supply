@@ -532,6 +532,7 @@ mod circuits {
         app_fee_bps: u16,
         max_deviation_bps: u16,
         max_account_notional: u64,
+        reduce_only: bool,
         order_key: [u8; 32],
         recovery_key: ArcisX25519Pubkey,
     ) -> (
@@ -571,6 +572,7 @@ mod circuits {
             }
         }
         let valid_order = intent_valid
+            && (!reduce_only || order.intent == 1 || order.intent == 2)
             && order.version == trader_version
             && (order.side == 1 || order.side == -1)
             && order.size > 0

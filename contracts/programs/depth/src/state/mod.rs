@@ -406,6 +406,7 @@ pub struct OrderRecord {
     pub app: Pubkey,
     pub app_fee_bps: u16,
     pub app_fee_version: u64,
+    pub reduce_only: bool,
     pub nonce: u64,
     pub deadline: i64,
     pub quote_keys: [Pubkey; 4],

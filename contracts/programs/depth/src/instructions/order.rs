@@ -157,7 +157,8 @@ pub fn submit_order_handler<'info>(
         ErrorCode::StaleMarketSnapshot
     );
     require!(
-        ctx.accounts.protocol.trading_enabled && market.status == MarketStatus::Active,
+        (ctx.accounts.protocol.trading_enabled && market.status == MarketStatus::Active)
+            || market.status == MarketStatus::Paused,
         ErrorCode::MarketNotActive
     );
     require!(market.pending_orders == 0, ErrorCode::WrongOrderStatus);
@@ -268,6 +269,7 @@ pub fn submit_order_handler<'info>(
     order.app = app;
     order.app_fee_bps = app_fee_bps;
     order.app_fee_version = app_fee_version;
+    order.reduce_only = market.status == MarketStatus::Paused;
     order.nonce = nonce;
     order.deadline = deadline;
     order.quote_keys = keys;
@@ -350,7 +352,8 @@ pub fn submit_order_handler<'info>(
         .plaintext_u16(market.config.insurance_fee_bps)
         .plaintext_u16(order.app_fee_bps)
         .plaintext_u16(market.config.max_quote_deviation_bps)
-        .plaintext_u64(market.config.max_account_notional);
+        .plaintext_u64(market.config.max_account_notional)
+        .plaintext_bool(order.reduce_only);
     let mut args = args;
     for byte in order.key().to_bytes() {
         args = args.plaintext_u8(byte);
@@ -436,8 +439,8 @@ pub fn match_order_callback_handler(
         && clock.unix_timestamp >= market.oracle_timestamp
         && clock.unix_timestamp.saturating_sub(market.oracle_timestamp)
             <= i64::from(market.config.max_oracle_age_seconds)
-        && market.status == MarketStatus::Active
-        && ctx.accounts.protocol.trading_enabled;
+        && ((market.status == MarketStatus::Active && ctx.accounts.protocol.trading_enabled)
+            || (market.status == MarketStatus::Paused && order.reduce_only));
     if eligible {
         require!(
             result.field_1.encryption_key == ctx.accounts.fee_recovery.recovery_key,
@@ -470,10 +473,12 @@ pub fn cancel_order_handler(ctx: Context<CancelOrder>) -> Result<()> {
     let order = &mut ctx.accounts.order;
     let account = &mut ctx.accounts.market_account;
     let market = &mut ctx.accounts.market;
-    require!(
-        Clock::get()?.unix_timestamp >= order.deadline,
-        ErrorCode::OrderNotExpired
-    );
+    let expired = Clock::get()?.unix_timestamp >= order.deadline;
+    let aborted_by_pause = market.status == MarketStatus::Paused
+        && order.kind == OrderKind::Trade
+        && order.status == OrderStatus::Matched
+        && !order.reduce_only;
+    require!(expired || aborted_by_pause, ErrorCode::OrderNotExpired);
     require!(market.has_pending(order.key()), ErrorCode::WrongOrderStatus);
     require_keys_eq!(order.market, market.key(), ErrorCode::WrongMarket);
     require_keys_eq!(order.trader, account.owner, ErrorCode::WrongMarginTransfer);

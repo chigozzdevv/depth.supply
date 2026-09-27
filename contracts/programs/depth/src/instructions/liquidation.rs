@@ -229,6 +229,7 @@ pub fn liquidate_handler(
     order.clearing_version = clearing.version;
     order.pending_computation = computation;
     order.kind = OrderKind::Liquidation;
+    order.reduce_only = false;
     order.status = OrderStatus::Settling;
     order.bump = ctx.bumps.order;
     let offer_margin = offer.margin;

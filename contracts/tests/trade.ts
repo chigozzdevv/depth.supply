@@ -290,6 +290,14 @@ describe("confidential trade settlement", () => {
             .rpc(options),
       ],
       [
+        "release_quote",
+        (a) =>
+          program.methods
+            .initReleaseQuoteCompDef()
+            .accountsPartial(a)
+            .rpc(options),
+      ],
+      [
         "offer_backstop",
         (a) =>
           program.methods
@@ -1452,7 +1460,7 @@ describe("confidential trade settlement", () => {
     ).to.equal(0);
 
     const exitQuoteNonce = new anchor.BN(78);
-    const [exitQuote] = PublicKey.findProgramAddressSync(
+    let [exitQuote] = PublicKey.findProgramAddressSync(
       [
         Buffer.from("quote"),
         market.toBuffer(),
@@ -1461,7 +1469,7 @@ describe("confidential trade settlement", () => {
       ],
       program.programId
     );
-    const exitPrices = harness.encrypt([
+    const exitValues = [
       19_900_000_000n,
       0n,
       0n,
@@ -1470,7 +1478,8 @@ describe("confidential trade settlement", () => {
       0n,
       0n,
       0n,
-    ]);
+    ];
+    const exitPrices = harness.encrypt(exitValues);
     offset = harness.offset();
     await program.methods
       .submitQuote(
@@ -1669,6 +1678,259 @@ describe("confidential trade settlement", () => {
       0
     );
 
+    await program.methods
+      .stopQuote()
+      .accountsPartial({
+        actor: authority,
+        market,
+        grant: null,
+        quote: exitQuote,
+      })
+      .rpc(options);
+    offset = harness.offset();
+    await program.methods
+      .releaseQuote(offset)
+      .accountsPartial({
+        ...harness.queue(offset, "release_quote"),
+        payer: authority,
+        protocol,
+        market,
+        grant: null,
+        marketAccount: makerState.marketAccount,
+        quote: exitQuote,
+      })
+      .rpc(options);
+    await harness.finalize(offset);
+    expect(
+      (await program.account.quoteRecord.fetch(exitQuote)).status
+    ).to.deep.equal({ cancelled: {} });
+
+    const renewedNonce = new anchor.BN(80);
+    [exitQuote] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("quote"),
+        market.toBuffer(),
+        authority.toBuffer(),
+        renewedNonce.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    );
+    const renewedPrices = harness.encrypt(exitValues);
+    offset = harness.offset();
+    await program.methods
+      .submitQuote(
+        offset,
+        renewedNonce,
+        new anchor.BN(1_100_000),
+        1,
+        new anchor.BN(Math.floor(Date.now() / 1000) + 115),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
+        renewedPrices.ciphertexts,
+        renewedPrices.inputKey,
+        renewedPrices.inputNonce
+      )
+      .accountsPartial({
+        ...harness.queue(offset, "prepare_quote"),
+        payer: authority,
+        market,
+        marketAccount: makerState.marketAccount,
+        grant: null,
+        quote: exitQuote,
+      })
+      .rpc(options);
+    await harness.finalize(offset);
+    offset = harness.offset();
+    await program.methods
+      .reserveQuote(offset)
+      .accountsPartial({
+        ...harness.queue(offset, "reserve_quote"),
+        payer: authority,
+        protocol,
+        market,
+        grant: null,
+        marketAccount: makerState.marketAccount,
+        quote: exitQuote,
+      })
+      .rpc(options);
+    await harness.finalize(offset);
+
+    const beforePauseNonce = new anchor.BN(508);
+    const [beforePauseOrder] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("order"),
+        market.toBuffer(),
+        trader.publicKey.toBuffer(),
+        beforePauseNonce.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    );
+    const beforePauseInput = encryptOrder([
+      1n,
+      1_000_000n,
+      200_000n,
+      20_100_000_000n,
+      1_000n,
+      0n,
+      BigInt(
+        (
+          await program.account.marketAccount.fetch(traderState.marketAccount)
+        ).version.toString()
+      ),
+    ]);
+    offset = harness.offset();
+    await program.methods
+      .submitOrder(
+        offset,
+        beforePauseNonce,
+        trader.publicKey,
+        1,
+        new anchor.BN(3),
+        new anchor.BN(Math.floor(Date.now() / 1000) + 260),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
+        beforePauseInput.ciphertexts,
+        beforePauseInput.inputKey,
+        beforePauseInput.inputNonce
+      )
+      .accountsPartial({
+        ...harness.queue(offset, "match_order"),
+        trader: trader.publicKey,
+        protocol,
+        appConfig,
+        market,
+        marketAccount: traderState.marketAccount,
+        order: beforePauseOrder,
+      })
+      .remainingAccounts([
+        { pubkey: backstopOffer, isSigner: false, isWritable: false },
+        { pubkey: exitQuote, isSigner: false, isWritable: false },
+        { pubkey: recoveryConfig, isSigner: false, isWritable: false },
+        {
+          pubkey: feeRecoveryFor(beforePauseOrder),
+          isSigner: false,
+          isWritable: true,
+        },
+      ])
+      .signers([trader])
+      .rpc(options);
+    await harness.finalize(offset);
+    expect(
+      (await program.account.orderRecord.fetch(beforePauseOrder)).status
+    ).to.deep.equal({ matched: {} });
+    expect(
+      (await program.account.orderRecord.fetch(beforePauseOrder)).reduceOnly
+    ).to.equal(false);
+    await expectRejected(
+      program.methods
+        .cancelOrder()
+        .accountsPartial({
+          actor: authority,
+          market,
+          marketAccount: traderState.marketAccount,
+          order: beforePauseOrder,
+        })
+        .rpc(options)
+    );
+
+    await program.methods
+      .pauseMarket()
+      .accountsPartial({ actor: authority, protocol, market })
+      .rpc();
+    expect((await program.account.market.fetch(market)).status).to.deep.equal({
+      paused: {},
+    });
+    expect(
+      (await program.account.protocol.fetch(protocol)).tradingEnabled
+    ).to.equal(false);
+    const cancelled = await sdk.operation(beforePauseOrder).cancel();
+    expect(cancelled.outcome).to.equal("cancelled");
+    expect(
+      (await program.account.orderRecord.fetch(beforePauseOrder)).status
+    ).to.deep.equal({ cancelled: {} });
+    expect((await program.account.market.fetch(market)).pendingOrders).to.equal(
+      0
+    );
+
+    const pausedNonce = new anchor.BN(509);
+    const [pausedOrder] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("order"),
+        market.toBuffer(),
+        trader.publicKey.toBuffer(),
+        pausedNonce.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    );
+    const pausedInput = encryptOrder([
+      1n,
+      5_000_000n,
+      200_000n,
+      20_100_000_000n,
+      1_000n,
+      0n,
+      BigInt(
+        (
+          await program.account.marketAccount.fetch(traderState.marketAccount)
+        ).version.toString()
+      ),
+    ]);
+    offset = harness.offset();
+    await program.methods
+      .submitOrder(
+        offset,
+        pausedNonce,
+        trader.publicKey,
+        1,
+        new anchor.BN(3),
+        new anchor.BN(Math.floor(Date.now() / 1000) + 260),
+        (
+          await program.account.market.fetch(market)
+        ).revision,
+        (
+          await program.account.market.fetch(market)
+        ).oracleTimestamp,
+        pausedInput.ciphertexts,
+        pausedInput.inputKey,
+        pausedInput.inputNonce
+      )
+      .accountsPartial({
+        ...harness.queue(offset, "match_order"),
+        trader: trader.publicKey,
+        protocol,
+        appConfig,
+        market,
+        marketAccount: traderState.marketAccount,
+        order: pausedOrder,
+      })
+      .remainingAccounts([
+        { pubkey: backstopOffer, isSigner: false, isWritable: false },
+        { pubkey: exitQuote, isSigner: false, isWritable: false },
+        { pubkey: recoveryConfig, isSigner: false, isWritable: false },
+        {
+          pubkey: feeRecoveryFor(pausedOrder),
+          isSigner: false,
+          isWritable: true,
+        },
+      ])
+      .signers([trader])
+      .rpc(options);
+    await harness.finalize(offset);
+    expect(
+      (await program.account.orderRecord.fetch(pausedOrder)).status
+    ).to.deep.equal({ rejected: {} });
+    expect(
+      (await program.account.orderRecord.fetch(pausedOrder)).reduceOnly
+    ).to.equal(true);
+
     const exitNonce = new anchor.BN(502);
     const [exitOrder] = PublicKey.findProgramAddressSync(
       [
@@ -1736,6 +1998,9 @@ describe("confidential trade settlement", () => {
     expect(
       (await program.account.orderRecord.fetch(exitOrder)).status
     ).to.deep.equal({ matched: {} });
+    expect(
+      (await program.account.orderRecord.fetch(exitOrder)).reduceOnly
+    ).to.equal(true);
     offset = harness.offset();
     await program.methods
       .settleTrade(offset)
@@ -1837,16 +2102,6 @@ describe("confidential trade settlement", () => {
         appFees
     ).to.equal(212_000_000n);
 
-    await program.methods
-      .pauseMarket()
-      .accountsPartial({ actor: authority, protocol, market })
-      .rpc();
-    expect((await program.account.market.fetch(market)).status).to.deep.equal({
-      paused: {},
-    });
-    expect(
-      (await program.account.protocol.fetch(protocol)).tradingEnabled
-    ).to.equal(false);
     await program.methods
       .resumeMarket()
       .accountsPartial({

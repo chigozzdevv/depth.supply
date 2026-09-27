@@ -214,6 +214,9 @@ fn eligible(
     clock: &Clock,
 ) -> bool {
     (market.status == MarketStatus::Active
+        || (order.kind == OrderKind::Trade
+            && order.reduce_only
+            && market.status == MarketStatus::Paused)
         || (order.kind == OrderKind::Liquidation && market.status == MarketStatus::Paused))
         && market.pending_orders == 1
         && clearing.status == ClearingStatus::Trading

@@ -145,7 +145,8 @@ pub fn settle_trade_handler<'info>(
     let maker = &ctx.accounts.trade.maker_account;
     let clearing = &ctx.accounts.trade.clearing;
     require!(
-        market.status == MarketStatus::Active,
+        market.status == MarketStatus::Active
+            || (market.status == MarketStatus::Paused && order.reduce_only),
         ErrorCode::MarketNotActive
     );
     require!(
@@ -343,7 +344,8 @@ pub fn settle_trade_callback_handler(
     require_keys_eq!(clearing.market, market.key(), ErrorCode::WrongMarket);
     let clock = Clock::get()?;
     let eligible = result.field_3
-        && market.status == MarketStatus::Active
+        && (market.status == MarketStatus::Active
+            || (market.status == MarketStatus::Paused && order.reduce_only))
         && quote.status == QuoteStatus::Active
         && order.deadline > clock.unix_timestamp
         && order.market_revision == market.revision
