@@ -7,6 +7,7 @@ import { describe, test } from "node:test";
 import { randomBytes } from "node:crypto";
 import { DepthError, DepthOperation } from "@/index";
 import { encodeSide, u64 } from "@/trade/input";
+import type { DepthView } from "@/view/view";
 
 describe("trader wire and operation lifecycle", () => {
   test("encrypts a packed short order using the generated Arcis layout", () => {
@@ -131,4 +132,63 @@ test("operation polling resumes after a transient RPC failure without submitting
     "filled",
   );
   assert.equal(attempts, 2);
+});
+
+test("private fill result resumes its view and closes it before returning", async () => {
+  const id = PublicKey.unique();
+  const viewId = PublicKey.unique();
+  let requests = 0;
+  let reads = 0;
+  let closes = 0;
+  const view = {
+    id: viewId,
+    wait: async () =>
+      ++reads === 1
+        ? { status: "pending" as const, id: viewId.toBase58(), slot: 4 }
+        : {
+            status: "ready" as const,
+            id: viewId.toBase58(),
+            slot: 5,
+            size: 100n,
+          },
+    close: async () => {
+      if (++closes === 1) throw new Error("temporary RPC error");
+      return "close-signature";
+    },
+  } as unknown as DepthView;
+  const operation = new DepthOperation(
+    id,
+    undefined,
+    {} as anchor.Program,
+    {
+      getAccountInfo: async () => ({ owner: DEPTH_PROGRAM_ID }),
+    } as unknown as Connection,
+    async () => {
+      requests += 1;
+      return view;
+    },
+  );
+  operation.status = async () => ({
+    id: id.toBase58(),
+    kind: "trade",
+    owner: PublicKey.unique().toBase58(),
+    status: "finalized",
+    outcome: "filled",
+    slot: 4,
+  });
+  await assert.rejects(
+    operation.privateResult({ timeoutMs: 0 }),
+    (error: unknown) =>
+      error instanceof DepthError && error.code === "FILL_VIEW_PENDING",
+  );
+  await assert.rejects(
+    operation.privateResult(),
+    (error: unknown) =>
+      error instanceof DepthError && error.code === "FILL_VIEW_CLEANUP_PENDING",
+  );
+  assert.equal((await operation.privateResult()).size, 100n);
+  assert.equal((await operation.privateResult()).size, 100n);
+  assert.equal(requests, 1);
+  assert.equal(reads, 2);
+  assert.equal(closes, 2);
 });

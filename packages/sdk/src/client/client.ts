@@ -39,6 +39,7 @@ import type {
   AppState,
   DepthOptions,
   MarketState,
+  OrderState,
   ProtocolState,
   TradeInput,
   TradeIntent,
@@ -199,6 +200,7 @@ export class DepthClient {
       undefined,
       this.program,
       this.options.connection,
+      (order) => this.requestFillView(order),
     );
   }
 
@@ -240,8 +242,27 @@ export class DepthClient {
     });
   }
 
+  async requestFillView(order: PublicKey): Promise<DepthView> {
+    const record = await this.read<OrderState>("OrderRecord", order);
+    if (
+      !record.trader.equals(this.options.wallet.publicKey) ||
+      !record.market.equals(this.marketAddress) ||
+      enumName(record.kind) !== "trade" ||
+      enumName(record.status) !== "filled"
+    )
+      throw new Error("Filled trade does not belong to this wallet and market");
+    const viewNonce = nonce();
+    const view = pda([
+      Buffer.from("fill-view"),
+      order.toBuffer(),
+      this.options.wallet.publicKey.toBuffer(),
+      viewNonce.toArrayLike(Buffer, "le", 8),
+    ]);
+    return this.requestView("fill", view, viewNonce, { order });
+  }
+
   private async requestView(
-    kind: "balance" | "market",
+    kind: "balance" | "market" | "fill",
     view: PublicKey,
     viewNonce: anchor.BN,
     accounts: Record<string, PublicKey>,
@@ -252,13 +273,19 @@ export class DepthClient {
     const publicKey = x25519.getPublicKey(secret);
     const offset = nonce();
     const queue = await this.queue(
-      kind === "balance" ? "view_balance" : "view_market",
+      kind === "balance"
+        ? "view_balance"
+        : kind === "market"
+          ? "view_market"
+          : "view_fill",
       offset,
     );
     const builder =
       kind === "balance"
         ? this.program.methods.requestBalanceView
-        : this.program.methods.requestMarketView;
+        : kind === "market"
+          ? this.program.methods.requestMarketView
+          : this.program.methods.requestFillView;
     const signature = await builder(offset, viewNonce, Array.from(publicKey))
       .accountsPartial({
         ...queue,
@@ -338,6 +365,7 @@ export class DepthClient {
         undefined,
         this.program,
         this.options.connection,
+        (order) => this.requestFillView(order),
       ),
   };
 
@@ -477,6 +505,7 @@ export class DepthClient {
       signature,
       this.program,
       this.options.connection,
+      (id) => this.requestFillView(id),
     );
   }
 

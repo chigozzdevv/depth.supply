@@ -134,7 +134,7 @@ Evidence: [MarketStatus](contracts/programs/depth/src/state/mod.rs),
 | Common operations and default confirmation | `DepthOperation` reads order records and exposes status/subscribe/wait/confirm with a default timeout and typed terminal errors. Funding and quote handles have separate lifecycles. | All operation kinds, `privateResult/resume/cancel/refund` capability checks, child receipt relationships, and consistent errors. |
 | Cross-browser discovery | `account.pending({cursor,limit})` scans confirmed owner deposit, transfer, withdrawal, and order accounts, checks their canonical addresses, and pages pending IDs and nonces; fresh private views can recover current balances and positions. | Unified operation restoration for every receipt kind, historical discovery, a durable event index, and complete authorized position discovery. |
 | Account and position summaries | Trader summary methods request private views and return their decoded lifecycle snapshots. | Derived available amounts, pending funds and revenue, quote reservations, fee claims, current health, freshness, and unified maker summaries. |
-| Trader private fill result | Contract fill views exist; maker SDK can request them. The trader operation has no `privateResult()` facade. | Authorized trader result retrieval, re-sealing, decoding, and cleanup. |
+| Trader private fill result | `DepthOperation.privateResult()` requests the trader-authorized contract view, decrypts the final fill, resumes a pending view on the same handle, and closes it after reading. | Real localnet integration proof, durable cleanup of orphaned views after process loss, and a common result interface across operation kinds. |
 | Complete maker fill context | `FillSnapshot` contains side, size, margin, execution price, fees, and rebate. It does not include the documented funding checkpoint, resulting position change, or remaining capacity. | Supply the promised context bound to that fill's versions; a later current-position read cannot stand in for historical fill state. |
 | Flat maker quotes | Publication derives eligible policy tiers from a flat bid and ask, accepts a duration, generates a nonce, and returns a handle without waiting for validation. Explicit tier publication remains available. Quote handles expose `confirm()` and capacity. | Uniform preparation, durable pending-quote discovery, and a recoverable replacement operation with no hidden inactive interval. |
 | Maker owner trading and backstop | Owner funding, grant/revoke/list, quote handles, and private views exist; backstop contract exists. | Owner trade facade, simple grant renewal, backstop offer/status/release, and shared account/position summaries. |
@@ -241,7 +241,7 @@ These are not unexpected missing first-release features:
 
 ## Verification during this review
 
-- `pnpm test` passed: **33 TypeScript tests**, comprising 14 trader SDK,
+- `pnpm test` passed: **34 TypeScript tests**, comprising 15 trader SDK,
   5 maker SDK, and 14 server tests.
 - `pnpm typecheck` passed across bindings, schema, both SDKs, and server.
 - `cargo test --manifest-path contracts/Cargo.toml -p depth --lib --offline`
@@ -257,9 +257,9 @@ These are not unexpected missing first-release features:
   from the official release archive also timed out before RPC became ready.
   Direct pinned Anchor 1.0.2 localnet started Surfpool, then panicked in its
   localnet command. Contract integration results remain unverified on this host.
-- The current working tree implements the keeper continuation, view-only
+- The current revision implements the keeper continuation, view-only
   grant, app administration, pending discovery, full market projection, and
-  flat maker quote changes described above.
+  flat maker quote and trader fill-result changes described above.
   The rest of the target API remains pending.
 
 ## Implementation order

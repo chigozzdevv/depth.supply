@@ -63,4 +63,5 @@ export type OrderState = {
   status: Record<string, unknown>;
   kind: Record<string, unknown>;
   trader: PublicKey;
+  market: PublicKey;
 };

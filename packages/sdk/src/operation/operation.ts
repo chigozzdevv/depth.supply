@@ -4,17 +4,23 @@ import type { OperationSnapshot } from "@depth/schema";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { DepthError } from "@/operation/error";
 import type { OrderState } from "@/client/types";
+import type { DepthView, FillSnapshot } from "@/view/view";
 
 function enumName(value: Record<string, unknown>): string {
   return Object.keys(value)[0] ?? "unknown";
 }
 
 export class DepthOperation {
+  private viewPromise?: Promise<DepthView>;
+  private view?: DepthView;
+  private fill?: FillSnapshot;
+
   constructor(
     readonly id: PublicKey,
     readonly signature: string | undefined,
     private readonly program: anchor.Program,
     private readonly connection: Connection,
+    private readonly requestFillView?: (order: PublicKey) => Promise<DepthView>,
   ) {}
 
   async status(): Promise<OperationSnapshot> {
@@ -185,6 +191,93 @@ export class DepthOperation {
         ? "Read the final order record before submitting a new request"
         : "Read this operation again with the same order ID",
       this.id.toBase58(),
+    );
+  }
+
+  async privateResult(options: {
+    timeoutMs?: number;
+    pollMs?: number;
+  } = {}): Promise<FillSnapshot> {
+    if (this.fill && !this.view) return this.fill;
+    const snapshot = await this.status();
+    if (
+      snapshot.kind !== "trade" ||
+      snapshot.status !== "finalized" ||
+      snapshot.outcome !== "filled"
+    )
+      throw new DepthError(
+        "FILL_NOT_AVAILABLE",
+        "confirmation",
+        "This trade has no finalized private fill yet",
+        snapshot.status === "queued",
+        "Confirm the trade before requesting its private result",
+        this.id.toBase58(),
+      );
+    if (!this.requestFillView)
+      throw new DepthError(
+        "PRIVATE_VIEW_UNAVAILABLE",
+        "validation",
+        "This operation has no wallet-authorized fill view",
+        false,
+        "Restore the operation through the Depth wallet client",
+        this.id.toBase58(),
+      );
+    if (!this.viewPromise)
+      this.viewPromise = this.requestFillView(this.id);
+    try {
+      this.view = await this.viewPromise;
+    } catch (error) {
+      this.viewPromise = undefined;
+      throw error;
+    }
+    if (!this.fill) {
+      const result = await this.view.wait({
+        timeoutMs: options.timeoutMs ?? 60_000,
+        pollMs: options.pollMs,
+      });
+      if (result.status !== "ready")
+        throw new DepthError(
+          result.status === "pending" ? "FILL_VIEW_PENDING" : "FILL_VIEW_STALE",
+          "confirmation",
+          result.status === "pending"
+            ? "Private fill computation is still pending"
+            : "Private fill view is stale",
+          result.status === "pending",
+          result.status === "pending"
+            ? "Call privateResult again with the same operation"
+            : "Restore this operation and request a fresh fill view",
+          this.id.toBase58(),
+        );
+      this.fill = result as FillSnapshot;
+    }
+    try {
+      await this.view.close();
+    } catch (error) {
+      let remaining;
+      try {
+        remaining = await this.connection.getAccountInfo(
+          this.view.id,
+          "confirmed",
+        );
+      } catch (readError) {
+        throw this.cleanupError(readError);
+      }
+      if (remaining) throw this.cleanupError(error);
+    }
+    this.view = undefined;
+    this.viewPromise = undefined;
+    return this.fill;
+  }
+
+  private cleanupError(cause: unknown): DepthError {
+    return new DepthError(
+      "FILL_VIEW_CLEANUP_PENDING",
+      "confirmation",
+      "Private fill was read but its temporary view is still open",
+      true,
+      "Call privateResult again with the same operation to close the view",
+      this.id.toBase58(),
+      { cause },
     );
   }
 }

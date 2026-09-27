@@ -54,13 +54,14 @@ const order = await depth.trade.submit({
   positionVersion: position.version,
 });
 const { orderId } = await order.confirm();
+const fill = await order.privateResult();
 ```
 
 `submit` opens or increases the same side. `reduce` permits only an opposite fill no larger than the current position. `close` requires its entire size, and `reverse` requires a size larger than the old position. Every method binds the encrypted request to the supplied position version. A stale version rejects; direction, size, intent, and price limits stay encrypted.
 
 The requested margin must cover the fee and initial margin on newly opened exposure. A full close requires no opening margin; every settlement still checks the remaining position and maker collateral.
 
-Submission confirms the queue transaction. `order.confirm()` waits for a finalized fill and returns its order ID; it raises a typed pending or terminal error otherwise. `order.wait()` returns the latest verified snapshot after its default timeout, including a still pending order. After restarting, use `depth.trade.operation(savedNonce)` or `depth.operation(orderAddress)`. `subscribe(listener, { onError })` returns an unsubscribe function. An ambiguous submission raises `DepthError` with an operation ID and reconciliation action; keep the original nonce.
+Submission confirms the queue transaction. `order.confirm()` waits for a finalized fill and returns its order ID; it raises a typed pending or terminal error otherwise. `order.privateResult()` requests a trader-authorized encrypted fill view, decrypts it, and closes the temporary view after a successful read. A pending computation or uncertain cleanup can be retried on the same operation handle. `order.wait()` returns the latest verified snapshot after its default timeout, including a still pending order. After restarting, use `depth.trade.operation(savedNonce)` or `depth.operation(orderAddress)`. `subscribe(listener, { onError })` returns an unsubscribe function. An ambiguous submission raises `DepthError` with an operation ID and reconciliation action; keep the original nonce.
 
 ## Collateral
 
