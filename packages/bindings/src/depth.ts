@@ -2412,7 +2412,10 @@ export type Depth = {
       "accounts": [
         {
           "name": "owner",
-          "signer": true
+          "signer": true,
+          "relations": [
+            "receipt"
+          ]
         },
         {
           "name": "balance",
@@ -2434,6 +2437,41 @@ export type Depth = {
               {
                 "kind": "account",
                 "path": "owner"
+              }
+            ]
+          },
+          "relations": [
+            "receipt"
+          ]
+        },
+        {
+          "name": "receipt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  116,
+                  104,
+                  100,
+                  114,
+                  97,
+                  119,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "balance"
+              },
+              {
+                "kind": "account",
+                "path": "receipt.nonce",
+                "account": "withdrawalReceipt"
               }
             ]
           }
@@ -4978,7 +5016,10 @@ export type Depth = {
         },
         {
           "name": "destination",
-          "writable": true
+          "writable": true,
+          "relations": [
+            "receipt"
+          ]
         },
         {
           "name": "balance",
@@ -5001,6 +5042,41 @@ export type Depth = {
                 "kind": "account",
                 "path": "balance.owner",
                 "account": "balanceAccount"
+              }
+            ]
+          },
+          "relations": [
+            "receipt"
+          ]
+        },
+        {
+          "name": "receipt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  116,
+                  104,
+                  100,
+                  114,
+                  97,
+                  119,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "balance"
+              },
+              {
+                "kind": "account",
+                "path": "receipt.nonce",
+                "account": "withdrawalReceipt"
               }
             ]
           }
@@ -5219,6 +5295,61 @@ export type Depth = {
                   99,
                   111,
                   108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
                 ]
               }
             ]
@@ -11768,6 +11899,37 @@ export type Depth = {
           }
         },
         {
+          "name": "receipt",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  116,
+                  104,
+                  100,
+                  114,
+                  97,
+                  119,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "balance"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
           "name": "signPdaAccount",
           "writable": true,
           "pda": {
@@ -11843,6 +12005,10 @@ export type Depth = {
       "args": [
         {
           "name": "computationOffset",
+          "type": "u64"
+        },
+        {
+          "name": "nonce",
           "type": "u64"
         },
         {
@@ -16214,7 +16380,7 @@ export type Depth = {
                   32
                 ]
               },
-              5
+              2
             ]
           }
         },
@@ -17281,6 +17447,19 @@ export type Depth = {
         221,
         194,
         144
+      ]
+    },
+    {
+      "name": "withdrawalReceipt",
+      "discriminator": [
+        167,
+        235,
+        84,
+        7,
+        210,
+        55,
+        67,
+        114
       ]
     }
   ],
@@ -19499,6 +19678,30 @@ export type Depth = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "marketRevision",
+            "type": "u64"
+          },
+          {
+            "name": "oracleTimestamp",
+            "type": "i64"
+          },
+          {
+            "name": "oraclePriceE8",
+            "type": "u64"
+          },
+          {
+            "name": "fundingIndex",
+            "type": "i128"
+          },
+          {
+            "name": "accountVersion",
+            "type": "u64"
+          },
+          {
+            "name": "deadline",
+            "type": "i64"
           }
         ]
       }
@@ -22146,6 +22349,74 @@ export type Depth = {
           {
             "name": "bump",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "withdrawalReceipt",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "balance",
+            "type": "pubkey"
+          },
+          {
+            "name": "destination",
+            "type": "pubkey"
+          },
+          {
+            "name": "computation",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "version",
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "withdrawalStatus"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "withdrawalStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "queued"
+          },
+          {
+            "name": "paid"
+          },
+          {
+            "name": "rejected"
+          },
+          {
+            "name": "cancelled"
           }
         ]
       }

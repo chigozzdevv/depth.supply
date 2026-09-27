@@ -33,6 +33,8 @@ mod circuits {
         pub margin: u64,
         pub limit_price: u64,
         pub max_fee: u64,
+        pub intent: u8,
+        pub version: u64,
     }
 
     #[derive(Copy, Clone)]
@@ -403,6 +405,9 @@ mod circuits {
     pub fn debit_market(
         encrypted: Enc<Mxe, Pack<MarketState>>,
         amount: u64,
+        oracle_price: u64,
+        funding_index: i128,
+        initial_margin_bps: u16,
         account: [u8; 32],
         version: u64,
         recovery_key: ArcisX25519Pubkey,
@@ -413,10 +418,24 @@ mod circuits {
         bool,
     ) {
         let current = encrypted.to_arcis().unpack();
-        let valid = amount > 0
-            && current.position == 0
-            && current.reserved == 0
-            && current.collateral >= amount;
+        let position = current.position as i128;
+        let absolute = if position < 0 { -position } else { position } as u128;
+        let unrealised =
+            position * (oracle_price as i128 - current.entry_price as i128) / 100_000_000_000i128;
+        let funding = position * (funding_index - current.funding_checkpoint) / 100_000_000_000i128;
+        let loss = if unrealised < 0 { unrealised } else { 0 };
+        let equity = current.collateral as i128 - amount as i128 + loss - funding;
+        let required = (absolute * oracle_price as u128 * initial_margin_bps as u128
+            + 999_999_999_999_999u128)
+            / 1_000_000_000_000_000u128
+            + current.reserved as u128;
+        let healthy = current.position == 0 && current.reserved == 0
+            || oracle_price > 0
+                && initial_margin_bps > 0
+                && initial_margin_bps <= 10_000
+                && equity >= 0
+                && equity as u128 >= required;
+        let valid = amount > 0 && current.collateral >= amount && healthy;
         let mut state = current;
         if valid {
             state.collateral = current.collateral - amount;
@@ -494,7 +513,9 @@ mod circuits {
 
     #[instruction]
     pub fn match_order(
-        order_input: Enc<Shared, OrderInput>,
+        order_input: Enc<Shared, Pack<OrderInput>>,
+        trader_cipher: Enc<Mxe, Pack<MarketState>>,
+        trader_version: u64,
         quote_0: Enc<Mxe, Pack<QuoteCurve>>,
         quote_1: Enc<Mxe, Pack<QuoteCurve>>,
         quote_2: Enc<Mxe, Pack<QuoteCurve>>,
@@ -520,7 +541,22 @@ mod circuits {
         u8,
         bool,
     ) {
-        let order = order_input.to_arcis();
+        let order = order_input.to_arcis().unpack();
+        let trader = trader_cipher.to_arcis().unpack();
+        let position = trader.position as i128;
+        let absolute = if position < 0 { -position } else { position } as u64;
+        let opposite = (position > 0 && order.side == -1) || (position < 0 && order.side == 1);
+        let intent_valid = if order.intent == 0 {
+            position == 0 || !opposite
+        } else if order.intent == 1 {
+            opposite && order.size <= absolute
+        } else if order.intent == 2 {
+            opposite && order.size == absolute
+        } else if order.intent == 3 {
+            opposite && order.size > absolute
+        } else {
+            false
+        };
         let quotes = [
             quote_0.to_arcis().unpack(),
             quote_1.to_arcis().unpack(),
@@ -534,7 +570,9 @@ mod circuits {
                 tier = index;
             }
         }
-        let valid_order = (order.side == 1 || order.side == -1)
+        let valid_order = intent_valid
+            && order.version == trader_version
+            && (order.side == 1 || order.side == -1)
             && order.size > 0
             && order.margin > 0
             && order.limit_price > 0
@@ -570,7 +608,20 @@ mod circuits {
             let insurance_fee = notional * insurance_fee_bps as u128 / 10_000u128;
             let app_fee = notional * app_fee_bps as u128 / 10_000u128;
             let maker_rebate = notional / 10_000u128;
-            let initial_margin = (notional * initial_margin_bps as u128 + 9_999u128) / 10_000u128;
+            let opening_size = if order.intent == 1 || order.intent == 2 {
+                0u64
+            } else if order.intent == 3 {
+                if order.size > absolute {
+                    order.size - absolute
+                } else {
+                    0
+                }
+            } else {
+                order.size
+            };
+            let opening_notional = opening_size as u128 * price as u128 / 100_000_000_000u128;
+            let initial_margin =
+                (opening_notional * initial_margin_bps as u128 + 9_999u128) / 10_000u128;
             let lower = oracle_price as u128 * (10_000u128 - max_deviation_bps as u128);
             let upper = oracle_price as u128 * (10_000u128 + max_deviation_bps as u128);
             let eligible = valid_order

@@ -214,9 +214,10 @@ pub mod depth {
     pub fn request_withdrawal(
         ctx: Context<RequestWithdrawal>,
         computation_offset: u64,
+        nonce: u64,
         amount: u64,
     ) -> Result<()> {
-        withdraw::request_withdrawal_handler(ctx, computation_offset, amount)
+        withdraw::request_withdrawal_handler(ctx, computation_offset, nonce, amount)
     }
 
     #[arcium_callback(encrypted_ix = "debit_balance")]
@@ -576,7 +577,7 @@ pub mod depth {
         deadline: i64,
         expected_revision: u64,
         expected_oracle_timestamp: i64,
-        ciphertexts: [[u8; 32]; 5],
+        ciphertexts: [[u8; 32]; 2],
         input_key: [u8; 32],
         input_nonce: u128,
     ) -> Result<()> {

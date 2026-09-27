@@ -191,6 +191,8 @@ pub struct DebitMarketCallback<'info> {
     pub instructions_sysvar: UncheckedAccount<'info>,
     #[account(mut, seeds = [b"protocol"], bump = protocol.bump)]
     pub protocol: Box<Account<'info, Protocol>>,
+    #[account(seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
     #[account(
         mut,
         seeds = [b"market-account", market_account.market.as_ref(), market_account.owner.as_ref()],
@@ -366,7 +368,19 @@ pub fn begin_release_handler(
         ctx.accounts.market_account.version < u64::MAX,
         ErrorCode::RevisionOverflow
     );
+    let clock = Clock::get()?;
+    let market = &ctx.accounts.market;
+    let fresh = market.oracle_timestamp > 0
+        && clock.unix_timestamp >= market.oracle_timestamp
+        && clock.unix_timestamp - market.oracle_timestamp
+            <= i64::from(market.config.max_oracle_age_seconds);
     let transfer = &mut ctx.accounts.transfer;
+    transfer.market_revision = market.revision;
+    transfer.oracle_timestamp = market.oracle_timestamp;
+    transfer.oracle_price_e8 = if fresh { market.oracle_price_e8 } else { 0 };
+    transfer.funding_index = market.funding_index;
+    transfer.account_version = ctx.accounts.market_account.version;
+    transfer.deadline = clock.unix_timestamp + i64::from(market.config.max_order_queue_seconds);
     transfer.owner = ctx.accounts.payer.key();
     transfer.market = ctx.accounts.market.key();
     transfer.nonce = nonce;
@@ -385,7 +399,10 @@ pub fn begin_release_handler(
         .encrypted_u64(account.ciphertexts[0])
         .encrypted_u64(account.ciphertexts[1])
         .encrypted_u64(account.ciphertexts[2])
-        .plaintext_u64(amount);
+        .plaintext_u64(amount)
+        .plaintext_u64(transfer.oracle_price_e8)
+        .plaintext_i128(market.funding_index)
+        .plaintext_u16(market.config.initial_margin_bps);
     for byte in account.key().to_bytes() {
         args = args.plaintext_u8(byte);
     }
@@ -404,6 +421,10 @@ pub fn begin_release_handler(
                 CallbackAccount {
                     pubkey: ctx.accounts.protocol.key(),
                     is_writable: true,
+                },
+                CallbackAccount {
+                    pubkey: ctx.accounts.market.key(),
+                    is_writable: false,
                 },
                 CallbackAccount {
                     pubkey: ctx.accounts.market_account.key(),
@@ -523,7 +544,21 @@ pub fn debit_market_callback_handler(
         ctx.accounts.computation_account.key(),
         ErrorCode::WrongPendingComputation
     );
-    if result.field_3 {
+    let clock = Clock::get()?;
+    let market = &ctx.accounts.market;
+    let fresh = market.key() == transfer.market
+        && market.status != MarketStatus::Settling
+        && market.revision == transfer.market_revision
+        && market.oracle_timestamp == transfer.oracle_timestamp
+        && market.funding_index == transfer.funding_index
+        && account.version == transfer.account_version
+        && clock.unix_timestamp <= transfer.deadline
+        && (transfer.oracle_price_e8 == 0
+            || market.oracle_price_e8 == transfer.oracle_price_e8
+                && clock.unix_timestamp >= market.oracle_timestamp
+                && clock.unix_timestamp - market.oracle_timestamp
+                    <= i64::from(market.config.max_oracle_age_seconds));
+    if result.field_3 && fresh {
         require!(
             result.field_1.encryption_key == account.recovery_key,
             ErrorCode::WrongRecoveryKey

@@ -145,7 +145,7 @@ pub fn submit_order_handler<'info>(
     deadline: i64,
     expected_revision: u64,
     expected_oracle_timestamp: i64,
-    ciphertexts: [[u8; 32]; 5],
+    ciphertexts: [[u8; 32]; 2],
     input_key: [u8; 32],
     input_nonce: u128,
 ) -> Result<()> {
@@ -316,10 +316,14 @@ pub fn submit_order_handler<'info>(
     let mut args = ArgBuilder::new()
         .x25519_pubkey(input_key)
         .plaintext_u128(input_nonce);
-    args = args.encrypted_i8(ciphertexts[0]);
-    for field in ciphertexts.iter().skip(1) {
-        args = args.encrypted_u64(*field);
+    for field in ciphertexts {
+        args = args.encrypted_u64(field);
     }
+    args = args.plaintext_u128(u128::from_le_bytes(ctx.accounts.market_account.nonce));
+    for field in ctx.accounts.market_account.ciphertexts {
+        args = args.encrypted_u64(field);
+    }
+    args = args.plaintext_u64(ctx.accounts.market_account.version);
     for (fields, cipher_nonce) in quotes {
         args = args.plaintext_u128(u128::from_le_bytes(cipher_nonce));
         for field in fields {

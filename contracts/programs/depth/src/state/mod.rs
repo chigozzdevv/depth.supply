@@ -198,6 +198,28 @@ pub enum DepositStatus {
 
 #[account]
 #[derive(InitSpace)]
+pub struct WithdrawalReceipt {
+    pub owner: Pubkey,
+    pub balance: Pubkey,
+    pub destination: Pubkey,
+    pub computation: Pubkey,
+    pub nonce: u64,
+    pub amount: u64,
+    pub version: u64,
+    pub status: WithdrawalStatus,
+    pub bump: u8,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum WithdrawalStatus {
+    Queued,
+    Paid,
+    Rejected,
+    Cancelled,
+}
+
+#[account]
+#[derive(InitSpace)]
 pub struct BalanceAccount {
     pub owner: Pubkey,
     pub recovery_key: [u8; 32],
@@ -281,6 +303,12 @@ pub struct MarginTransfer {
     pub pending_computation: Pubkey,
     pub status: MarginTransferStatus,
     pub bump: u8,
+    pub market_revision: u64,
+    pub oracle_timestamp: i64,
+    pub oracle_price_e8: u64,
+    pub funding_index: i128,
+    pub account_version: u64,
+    pub deadline: i64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]

@@ -6,13 +6,13 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 use crate::{
     constants::COMP_DEF_OFFSET_DEBIT_BALANCE,
     error::ErrorCode,
-    state::{BalanceAccount, BalanceStatus, Protocol},
+    state::{BalanceAccount, BalanceStatus, Protocol, WithdrawalReceipt, WithdrawalStatus},
     ArciumSignerAccount, ID, ID_CONST,
 };
 
 #[queue_computation_accounts("debit_balance", payer)]
 #[derive(Accounts)]
-#[instruction(computation_offset: u64)]
+#[instruction(computation_offset: u64, nonce: u64)]
 pub struct RequestWithdrawal<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
@@ -30,6 +30,11 @@ pub struct RequestWithdrawal<'info> {
         bump = balance.bump,
     )]
     pub balance: Box<Account<'info, BalanceAccount>>,
+    #[account(
+        init, payer = payer, space = 8 + WithdrawalReceipt::INIT_SPACE,
+        seeds = [b"withdrawal", balance.key().as_ref(), nonce.to_le_bytes().as_ref()], bump,
+    )]
+    pub receipt: Box<Account<'info, WithdrawalReceipt>>,
     #[account(
         init_if_needed,
         space = 9,
@@ -104,6 +109,13 @@ pub struct DebitBalanceCallback<'info> {
         bump = balance.bump,
     )]
     pub balance: Box<Account<'info, BalanceAccount>>,
+    #[account(
+        mut, has_one = balance, has_one = destination,
+        seeds = [b"withdrawal", balance.key().as_ref(), receipt.nonce.to_le_bytes().as_ref()], bump = receipt.bump,
+        constraint = receipt.computation == computation_account.key() @ ErrorCode::WrongPendingComputation,
+        constraint = receipt.status == WithdrawalStatus::Queued @ ErrorCode::InvalidWithdrawal,
+    )]
+    pub receipt: Box<Account<'info, WithdrawalReceipt>>,
     pub token_program: Program<'info, Token>,
 }
 
@@ -137,6 +149,13 @@ pub struct CancelWithdrawal<'info> {
         bump = balance.bump,
     )]
     pub balance: Box<Account<'info, BalanceAccount>>,
+    #[account(
+        mut, has_one = balance, has_one = owner,
+        seeds = [b"withdrawal", balance.key().as_ref(), receipt.nonce.to_le_bytes().as_ref()], bump = receipt.bump,
+        constraint = receipt.computation == balance.pending_computation @ ErrorCode::WrongPendingComputation,
+        constraint = receipt.status == WithdrawalStatus::Queued @ ErrorCode::InvalidWithdrawal,
+    )]
+    pub receipt: Box<Account<'info, WithdrawalReceipt>>,
 }
 
 pub fn init_debit_balance_comp_def_handler(ctx: Context<InitDebitBalanceCompDef>) -> Result<()> {
@@ -147,6 +166,7 @@ pub fn init_debit_balance_comp_def_handler(ctx: Context<InitDebitBalanceCompDef>
 pub fn request_withdrawal_handler(
     ctx: Context<RequestWithdrawal>,
     computation_offset: u64,
+    nonce: u64,
     amount: u64,
 ) -> Result<()> {
     require!(amount > 0, ErrorCode::InvalidWithdrawal);
@@ -163,6 +183,16 @@ pub fn request_withdrawal_handler(
         ErrorCode::InsufficientCreditedTotal
     );
 
+    let receipt = &mut ctx.accounts.receipt;
+    receipt.owner = ctx.accounts.payer.key();
+    receipt.balance = ctx.accounts.balance.key();
+    receipt.destination = ctx.accounts.destination.key();
+    receipt.computation = ctx.accounts.computation_account.key();
+    receipt.nonce = nonce;
+    receipt.amount = amount;
+    receipt.version = ctx.accounts.balance.version;
+    receipt.status = WithdrawalStatus::Queued;
+    receipt.bump = ctx.bumps.receipt;
     let balance = &mut ctx.accounts.balance;
     balance.status = BalanceStatus::Withdrawing;
     balance.pending_computation = ctx.accounts.computation_account.key();
@@ -212,6 +242,10 @@ pub fn request_withdrawal_handler(
                     is_writable: true,
                 },
                 CallbackAccount {
+                    pubkey: ctx.accounts.receipt.key(),
+                    is_writable: true,
+                },
+                CallbackAccount {
                     pubkey: token::ID,
                     is_writable: false,
                 },
@@ -250,6 +284,17 @@ pub fn debit_balance_callback_handler(
         ErrorCode::WrongWithdrawalDestination
     );
 
+    require!(
+        ctx.accounts.receipt.version == balance.version
+            && ctx.accounts.receipt.amount == balance.pending_amount
+            && ctx.accounts.receipt.owner == balance.owner,
+        ErrorCode::InvalidWithdrawal
+    );
+    ctx.accounts.receipt.status = if result.field_3 {
+        WithdrawalStatus::Paid
+    } else {
+        WithdrawalStatus::Rejected
+    };
     if result.field_3 {
         require!(
             result.field_1.encryption_key == balance.recovery_key,
@@ -307,6 +352,7 @@ pub fn cancel_withdrawal_handler(ctx: Context<CancelWithdrawal>) -> Result<()> {
         ctx.accounts.balance.status == BalanceStatus::Withdrawing,
         ErrorCode::WrongBalanceStatus
     );
+    ctx.accounts.receipt.status = WithdrawalStatus::Cancelled;
     ctx.accounts.balance.pending_computation = Pubkey::default();
     ctx.accounts.balance.pending_amount = 0;
     ctx.accounts.balance.pending_destination = Pubkey::default();
