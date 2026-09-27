@@ -1,4 +1,4 @@
-import { createDepth } from "@/sdk";
+import { createDepth, DepthProvider } from "@/sdk";
 import { circuits } from "@/circuits";
 import * as anchor from "@anchor-lang/core";
 import { createPacker, RescueCipher, x25519 } from "@arcium-hq/client";
@@ -100,7 +100,7 @@ async function expectRejected(task: Promise<unknown>): Promise<void> {
 
 describe("confidential trade settlement", () => {
   const environment = anchor.AnchorProvider.env();
-  const provider = new anchor.AnchorProvider(
+  const provider = new DepthProvider(
     new Connection(environment.connection.rpcEndpoint, "confirmed"),
     environment.wallet,
     { commitment: "confirmed", preflightCommitment: "confirmed" }

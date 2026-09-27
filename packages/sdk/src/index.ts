@@ -30,6 +30,7 @@ export type {
 } from "@/client/types";
 
 export { DepthError } from "@/operation/error";
+export { DepthProvider } from "@/chain/provider";
 
 export {
   authenticateManifest,

@@ -4,6 +4,7 @@ import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { FundingClient } from "@/account/funding";
+import { applyDepthComputeBudget } from "@/chain/provider";
 
 function program() {
   const wallet = new anchor.Wallet(Keypair.generate());
@@ -64,6 +65,7 @@ test("the largest four-quote order fits a signed Solana transaction", async () =
     feePayer: accounts.trader,
     recentBlockhash: PublicKey.unique().toBase58(),
   }).add(ix);
+  applyDepthComputeBudget(transaction);
   const bytes = transaction.serialize({
     requireAllSignatures: false,
     verifySignatures: false,

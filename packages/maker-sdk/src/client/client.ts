@@ -18,7 +18,7 @@ import { DepthRecovery } from "@depth/sdk/recovery";
 import type { FillSnapshot, PositionSnapshot } from "@depth/sdk/views";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
-import { FundingClient, verifyDeployment } from "@depth/sdk";
+import { DepthProvider, FundingClient, verifyDeployment } from "@depth/sdk";
 import { mxeAccount, queueAccounts } from "@/chain/arcium";
 import { BackstopHandle } from "@/backstop/backstop";
 import { FillHistory } from "@/fill/history";
@@ -79,7 +79,7 @@ export class MakerClient {
   }
 
   private constructor(readonly options: MakerOptions) {
-    this.provider = new anchor.AnchorProvider(
+    this.provider = new DepthProvider(
       options.connection,
       options.wallet,
       {

@@ -79,6 +79,9 @@ importers:
       '@depth/schema':
         specifier: workspace:*
         version: link:../packages/schema
+      '@depth/sdk':
+        specifier: workspace:*
+        version: link:../packages/sdk
       '@solana/web3.js':
         specifier: 1.99.0
         version: 1.99.0(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@6.0.6)

@@ -25,6 +25,7 @@ import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import { verifyDeployment } from "@/chain/manifest";
 import { arciumAccount } from "@/chain/arcium";
+import { DepthProvider } from "@/chain/provider";
 import { AppAdmin } from "@/app/app";
 import { FundingDiscovery } from "@/account/discovery";
 import { FundingClient } from "@/account/funding";
@@ -91,7 +92,7 @@ export class DepthClient {
   }
 
   private constructor(readonly options: DepthOptions) {
-    this.provider = new anchor.AnchorProvider(
+    this.provider = new DepthProvider(
       options.connection,
       options.wallet,
       { commitment: "confirmed", preflightCommitment: "confirmed" },
