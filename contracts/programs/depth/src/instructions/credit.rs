@@ -19,15 +19,14 @@ pub struct CreditDeposit<'info> {
     pub protocol: Box<Account<'info, Protocol>>,
     #[account(
         mut,
-        constraint = receipt.owner == payer.key(),
-        seeds = [b"deposit", payer.key().as_ref(), receipt.nonce.to_le_bytes().as_ref()],
+        seeds = [b"deposit", receipt.owner.as_ref(), receipt.nonce.to_le_bytes().as_ref()],
         bump = receipt.bump,
     )]
     pub receipt: Box<Account<'info, DepositReceipt>>,
     #[account(
         mut,
-        constraint = balance.owner == payer.key(),
-        seeds = [b"balance", payer.key().as_ref()],
+        constraint = balance.owner == receipt.owner,
+        seeds = [b"balance", receipt.owner.as_ref()],
         bump = balance.bump,
     )]
     pub balance: Box<Account<'info, BalanceAccount>>,
@@ -165,7 +164,7 @@ pub fn credit_deposit_handler(ctx: Context<CreditDeposit>, computation_offset: u
         .encrypted_u64(balance.ciphertexts[0])
         .encrypted_u128(balance.ciphertexts[1])
         .plaintext_u64(ctx.accounts.receipt.amount);
-    for byte in ctx.accounts.payer.key().to_bytes() {
+    for byte in ctx.accounts.receipt.owner.to_bytes() {
         args = args.plaintext_u8(byte);
     }
     let args = args

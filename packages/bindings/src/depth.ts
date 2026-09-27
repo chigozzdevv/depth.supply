@@ -4126,7 +4126,8 @@ export type Depth = {
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "receipt.owner",
+                "account": "depositReceipt"
               },
               {
                 "kind": "account",
@@ -4155,7 +4156,8 @@ export type Depth = {
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "receipt.owner",
+                "account": "depositReceipt"
               }
             ]
           }
@@ -14901,7 +14903,8 @@ export type Depth = {
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "transfer.owner",
+                "account": "marginTransfer"
               },
               {
                 "kind": "account",
@@ -14941,7 +14944,8 @@ export type Depth = {
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "transfer.owner",
+                "account": "marginTransfer"
               }
             ]
           }
@@ -15091,7 +15095,8 @@ export type Depth = {
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "transfer.owner",
+                "account": "marginTransfer"
               },
               {
                 "kind": "account",
@@ -15120,7 +15125,8 @@ export type Depth = {
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "transfer.owner",
+                "account": "marginTransfer"
               }
             ]
           }

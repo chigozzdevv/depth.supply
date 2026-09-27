@@ -25,17 +25,16 @@ pub struct SettleAllocation<'info> {
     pub market: Box<Account<'info, Market>>,
     #[account(
         mut,
-        constraint = transfer.owner == payer.key(),
         constraint = transfer.market == market.key() @ ErrorCode::WrongMarket,
-        seeds = [b"margin-transfer", payer.key().as_ref(), transfer.nonce.to_le_bytes().as_ref()],
+        seeds = [b"margin-transfer", transfer.owner.as_ref(), transfer.nonce.to_le_bytes().as_ref()],
         bump = transfer.bump,
     )]
     pub transfer: Box<Account<'info, MarginTransfer>>,
     #[account(
         mut,
-        constraint = market_account.owner == payer.key(),
+        constraint = market_account.owner == transfer.owner,
         constraint = market_account.market == market.key() @ ErrorCode::WrongMarket,
-        seeds = [b"market-account", market.key().as_ref(), payer.key().as_ref()],
+        seeds = [b"market-account", market.key().as_ref(), transfer.owner.as_ref()],
         bump = market_account.bump,
     )]
     pub market_account: Box<Account<'info, MarketAccount>>,
@@ -132,15 +131,14 @@ pub struct SettleRelease<'info> {
     pub protocol: Box<Account<'info, Protocol>>,
     #[account(
         mut,
-        constraint = transfer.owner == payer.key(),
-        seeds = [b"margin-transfer", payer.key().as_ref(), transfer.nonce.to_le_bytes().as_ref()],
+        seeds = [b"margin-transfer", transfer.owner.as_ref(), transfer.nonce.to_le_bytes().as_ref()],
         bump = transfer.bump,
     )]
     pub transfer: Box<Account<'info, MarginTransfer>>,
     #[account(
         mut,
-        constraint = balance.owner == payer.key(),
-        seeds = [b"balance", payer.key().as_ref()],
+        constraint = balance.owner == transfer.owner,
+        seeds = [b"balance", transfer.owner.as_ref()],
         bump = balance.bump,
     )]
     pub balance: Box<Account<'info, BalanceAccount>>,

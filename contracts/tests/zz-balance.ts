@@ -40,6 +40,7 @@ describe("private balances", () => {
   const payer = (
     provider.wallet as anchor.Wallet & { payer: anchor.web3.Keypair }
   ).payer;
+  const keeper = anchor.web3.Keypair.generate();
   const arciumEnv = getArciumEnv();
   const [protocol] = PublicKey.findProgramAddressSync(
     [Buffer.from("protocol")],
@@ -51,6 +52,11 @@ describe("private balances", () => {
   );
 
   it("opens a ciphertext-only account with an independently decryptable recovery copy", async () => {
+    const keeperAirdrop = await provider.connection.requestAirdrop(
+      keeper.publicKey,
+      2 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(keeperAirdrop, "confirmed");
     const compDefOffset = getCompDefAccOffset("open_balance");
     const compDefAccount = PublicKey.findProgramAddressSync(
       [
@@ -238,7 +244,7 @@ describe("private balances", () => {
     await program.methods
       .creditDeposit(creditOffset)
       .accountsPartial({
-        payer: owner,
+        payer: keeper.publicKey,
         protocol,
         receipt,
         balance,
@@ -254,6 +260,7 @@ describe("private balances", () => {
         ),
         compDefAccount: creditCompDefAccount,
       })
+      .signers([keeper])
       .rpc({ skipPreflight: true, commitment: "confirmed" });
     await awaitComputationFinalization(
       provider,
@@ -708,12 +715,13 @@ describe("private balances", () => {
       .settleAllocation(settleAllocationOffset)
       .accountsPartial({
         ...queueAccounts(settleAllocationOffset, "credit_market"),
-        payer: owner,
+        payer: keeper.publicKey,
         protocol,
         market,
         transfer: allocation,
         marketAccount,
       })
+      .signers([keeper])
       .rpc({ skipPreflight: true, commitment: "confirmed" });
     await awaitComputationFinalization(
       provider,
@@ -771,11 +779,12 @@ describe("private balances", () => {
       .settleRelease(settleReleaseOffset)
       .accountsPartial({
         ...queueAccounts(settleReleaseOffset, "credit_free"),
-        payer: owner,
+        payer: keeper.publicKey,
         protocol,
         transfer: release,
         balance,
       })
+      .signers([keeper])
       .rpc({ skipPreflight: true, commitment: "confirmed" });
     await awaitComputationFinalization(
       provider,

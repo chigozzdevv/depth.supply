@@ -494,12 +494,11 @@ describe("confidential trade settlement", () => {
         .creditDeposit(offset)
         .accountsPartial({
           ...harness.queue(offset, "credit_balance"),
-          payer: owner,
+          payer: authority,
           protocol,
           balance,
           receipt,
         })
-        .signers(signers)
         .rpc(options);
       await harness.finalize(offset);
       offset = harness.offset();
@@ -536,13 +535,12 @@ describe("confidential trade settlement", () => {
         .settleAllocation(offset)
         .accountsPartial({
           ...harness.queue(offset, "credit_market"),
-          payer: owner,
+          payer: authority,
           protocol,
           market,
           transfer,
           marketAccount,
         })
-        .signers(signers)
         .rpc(options);
       await harness.finalize(offset);
       expect(

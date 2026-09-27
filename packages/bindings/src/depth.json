@@ -4120,7 +4120,8 @@
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "receipt.owner",
+                "account": "DepositReceipt"
               },
               {
                 "kind": "account",
@@ -4149,7 +4150,8 @@
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "receipt.owner",
+                "account": "DepositReceipt"
               }
             ]
           }
@@ -14895,7 +14897,8 @@
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "transfer.owner",
+                "account": "MarginTransfer"
               },
               {
                 "kind": "account",
@@ -14935,7 +14938,8 @@
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "transfer.owner",
+                "account": "MarginTransfer"
               }
             ]
           }
@@ -15085,7 +15089,8 @@
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "transfer.owner",
+                "account": "MarginTransfer"
               },
               {
                 "kind": "account",
@@ -15114,7 +15119,8 @@
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "transfer.owner",
+                "account": "MarginTransfer"
               }
             ]
           }
