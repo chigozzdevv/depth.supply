@@ -1,3 +1,4 @@
+import type { DeploymentPolicy } from "@/chain/manifest";
 import * as anchor from "@anchor-lang/core";
 import { SOL_USD_MARKET_ID } from "@depth/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
@@ -5,6 +6,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 export type DepthWallet = anchor.Wallet;
 
 export type DepthOptions = {
+  deployment: DeploymentPolicy;
   appId: PublicKey;
   wallet: DepthWallet;
   connection: Connection;
@@ -13,11 +15,13 @@ export type DepthOptions = {
 export type TradeInput = {
   marketId: typeof SOL_USD_MARKET_ID;
   direction: "long" | "short";
-  notional: bigint;
+  size: bigint;
   margin: bigint;
   worstPriceE8: bigint;
   maxFee: bigint;
   expiresAt: number;
+  clientNonce: bigint;
+  positionVersion: bigint;
 };
 
 export type MarketState = {
@@ -33,7 +37,10 @@ export type MarketState = {
   config: { maxOracleAgeSeconds: number; maxOrderQueueSeconds: number };
 };
 
+export type TradeIntent = "increase" | "reduce" | "close" | "reverse";
+
 export type AccountState = {
+  version: anchor.BN;
   status: Record<string, unknown>;
   market: PublicKey;
   owner: PublicKey;

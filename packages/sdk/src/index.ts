@@ -18,4 +18,29 @@ export type {
   FillSnapshot,
   PositionSnapshot,
 } from "@/view/view";
-export type { DepthOptions, DepthWallet, TradeInput } from "@/client/types";
+export type {
+  DepthOptions,
+  DepthWallet,
+  TradeInput,
+  TradeIntent,
+} from "@/client/types";
+
+export { DepthError } from "@/operation/error";
+
+export {
+  authenticateManifest,
+  captureDeployment,
+  manifestBytes,
+  verifyDeployment,
+} from "@/chain/manifest";
+export type {
+  DeploymentManifest,
+  SignedManifest,
+  DeploymentPolicy,
+} from "@/chain/manifest";
+export { WinddownOperator } from "@/recovery/winddown";
+export type {
+  ClearingWitness,
+  MarketWitness,
+  FeeWitness,
+} from "@/recovery/winddown";

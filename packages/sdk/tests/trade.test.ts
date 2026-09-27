@@ -1,6 +1,6 @@
 import * as anchor from "@anchor-lang/core";
 import { RescueCipher, x25519 } from "@arcium-hq/client";
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID, circuits } from "@depth/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -9,15 +9,30 @@ import { DepthOperation } from "@/index";
 import { encodeSide, u64 } from "@/trade/input";
 
 describe("trader wire and operation lifecycle", () => {
-  test("encodes a short as signed 8-bit plaintext accepted by Arcium", () => {
+  test("encrypts a packed short order using the generated Arcis layout", () => {
     assert.equal(encodeSide("long"), 1n);
-    assert.equal(encodeSide("short"), 255n);
+    assert.equal(encodeSide("short"), -1n);
     const secret = x25519.utils.randomSecretKey();
     const publicKey = x25519.getPublicKey(secret);
     const cipher = new RescueCipher(x25519.getSharedSecret(secret, publicKey));
     const encryptionNonce = randomBytes(16);
-    const ciphertext = cipher.encrypt([encodeSide("short")], encryptionNonce);
-    assert.deepEqual(cipher.decrypt(ciphertext, encryptionNonce), [255n]);
+    const fields = {
+      side: encodeSide("short"),
+      size: 1n,
+      margin: 2n,
+      limit_price: 3n,
+      max_fee: 4n,
+      intent: 2n,
+      version: 5n,
+    };
+    const ciphertext = cipher.encrypt(
+      circuits.OrderInput.pack(fields),
+      encryptionNonce,
+    );
+    assert.deepEqual(
+      circuits.OrderInput.unpack(cipher.decrypt(ciphertext, encryptionNonce)),
+      fields,
+    );
     assert.throws(() => u64(-1n, "notional"));
     assert.throws(() => u64(1.5 as unknown as bigint, "notional"));
     assert.equal(
@@ -78,4 +93,30 @@ describe("trader wire and operation lifecycle", () => {
     assert.equal(snapshot.status, "queued");
     assert.equal(snapshot.outcome, undefined);
   });
+});
+
+test("operation polling resumes after a transient RPC failure without submitting another order", async () => {
+  const operation = new DepthOperation(
+    PublicKey.unique(),
+    undefined,
+    {} as anchor.Program,
+    {} as Connection,
+  );
+  let attempts = 0;
+  operation.status = async () => {
+    if (++attempts === 1) throw new Error("temporary RPC outage");
+    return {
+      id: operation.id.toBase58(),
+      kind: "trade",
+      owner: PublicKey.unique().toBase58(),
+      status: "finalized",
+      outcome: "filled",
+      slot: 12,
+    };
+  };
+  assert.equal(
+    (await operation.wait({ timeoutMs: 1000, pollMs: 100 })).outcome,
+    "filled",
+  );
+  assert.equal(attempts, 2);
 });

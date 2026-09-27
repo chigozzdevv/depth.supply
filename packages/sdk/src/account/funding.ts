@@ -7,9 +7,11 @@ import {
   protocolAddress,
   recoveryConfigAddress,
   transferAddress,
+  withdrawalAddress,
 } from "@depth/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
+import { submissionError } from "@/operation/error";
 import { u64 } from "@/trade/input";
 
 type Queue = (
@@ -37,10 +39,6 @@ type Balance = {
 type MarketAccount = { owner: PublicKey; market: PublicKey; status: Variant };
 type Protocol = { settlementMint: PublicKey; vault: PublicKey };
 type Recovery = { market: PublicKey; recoveryKey: number[] };
-
-function nonce(): bigint {
-  return randomBytes(8).readBigUInt64LE();
-}
 
 function offset(): anchor.BN {
   return new anchor.BN(randomBytes(8), "le");
@@ -81,7 +79,10 @@ export class FundingClient {
     if (!info.owner.equals(this.program.programId)) {
       throw new Error(`${name} is not owned by Depth`);
     }
-    return this.program.coder.accounts.decode<T>(name, info.data);
+    return this.program.coder.accounts.decode<T>(
+      name[0].toLowerCase() + name.slice(1),
+      info.data,
+    );
   }
 
   private async recoveryKey(): Promise<number[]> {
@@ -97,6 +98,60 @@ export class FundingClient {
       throw new Error("Market recovery configuration is unavailable");
     }
     return config.recoveryKey;
+  }
+
+  async cancelOpenBalance(): Promise<string> {
+    this.assertOwner();
+    return this.program.methods
+      .cancelOpenBalance()
+      .accountsPartial({ owner: this.owner, balance: this.balance })
+      .rpc({ commitment: "confirmed" });
+  }
+
+  async cancelOpenMarket(): Promise<string> {
+    this.assertOwner();
+    return this.program.methods
+      .cancelOpenMarket()
+      .accountsPartial({ owner: this.owner, marketAccount: this.marketAccount })
+      .rpc({ commitment: "confirmed" });
+  }
+
+  async cancelDeposit(id: PublicKey): Promise<string> {
+    this.assertOwner();
+    return this.program.methods
+      .cancelCredit()
+      .accountsPartial({
+        owner: this.owner,
+        balance: this.balance,
+        receipt: id,
+      })
+      .rpc({ commitment: "confirmed" });
+  }
+
+  async cancelTransfer(
+    id: PublicKey,
+    toMarket: boolean,
+    phase: "debiting" | "crediting",
+  ): Promise<string> {
+    this.assertOwner();
+    const free = phase === "debiting" ? toMarket : !toMarket;
+    const method =
+      phase === "debiting"
+        ? free
+          ? this.program.methods.cancelFreeDebit
+          : this.program.methods.cancelMarketDebit
+        : free
+        ? this.program.methods.cancelFreeCredit
+        : this.program.methods.cancelMarketCredit;
+    return method()
+      .accountsPartial({
+        owner: this.owner,
+        transfer: id,
+        ...(free
+          ? { balance: this.balance }
+          : { marketAccount: this.marketAccount }),
+      })
+      .rpc({ commitment: "confirmed" });
   }
 
   async openBalance(): Promise<{ address: PublicKey; signature: string }> {
@@ -137,16 +192,31 @@ export class FundingClient {
     return { address: this.marketAccount, signature };
   }
 
-  async deposit(source: PublicKey, amount: bigint): Promise<DepositHandle> {
+  async deposit(
+    source: PublicKey,
+    amount: bigint,
+    clientNonce: bigint,
+  ): Promise<DepositHandle> {
     this.assertOwner();
     u64(amount, "amount");
     if (amount === 0n) throw new RangeError("Deposit amount must be positive");
-    const depositNonce = nonce();
+    const depositNonce = clientNonce;
+    u64(clientNonce, "clientNonce");
     const receipt = depositAddress(
       this.owner,
       depositNonce,
       this.program.programId,
     );
+    const existing = await this.read<Receipt>("DepositReceipt", receipt);
+    if (existing) {
+      if (
+        !existing.owner.equals(this.owner) ||
+        BigInt(existing.amount.toString()) !== amount
+      ) {
+        throw new Error("Deposit nonce is already bound to another request");
+      }
+      return this.depositHandle(clientNonce);
+    }
     const protocol = await this.read<Protocol>("Protocol", this.protocol);
     if (!protocol) throw new Error("Protocol is unavailable");
     const signature = await this.program.methods
@@ -159,7 +229,8 @@ export class FundingClient {
         vault: protocol.vault,
         receipt,
       })
-      .rpc({ commitment: "confirmed" });
+      .rpc({ commitment: "confirmed" })
+      .catch((error) => submissionError(receipt.toBase58(), error));
     return new DepositHandle(this, depositNonce, signature);
   }
 
@@ -171,53 +242,67 @@ export class FundingClient {
   async withdraw(
     destination: PublicKey,
     amount: bigint,
+    clientNonce: bigint,
   ): Promise<WithdrawalHandle> {
     this.assertOwner();
     u64(amount, "amount");
+    u64(clientNonce, "clientNonce");
     if (amount === 0n)
       throw new RangeError("Withdrawal amount must be positive");
-    const before = await this.read<Balance>("BalanceAccount", this.balance);
-    if (
-      !before ||
-      !before.owner.equals(this.owner) ||
-      status(before.status) !== "ready"
-    ) {
-      throw new Error("Balance is unavailable or busy");
+    const handle = this.withdrawalHandle(clientNonce);
+    const existing = await this.read<Withdrawal>(
+      "WithdrawalReceipt",
+      handle.id,
+    );
+    if (existing) {
+      if (
+        !existing.owner.equals(this.owner) ||
+        !existing.destination.equals(destination) ||
+        BigInt(existing.amount.toString()) !== amount
+      ) {
+        throw new Error("Withdrawal nonce is already bound to another request");
+      }
+      return handle;
     }
     const computationOffset = offset();
     const signature = await this.program.methods
-      .requestWithdrawal(computationOffset, u64(amount, "amount"))
+      .requestWithdrawal(
+        computationOffset,
+        u64(clientNonce, "clientNonce"),
+        u64(amount, "amount"),
+      )
       .accountsPartial({
         ...(await this.queue("debit_balance", computationOffset)),
         payer: this.owner,
         protocol: this.protocol,
         destination,
         balance: this.balance,
+        receipt: handle.id,
       })
-      .rpc({ commitment: "confirmed" });
-    return new WithdrawalHandle(
-      this,
-      BigInt(before.version.toString()),
-      amount,
-      destination,
-      signature,
-    );
+      .rpc({ commitment: "confirmed" })
+      .catch((error) => submissionError(handle.id.toBase58(), error));
+    return new WithdrawalHandle(this, clientNonce, signature);
   }
 
-  async cancelWithdrawal(): Promise<string> {
+  withdrawalHandle(clientNonce: bigint): WithdrawalHandle {
+    u64(clientNonce, "clientNonce");
+    return new WithdrawalHandle(this, clientNonce);
+  }
+
+  async cancelWithdrawal(receipt: PublicKey): Promise<string> {
     this.assertOwner();
     return this.program.methods
       .cancelWithdrawal()
-      .accountsPartial({ owner: this.owner, balance: this.balance })
+      .accountsPartial({ owner: this.owner, balance: this.balance, receipt })
       .rpc({ commitment: "confirmed" });
   }
 
-  async allocate(amount: bigint): Promise<TransferHandle> {
-    return this.beginTransfer("allocation", amount);
+  async allocate(amount: bigint, clientNonce: bigint): Promise<TransferHandle> {
+    return this.beginTransfer("allocation", amount, clientNonce);
   }
 
-  async release(amount: bigint): Promise<TransferHandle> {
-    return this.beginTransfer("release", amount);
+  async release(amount: bigint, clientNonce: bigint): Promise<TransferHandle> {
+    return this.beginTransfer("release", amount, clientNonce);
   }
 
   transferHandle(transferNonce: bigint): TransferHandle {
@@ -228,16 +313,30 @@ export class FundingClient {
   private async beginTransfer(
     kind: "allocation" | "release",
     amount: bigint,
+    clientNonce: bigint,
   ): Promise<TransferHandle> {
     this.assertOwner();
     u64(amount, "amount");
     if (amount === 0n) throw new RangeError("Margin amount must be positive");
-    const transferNonce = nonce();
+    const transferNonce = clientNonce;
+    u64(clientNonce, "clientNonce");
     const transfer = transferAddress(
       this.owner,
       transferNonce,
       this.program.programId,
     );
+    const existing = await this.read<Transfer>("MarginTransfer", transfer);
+    if (existing) {
+      if (
+        !existing.owner.equals(this.owner) ||
+        !existing.market.equals(this.market) ||
+        existing.toMarket !== (kind === "allocation") ||
+        BigInt(existing.amount.toString()) !== amount
+      ) {
+        throw new Error("Transfer nonce is already bound to another request");
+      }
+      return this.transferHandle(clientNonce);
+    }
     const computationOffset = offset();
     const queue = await this.queue(
       kind === "allocation" ? "debit_free" : "debit_market",
@@ -263,7 +362,8 @@ export class FundingClient {
       u64(amount, "amount"),
     )
       .accountsPartial(accounts)
-      .rpc({ commitment: "confirmed" });
+      .rpc({ commitment: "confirmed" })
+      .catch((error) => submissionError(transfer.toBase58(), error));
     return new TransferHandle(this, transferNonce, signature);
   }
 
@@ -376,6 +476,12 @@ export class DepositHandle {
     return this.client.creditDeposit(this.id);
   }
 
+  async cancel(): Promise<string> {
+    if ((await this.status()) !== "crediting")
+      throw new Error("Deposit credit is not pending");
+    return this.client.cancelDeposit(this.id);
+  }
+
   async refund(destination: PublicKey): Promise<string> {
     if ((await this.status()) !== "pending") {
       throw new Error("Deposit is not refundable");
@@ -426,6 +532,17 @@ export class TransferHandle {
     return this.client.settleTransfer(this.id, transfer.toMarket);
   }
 
+  async cancel(): Promise<string> {
+    const transfer = await this.status();
+    if (transfer.state !== "debiting" && transfer.state !== "crediting")
+      throw new Error("Transfer computation is not pending");
+    return this.client.cancelTransfer(
+      this.id,
+      transfer.toMarket,
+      transfer.state,
+    );
+  }
+
   async refund(destination: PublicKey): Promise<string> {
     const transfer = await this.status();
     if (transfer.state !== "escrow") {
@@ -435,41 +552,47 @@ export class TransferHandle {
   }
 }
 
+type Withdrawal = {
+  owner: PublicKey;
+  balance: PublicKey;
+  destination: PublicKey;
+  amount: NumberValue;
+  status: Variant;
+};
+
 export class WithdrawalHandle {
+  readonly id: PublicKey;
+
   constructor(
     readonly client: FundingClient,
-    readonly previousVersion: bigint,
-    readonly amount: bigint,
-    readonly destination: PublicKey,
-    readonly signature: string,
-  ) {}
+    readonly nonce: bigint,
+    readonly signature?: string,
+  ) {
+    this.id = withdrawalAddress(client.owner, nonce, client.program.programId);
+  }
 
-  async status(): Promise<"queued" | "balance_advanced" | "rejected"> {
-    const balance = await this.client.read<Balance>(
-      "BalanceAccount",
-      this.client.balance,
+  async status(): Promise<"queued" | "paid" | "rejected" | "cancelled"> {
+    const receipt = await this.client.read<Withdrawal>(
+      "WithdrawalReceipt",
+      this.id,
     );
-    if (!balance || !balance.owner.equals(this.client.owner)) {
-      throw new Error("Balance is unavailable");
+    if (
+      !receipt ||
+      !receipt.owner.equals(this.client.owner) ||
+      !receipt.balance.equals(this.client.balance)
+    ) {
+      throw new Error("Withdrawal receipt is unavailable");
     }
-    if (BigInt(balance.version.toString()) > this.previousVersion)
-      return "balance_advanced";
-    if (status(balance.status) === "withdrawing") {
-      if (
-        BigInt(balance.pendingAmount.toString()) !== this.amount ||
-        !balance.pendingDestination.equals(this.destination)
-      ) {
-        throw new Error("Balance is processing another withdrawal");
-      }
-      return "queued";
+    const state = status(receipt.status);
+    if (!["queued", "paid", "rejected", "cancelled"].includes(state)) {
+      throw new Error("Unknown withdrawal status");
     }
-    return "rejected";
+    return state as "queued" | "paid" | "rejected" | "cancelled";
   }
 
   async cancel(): Promise<string> {
-    if ((await this.status()) !== "queued") {
+    if ((await this.status()) !== "queued")
       throw new Error("Withdrawal is not queued");
-    }
-    return this.client.cancelWithdrawal();
+    return this.client.cancelWithdrawal(this.id);
   }
 }

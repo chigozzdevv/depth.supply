@@ -1,7 +1,9 @@
 import * as anchor from "@anchor-lang/core";
 
 export function encodeSide(direction: "long" | "short"): bigint {
-  return direction === "long" ? 1n : 255n;
+  if (direction !== "long" && direction !== "short")
+    throw new RangeError("Direction must be long or short");
+  return direction === "long" ? 1n : -1n;
 }
 
 export function u64(value: bigint, name: string): anchor.BN {

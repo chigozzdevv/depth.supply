@@ -40,10 +40,12 @@ test("deposit lifecycle validates amount, owner, and receipt state before signin
   const mint = PublicKey.unique();
   const vault = PublicKey.unique();
   let receiptState = "pending";
+  let exists = false;
   client.read = async (name) => {
     if (name === "Protocol") return { settlementMint: mint, vault } as never;
     if (name === "BalanceAccount")
       return { owner, status: { ready: {} } } as never;
+    if (!exists) return undefined;
     return {
       owner,
       status: { [receiptState]: {} },
@@ -52,12 +54,21 @@ test("deposit lifecycle validates amount, owner, and receipt state before signin
   };
 
   await assert.rejects(
-    client.deposit(PublicKey.unique(), 1n << 64n),
+    client.deposit(PublicKey.unique(), 1n << 64n, 9n),
     /unsigned 64-bit/,
   );
   assert.deepEqual(calls, []);
-  const handle = await client.deposit(PublicKey.unique(), 50n);
+  const handle = await client.deposit(PublicKey.unique(), 50n, 9n);
+  exists = true;
   assert.equal(handle.signature, "deposit-signature");
+  assert.equal(
+    (await client.deposit(PublicKey.unique(), 50n, 9n)).id.toBase58(),
+    handle.id.toBase58(),
+  );
+  await assert.rejects(
+    client.deposit(PublicKey.unique(), 51n, 9n),
+    /bound to another request/,
+  );
   assert.equal(await handle.status(), "pending");
   assert.equal(await handle.credit(), "credit-signature");
   receiptState = "credited";
@@ -72,34 +83,29 @@ test("deposit lifecycle validates amount, owner, and receipt state before signin
   );
 });
 
-test("withdrawal status never treats an unrelated balance update as payment proof", async () => {
+test("withdrawal receipts preserve the exact payout outcome across later balance changes", async () => {
   const owner = PublicKey.unique();
-  const destination = PublicKey.unique();
   const calls: string[] = [];
   const client = funding(owner, calls);
-  let version = 7n;
-  let state = "withdrawing";
-  client.read = async () =>
-    ({
-      owner,
-      version: new anchor.BN(version.toString()),
+  let state = "queued";
+  let receiptOwner = owner;
+  client.read = async (name) => {
+    assert.equal(name, "WithdrawalReceipt");
+    return {
+      owner: receiptOwner,
+      balance: client.balance,
       status: { [state]: {} },
-      pendingAmount: new anchor.BN(25),
-      pendingDestination: destination,
-    }) as never;
-  const handle = new WithdrawalHandle(
-    client,
-    7n,
-    25n,
-    destination,
-    "request-signature",
-  );
+    } as never;
+  };
+  const handle = client.withdrawalHandle(7n);
   assert.equal(await handle.status(), "queued");
   assert.equal(await handle.cancel(), "cancel-signature");
-  state = "ready";
-  assert.equal(await handle.status(), "rejected");
-  await assert.rejects(handle.cancel(), /not queued/);
-  version = 8n;
-  assert.equal(await handle.status(), "balance_advanced");
+  for (const terminal of ["paid", "cancelled", "rejected"] as const) {
+    state = terminal;
+    assert.equal(await client.withdrawalHandle(7n).status(), terminal);
+    await assert.rejects(handle.cancel(), /not queued/);
+  }
+  receiptOwner = PublicKey.unique();
+  await assert.rejects(handle.status(), /unavailable/);
   assert.deepEqual(calls, ["cancel"]);
 });

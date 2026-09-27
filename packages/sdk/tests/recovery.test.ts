@@ -20,7 +20,7 @@ test("recovery status calculates the onchain haircut and retains paid receipts",
     coder: {
       accounts: {
         decode: (name: string) => {
-          if (name === "Winddown") {
+          if (name === "winddown") {
             return {
               market: recovery.market,
               expectedAccounts: 2,
@@ -31,7 +31,7 @@ test("recovery status calculates the onchain haircut and retains paid receipts",
               finalized: true,
             };
           }
-          if (name === "WinddownClaim") {
+          if (name === "winddownClaim") {
             return {
               winddown: recovery.winddown,
               marketAccount: recovery.marketAccount,

@@ -2,6 +2,7 @@ import * as anchor from "@anchor-lang/core";
 import { SOL_USD_MARKET_ID } from "@depth/bindings";
 import type { OperationSnapshot } from "@depth/schema";
 import { Connection, PublicKey } from "@solana/web3.js";
+import { DepthError } from "@/operation/error";
 import type { OrderState } from "@/client/types";
 
 function enumName(value: Record<string, unknown>): string {
@@ -21,14 +22,28 @@ export class DepthOperation {
       this.id,
       "confirmed",
     );
-    if (
-      !response.value ||
-      !response.value.owner.equals(this.program.programId)
-    ) {
-      throw new Error("Order record is unavailable on the confirmed chain");
+    if (!response.value) {
+      throw new DepthError(
+        "ORDER_NOT_VISIBLE",
+        "confirmation",
+        "Order is not visible on the confirmed chain yet",
+        true,
+        "Retry with the same operation ID and reconcile before submitting a new nonce",
+        this.id.toBase58(),
+      );
+    }
+    if (!response.value.owner.equals(this.program.programId)) {
+      throw new DepthError(
+        "WRONG_ACCOUNT_OWNER",
+        "confirmation",
+        "Order record is unavailable on the confirmed chain",
+        false,
+        "Verify the operation address and network",
+        this.id.toBase58(),
+      );
     }
     const order = this.program.coder.accounts.decode<OrderState>(
-      "OrderRecord",
+      "orderRecord",
       response.value.data,
     );
     const state = enumName(order.status);
@@ -41,12 +56,48 @@ export class DepthOperation {
         state === "filled" || state === "cancelled"
           ? "finalized"
           : state === "rejected"
-            ? "rejected"
-            : "queued",
+          ? "rejected"
+          : "queued",
       ...(state === "filled" ? { outcome: "filled" as const } : {}),
       ...(state === "cancelled" ? { outcome: "cancelled" as const } : {}),
       ...(this.signature ? { tx_signature: this.signature } : {}),
       slot: response.context.slot,
+    };
+  }
+
+  subscribe(
+    listener: (snapshot: OperationSnapshot) => void | Promise<void>,
+    options: {
+      pollMs?: number;
+      onError: (error: unknown) => void;
+    },
+  ): () => void {
+    const pollMs = options.pollMs ?? 1000;
+    if (!Number.isSafeInteger(pollMs) || pollMs < 100)
+      throw new RangeError("pollMs must be at least 100");
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let previous = "";
+    const poll = async () => {
+      try {
+        const snapshot = await this.status();
+        const key = `${snapshot.status}:${snapshot.outcome ?? ""}:${
+          snapshot.state_version ?? ""
+        }`;
+        if (!stopped && key !== previous) {
+          await listener(snapshot);
+          previous = key;
+        }
+      } catch (error) {
+        if (!stopped) options.onError(error);
+      } finally {
+        if (!stopped) timer = setTimeout(poll, pollMs);
+      }
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
     };
   }
 
@@ -63,13 +114,31 @@ export class DepthOperation {
       throw new RangeError("pollMs must be at least 100");
     }
     const deadline = Date.now() + options.timeoutMs;
+    let snapshot: OperationSnapshot | undefined;
     for (;;) {
       options.signal?.throwIfAborted();
-      const snapshot = await this.status();
+      try {
+        snapshot = await this.status();
+      } catch (error) {
+        if (error instanceof DepthError && !error.retryable) throw error;
+        if (Date.now() >= deadline) {
+          if (snapshot) return snapshot;
+          throw new DepthError(
+            "RPC_UNAVAILABLE",
+            "confirmation",
+            "Could not read operation before timeout",
+            true,
+            "Retry status with the same operation ID",
+            this.id.toBase58(),
+            { cause: error },
+          );
+        }
+      }
       if (
-        snapshot.status === "finalized" ||
-        snapshot.status === "rejected" ||
-        Date.now() >= deadline
+        snapshot &&
+        (snapshot.status === "finalized" ||
+          snapshot.status === "rejected" ||
+          Date.now() >= deadline)
       ) {
         return snapshot;
       }
@@ -78,13 +147,10 @@ export class DepthOperation {
           clearTimeout(timer);
           reject(options.signal?.reason);
         };
-        const timer = setTimeout(
-          () => {
-            options.signal?.removeEventListener("abort", onAbort);
-            resolve();
-          },
-          Math.min(pollMs, deadline - Date.now()),
-        );
+        const timer = setTimeout(() => {
+          options.signal?.removeEventListener("abort", onAbort);
+          resolve();
+        }, Math.min(pollMs, deadline - Date.now()));
         options.signal?.addEventListener("abort", onAbort, { once: true });
         if (options.signal?.aborted) onAbort();
       });

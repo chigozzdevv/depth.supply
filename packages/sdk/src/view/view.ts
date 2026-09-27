@@ -128,10 +128,10 @@ export class DepthView {
     }
     const state = this.program.coder.accounts.decode<ViewState>(
       this.kind === "balance"
-        ? "BalanceView"
+        ? "balanceView"
         : this.kind === "market"
-          ? "MarketView"
-          : "FillView",
+        ? "marketView"
+        : "fillView",
       response.value.data,
     );
     if (
@@ -218,8 +218,8 @@ export class DepthView {
       this.kind === "balance"
         ? this.program.methods.closeBalanceView()
         : this.kind === "market"
-          ? this.program.methods.closeMarketView()
-          : this.program.methods.closeFillView();
+        ? this.program.methods.closeMarketView()
+        : this.program.methods.closeFillView();
     return builder
       .accountsPartial({ owner: this.owner, view: this.id })
       .rpc({ commitment: "confirmed" });

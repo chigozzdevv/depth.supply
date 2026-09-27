@@ -13,16 +13,20 @@ import {
 } from "@arcium-hq/client";
 import {
   appAddress,
+  circuits,
   DEPTH_IDL,
   DEPTH_PROGRAM_ID,
   marketAddress,
   protocolAddress,
+  recoveryConfigAddress,
   SOL_USD_MARKET_ID,
 } from "@depth/bindings";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
+import { verifyDeployment } from "@/chain/manifest";
 import { arciumAccount } from "@/chain/arcium";
 import { FundingClient } from "@/account/funding";
+import { submissionError } from "@/operation/error";
 import { DepthOperation } from "@/operation/operation";
 import { DepthRecovery } from "@/recovery/recovery";
 import { encodeSide, u64 } from "@/trade/input";
@@ -35,6 +39,7 @@ import type {
   MarketState,
   ProtocolState,
   TradeInput,
+  TradeIntent,
 } from "@/client/types";
 
 function pda(seeds: Buffer[], programId = DEPTH_PROGRAM_ID): PublicKey {
@@ -84,6 +89,7 @@ export class DepthClient {
 
   static async create(options: DepthOptions): Promise<DepthClient> {
     const client = new DepthClient(options);
+    await verifyDeployment(client.provider, options.deployment);
     await client.verifyDeployment();
     return client;
   }
@@ -117,7 +123,10 @@ export class DepthClient {
     if (!info || !info.owner.equals(DEPTH_PROGRAM_ID)) {
       throw new Error(`${name} account is unavailable`);
     }
-    return this.program.coder.accounts.decode<T>(name, info.data);
+    return this.program.coder.accounts.decode<T>(
+      name[0].toLowerCase() + name.slice(1),
+      info.data,
+    );
   }
 
   private async queue(name: string, offset: anchor.BN) {
@@ -165,7 +174,7 @@ export class DepthClient {
     return {
       address: this.marketAddress,
       state: this.program.coder.accounts.decode<MarketState>(
-        "Market",
+        "market",
         response.value.data,
       ),
       slot: response.context.slot,
@@ -260,14 +269,22 @@ export class DepthClient {
   }
 
   readonly account = {
+    cancelOpen: () => this.funding.cancelOpenBalance(),
     open: async () => this.funding.openBalance(),
-    deposit: async (source: PublicKey, amount: bigint) =>
-      this.funding.deposit(source, amount),
+    deposit: async (source: PublicKey, amount: bigint, clientNonce: bigint) =>
+      this.funding.deposit(source, amount, clientNonce),
+    withdrawalHandle: (clientNonce: bigint) =>
+      this.funding.withdrawalHandle(clientNonce),
     depositHandle: (nonce: bigint) => this.funding.depositHandle(nonce),
-    withdraw: async (destination: PublicKey, amount: bigint) =>
-      this.funding.withdraw(destination, amount),
-    allocate: async (amount: bigint) => this.funding.allocate(amount),
-    release: async (amount: bigint) => this.funding.release(amount),
+    withdraw: async (
+      destination: PublicKey,
+      amount: bigint,
+      clientNonce: bigint,
+    ) => this.funding.withdraw(destination, amount, clientNonce),
+    allocate: async (amount: bigint, clientNonce: bigint) =>
+      this.funding.allocate(amount, clientNonce),
+    release: async (amount: bigint, clientNonce: bigint) =>
+      this.funding.release(amount, clientNonce),
     transferHandle: (nonce: bigint) => this.funding.transferHandle(nonce),
     summary: async (
       options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
@@ -278,6 +295,11 @@ export class DepthClient {
   };
 
   readonly position = {
+    cancelOpen: () => this.funding.cancelOpenMarket(),
+    addMargin: (amount: bigint, clientNonce: bigint) =>
+      this.funding.allocate(amount, clientNonce),
+    removeMargin: (amount: bigint, clientNonce: bigint) =>
+      this.funding.release(amount, clientNonce),
     open: async () => this.funding.openMarket(),
     summary: async (
       options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
@@ -288,116 +310,155 @@ export class DepthClient {
   };
 
   readonly trade = {
-    submit: async (input: TradeInput): Promise<DepthOperation> => {
-      if (input.marketId !== SOL_USD_MARKET_ID) {
-        throw new Error("Only SOL-USD is supported");
-      }
-      const values = [
-        input.notional,
-        input.margin,
-        input.worstPriceE8,
-        input.maxFee,
-      ];
-      values.forEach((value, index) =>
-        u64(value, ["notional", "margin", "worstPriceE8", "maxFee"][index]),
-      );
-      if (values.some((value) => value === 0n)) {
-        throw new RangeError("Trade amounts and price must be positive");
-      }
-      if (!Number.isSafeInteger(input.expiresAt)) {
-        throw new RangeError("expiresAt must be a Unix second");
-      }
-      const [market, protocol, account, app] = await Promise.all([
-        this.market(),
-        this.read<ProtocolState>("Protocol", this.protocolAddress),
-        this.read<AccountState>("MarketAccount", this.accountAddress()),
-        this.read<AppState>("AppConfig", appAddress(this.options.appId)),
-      ]);
-      this.validateTrade(input, market.state, protocol, account, app);
-      const quotes = market.state.activeQuotes.slice(
-        0,
-        market.state.activeQuoteCount,
-      );
-      if (quotes.length === 0) throw new Error("No active maker quote");
-      const keys = [market.state.backstopOffer, ...quotes];
-      const records = await this.options.connection.getMultipleAccountsInfo(
-        keys,
-        "confirmed",
-      );
-      records.forEach((info, index) => {
-        if (!info?.owner.equals(DEPTH_PROGRAM_ID)) {
-          throw new Error(`Market quote snapshot missing account ${index}`);
-        }
-      });
-      const orderNonce = nonce();
-      const order = pda([
-        Buffer.from("order"),
-        this.marketAddress.toBuffer(),
-        this.options.wallet.publicKey.toBuffer(),
-        orderNonce.toArrayLike(Buffer, "le", 8),
-      ]);
-      const mxePublicKey = await getMXEPublicKey(
-        this.provider,
-        DEPTH_PROGRAM_ID,
-      );
-      if (!mxePublicKey) throw new Error("MXE public key is unavailable");
-      const secret = x25519.utils.randomSecretKey();
-      const inputKey = x25519.getPublicKey(secret);
-      const inputNonce = randomBytes(16);
-      const cipher = new RescueCipher(
-        x25519.getSharedSecret(secret, mxePublicKey),
-      );
-      const ciphertexts = cipher.encrypt(
-        [
-          encodeSide(input.direction),
-          input.notional,
-          input.margin,
-          input.worstPriceE8,
-          input.maxFee,
-        ],
-        inputNonce,
-      );
-      const offset = nonce();
-      const queue = await this.queue("match_order", offset);
-      const signature = await this.program.methods
-        .submitOrder(
-          offset,
-          orderNonce,
-          this.options.appId,
-          app.feeBps,
-          app.version,
-          new anchor.BN(input.expiresAt),
-          market.state.revision,
-          market.state.oracleTimestamp,
-          ciphertexts,
-          Array.from(inputKey),
-          new anchor.BN(inputNonce, "le"),
-        )
-        .accountsPartial({
-          ...queue,
-          trader: this.options.wallet.publicKey,
-          protocol: this.protocolAddress,
-          appConfig: appAddress(this.options.appId),
-          market: this.marketAddress,
-          marketAccount: this.accountAddress(),
-          order,
-        })
-        .remainingAccounts(
-          keys.map((pubkey) => ({
-            pubkey,
-            isSigner: false,
-            isWritable: false,
-          })),
-        )
-        .rpc({ commitment: "confirmed" });
-      return new DepthOperation(
-        order,
-        signature,
+    submit: (input: TradeInput) => this.submitTrade(input, "increase"),
+    reduce: (input: TradeInput) => this.submitTrade(input, "reduce"),
+    close: (input: TradeInput) => this.submitTrade(input, "close"),
+    reverse: (input: TradeInput) => this.submitTrade(input, "reverse"),
+    operation: (clientNonce: bigint) =>
+      new DepthOperation(
+        this.orderAddress(clientNonce),
+        undefined,
         this.program,
         this.options.connection,
-      );
-    },
+      ),
   };
+
+  private orderAddress(clientNonce: bigint): PublicKey {
+    return pda([
+      Buffer.from("order"),
+      this.marketAddress.toBuffer(),
+      this.options.wallet.publicKey.toBuffer(),
+      u64(clientNonce, "clientNonce").toArrayLike(Buffer, "le", 8),
+    ]);
+  }
+
+  private async submitTrade(
+    input: TradeInput,
+    intent: TradeIntent,
+  ): Promise<DepthOperation> {
+    const orderNonce = u64(input.clientNonce, "clientNonce");
+    const order = this.orderAddress(input.clientNonce);
+    const existing = await this.options.connection.getAccountInfo(
+      order,
+      "confirmed",
+    );
+    if (existing) {
+      const operation = this.trade.operation(input.clientNonce);
+      const snapshot = await operation.status();
+      if (snapshot.owner !== this.options.wallet.publicKey.toBase58())
+        throw new Error("Order owner does not match");
+      return operation;
+    }
+
+    if (input.marketId !== SOL_USD_MARKET_ID) {
+      throw new Error("Only SOL-USD is supported");
+    }
+    encodeSide(input.direction);
+    const values = [input.size, input.margin, input.worstPriceE8, input.maxFee];
+    values.forEach((value, index) =>
+      u64(value, ["size", "margin", "worstPriceE8", "maxFee"][index]),
+    );
+    if (values.some((value) => value === 0n)) {
+      throw new RangeError("Trade amounts and price must be positive");
+    }
+    if (!Number.isSafeInteger(input.expiresAt)) {
+      throw new RangeError("expiresAt must be a Unix second");
+    }
+    const [market, protocol, account, app] = await Promise.all([
+      this.market(),
+      this.read<ProtocolState>("Protocol", this.protocolAddress),
+      this.read<AccountState>("MarketAccount", this.accountAddress()),
+      this.read<AppState>("AppConfig", appAddress(this.options.appId)),
+    ]);
+    this.validateTrade(input, market.state, protocol, account, app);
+    const quotes = market.state.activeQuotes.slice(
+      0,
+      market.state.activeQuoteCount,
+    );
+    if (quotes.length === 0) throw new Error("No active maker quote");
+    const keys = [market.state.backstopOffer, ...quotes];
+    const records = await this.options.connection.getMultipleAccountsInfo(
+      keys,
+      "confirmed",
+    );
+    records.forEach((info, index) => {
+      if (!info?.owner.equals(DEPTH_PROGRAM_ID)) {
+        throw new Error(`Market quote snapshot missing account ${index}`);
+      }
+    });
+    u64(input.positionVersion, "positionVersion");
+    if (account.version.toString() !== input.positionVersion.toString()) {
+      throw new Error("Position version changed; request a fresh private view");
+    }
+    const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
+    if (!mxePublicKey) throw new Error("MXE public key is unavailable");
+    const secret = x25519.utils.randomSecretKey();
+    const inputKey = x25519.getPublicKey(secret);
+    const inputNonce = randomBytes(16);
+    const cipher = new RescueCipher(
+      x25519.getSharedSecret(secret, mxePublicKey),
+    );
+    const ciphertexts = cipher.encrypt(
+      circuits.OrderInput.pack({
+        side: encodeSide(input.direction),
+        size: input.size,
+        margin: input.margin,
+        limit_price: input.worstPriceE8,
+        max_fee: input.maxFee,
+        intent: BigInt(
+          ["increase", "reduce", "close", "reverse"].indexOf(intent),
+        ),
+        version: input.positionVersion,
+      }),
+      inputNonce,
+    );
+    const offset = nonce();
+    const queue = await this.queue("match_order", offset);
+    const signature = await this.program.methods
+      .submitOrder(
+        offset,
+        orderNonce,
+        this.options.appId,
+        app.feeBps,
+        app.version,
+        new anchor.BN(input.expiresAt),
+        market.state.revision,
+        market.state.oracleTimestamp,
+        ciphertexts,
+        Array.from(inputKey),
+        new anchor.BN(inputNonce, "le"),
+      )
+      .accountsPartial({
+        ...queue,
+        trader: this.options.wallet.publicKey,
+        protocol: this.protocolAddress,
+        appConfig: appAddress(this.options.appId),
+        market: this.marketAddress,
+        marketAccount: this.accountAddress(),
+        order,
+      })
+      .remainingAccounts([
+        ...keys.map((pubkey) => ({
+          pubkey,
+          isSigner: false,
+          isWritable: false,
+        })),
+        { pubkey: recoveryConfigAddress(), isSigner: false, isWritable: false },
+        {
+          pubkey: pda([Buffer.from("fee-recovery"), order.toBuffer()]),
+          isSigner: false,
+          isWritable: true,
+        },
+      ])
+      .rpc({ commitment: "confirmed" })
+      .catch((error) => submissionError(order.toBase58(), error));
+    return new DepthOperation(
+      order,
+      signature,
+      this.program,
+      this.options.connection,
+    );
+  }
 
   private validateTrade(
     input: TradeInput,

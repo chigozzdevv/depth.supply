@@ -72,7 +72,10 @@ export class DepthRecovery {
       throw new Error(`${name} is not owned by Depth`);
     }
     return {
-      value: this.program.coder.accounts.decode<T>(name, result.value.data),
+      value: this.program.coder.accounts.decode<T>(
+        name[0].toLowerCase() + name.slice(1),
+        result.value.data,
+      ),
       slot: result.context.slot,
     };
   }
