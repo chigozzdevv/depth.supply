@@ -14,8 +14,8 @@ boundary, architecture, and requirements for trading.
 | --- | --- |
 | `contracts/` | Solana program, Arcium computations, and integration tests |
 | `packages/` | Bindings, shared schemas, and trader and maker SDKs |
-| `client/` | Hosted trading interface |
-| `server/` | Public market data and operation indexing |
+| `client/` | Hosted trading interface workspace |
+| `server/` | Public state API and settlement, oracle, risk, and fee workers |
 | `scripts/` | Repository automation |
 
 For contract development, see [contracts/README.md](contracts/README.md).

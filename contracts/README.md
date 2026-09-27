@@ -19,11 +19,14 @@ Docker, and pnpm. Follow [Arcium's installation guide](https://docs.arcium.com/d
 for the Arcium dependencies. Run commands from this directory:
 
 ```sh
+pnpm --dir .. install --frozen-lockfile
 pnpm install --frozen-lockfile
 mkdir -p target
 test -f target/test-wallet.json || solana-keygen new --no-bip39-passphrase --silent --outfile target/test-wallet.json
 avm use 1.0.2
 arcium build
+pnpm --dir .. sync:bindings
+pnpm --dir .. build
 pnpm run typecheck
 pnpm test
 ```

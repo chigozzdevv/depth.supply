@@ -1,6 +1,6 @@
 # Depth maker SDK
 
-The maker SDK signs quote and operator transactions directly to the Depth program. The maker funds its market account before publishing quotes. An operator can quote only within the capacity, expiry, and view scope granted by the maker wallet.
+The maker SDK manages prefunded encrypted quotes, scoped quote operators, and authenticated fill views on SOL-USD.
 
 ```ts
 import { createDepthMaker } from "@depth/maker-sdk";
@@ -9,40 +9,34 @@ const maker = await createDepthMaker({
   connection,
   wallet,
   maker: makerPublicKey,
+  deployment: { manifest, trustedSigner },
 });
 
 const quote = await maker.quote.publish({
-  tiers: [
-    {
-      size: 1_000_000n,
-      bidE8: 19_900_000_000n,
-      askE8: 20_100_000_000n,
-    },
-  ],
+  tiers: [{ size: 1_000_000n, bidE8: 19_900_000_000n, askE8: 20_100_000_000n }],
   maxCapacity: 3_000_000n,
   expiresAt: Math.floor(Date.now() / 1000) + 120,
+  clientNonce: savedNonce,
 });
-
-persist(quote.id.toBase58());
 const state = await quote.wait({ timeoutMs: 30_000 });
 ```
 
-Before publishing, the maker opens its free balance and market account with `maker.account.open()` and `maker.account.openMarket()`, then waits for both callbacks to reach `ready`. It deposits USDC with `maker.account.deposit()`, credits the pending receipt, allocates margin with `maker.account.allocate()`, and settles the escrow transfer. Wait for each callback to finish before advancing. The returned transaction signatures confirm queue submission, not private computation completion. The maker wallet signs funding and margin changes; a quote operator cannot move collateral.
+Quote tier sizes and capacity are USDC notional units with six decimals; prices use eight decimals. Tiers must match the market's published configuration. Persist the request nonce before signing. Republishing that nonce returns the existing handle. Local validators accept the explicit `deployment: { localnet: true }` setting.
 
-`publish` submits the encrypted quote, waits up to 30 seconds for validation, and signs its reservation when validation completes. It may return a pending handle if computation takes longer; call `quote.activate({ timeoutMs })` to resume, including after a restart with `maker.quote.get(id)`. The quote is executable only when its onchain status is `active`.
+## Funding and quotes
 
-`quote.cancel()` stops an active quote from new selection and queues release of its reserved margin. The margin becomes available only when the release callback sets the quote to `cancelled`.
+The maker wallet opens its free balance and market account with `account.open()` and `account.openMarket()`. Deposit and allocate collateral using the same nonce-based receipt flow as the trader SDK. Quote operators cannot move collateral.
 
-The maker wallet or an operator with view scope can request its sealed position and finalized fill details:
+`publish` queues validation and attempts reservation when validation completes. A returned handle may still be pending. Resume with `quote.activate({ timeoutMs })`, including after restarting through `maker.quote.get(id)`. Execution is permitted only in the `active` state.
 
-```ts
-const position = await maker.position.summary();
-const fill = await maker.fills.get(orderAddress);
-```
+`quote.cancel()` stops selection and releases margin when attached orders have resolved. If attached orders remain, it returns their current state; call it again after settlement. `maker.quote.active()` returns this maker's active handles. `maker.quote.replace(priorId, input, { timeoutMs })` stops and releases the exact prior quote before publishing the replacement. If the prior quote is still pending, resume with the same IDs. Replacement is asynchronous and may temporarily leave no active quote.
 
-These views return decrypted fields only after the authenticated callback is ready. The maker can request a fresh view after a restart.
+## Fills
 
-The maker owner uses `maker.recovery.status()` and
-`maker.recovery.claimTo(usdcTokenAccount)` for a finalized market winddown.
-An operator can read the public recovery status but cannot sign the maker's
-payout claim.
+`fills.get(orderAddress)` requests a fresh maker-authorized private fill view. `position.summary()` requests a private current position. Operators need an active view grant; funding and position changes require the maker wallet.
+
+`fills.list({ before, until, limit })` reads finalized Solana transaction history and verifies the corresponding onchain fill records. It returns public fill IDs, slots, signatures, and a pagination cursor. Use an archival RPC that retains the required history. Private fill details still require an authorized view.
+
+`fills.subscribe(listener, { cursor, saveCursor, onError })` replays missed finalized fills in chronological order and saves its checkpoint only after the listener succeeds. The listener must persist each fill ID as an idempotency key before requesting an external hedge. A crash after a hedge but before checkpoint persistence can redeliver the fill. The SDK never treats an external hedge as part of the Depth transaction.
+
+The maker owner can use `recovery.status()` and `recovery.claimTo(destination)` after a finalized emergency winddown. An operator cannot sign the maker's payout claim.

@@ -786,9 +786,10 @@ The original account's collateral pays its loss and liquidation cost.
 Any residual deficit is charged to the insurance fund. The fund can accept residual exposure only within its own published
 capacity and margin limits. If neither backstop nor fund can absorb the
 exposure, the market follows its published auto-deleveraging and payout
-haircut rule. Opposing profitable accounts can then be reduced under a
-deterministic private ranking. This can close a user early. The SDK must
-show that risk plainly.
+haircut rule. The implemented fallback pauses trading and uses committee-authorized
+market-wide winddown with a pro rata payout haircut; private ranked
+auto-deleveraging is not implemented. The SDK must show emergency settlement
+and haircut risk plainly.
 
 The liquidation circuit must keep total long and short exposure balanced.
 It must also reconcile actual vault assets with all private claims after
@@ -829,7 +830,9 @@ prove that the whole vault remains solvent.
 The market pins five distinct recovery signers and a recovery public key.
 Each market account and clearing update stores an encrypted recovery copy
 and a hash commitment; each matched trade stores a separate encrypted fee
-receipt and commitment. Three committee signatures can start winddown after
+receipt and commitment. The committee declares the emergency; the contract does not independently
+prove permanent MXE failure. Three committee signatures can start winddown
+from an active or paused market after
 pending orders and escrow have resolved, using a fresh verified oracle mark.
 Anyone can then reveal the committed account and fee states. The program
 checks every commitment, account count, net exposure, open interest, fee
@@ -885,8 +888,8 @@ rather than hiding it in a balance update.
 ## SDK and API contract
 
 The SDK packages implement transaction submission and authorized private
-views, and the server implements direct public reads. Deployment manifests,
-event pagination, and signed webhooks remain proposed. The protocol's account,
+views, and the server implements direct public reads. Signed deployment manifests and maker fill pagination are implemented; optional
+HTTP event pagination and signed webhooks remain proposed. The protocol's account,
 operation, and market states are the source of truth. An app ID only attributes
 a trade; it does not authorize it.
 
@@ -1208,7 +1211,7 @@ depth.supply/
   packages/maker-sdk/       maker quote and risk client
   client/                   Depth-hosted trade and maker interfaces
   server/                   public reads and permissionless settlement keeper
-    src/features/           app, market, quote, operation, recovery, settlement
+    src/features/           app, market, quote, operation, recovery, settlement, oracle, risk, fee
     src/shared/             chain access, configuration, and HTTP helpers
   scripts/                  build, deployment, and verification commands
 ~~~
@@ -1245,9 +1248,10 @@ Depth can claim a production-ready market or freeze its SDK types:
    and liquidation circuits with one pinned toolchain. Measure
    callback bytes, account sizes, compute cost, queue delay, and
    contention under the largest allowed market state.
-5. **Private receipt storage:** Choose fixed receipt size, retention,
-   payer for account rent, and cleanup policy. Prove owner-only
-   re-sealing after the original browser session has ended.
+5. **Private receipt storage:** Order, fee-recovery, withdrawal, and payout receipts have fixed layouts
+   and remain onchain without pruning; their creating transaction payer funds
+   rent. Temporary view accounts can be closed by their authorized owner.
+   Rehearse owner-only re-sealing after the original browser session has ended.
 6. **Final wire format:** Generate the Solana IDL, Arcis input packers,
    event schema, and deployment manifest from the implementation.
    Freeze SDK request and result types only after those artifacts
