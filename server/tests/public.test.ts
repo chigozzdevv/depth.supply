@@ -10,7 +10,7 @@ import { QuoteService } from "@/features/quote/quote.service";
 import { RecoveryService } from "@/features/recovery/recovery.service";
 
 function chainWithRead(
-  read: (address: PublicKey, name: string) => Promise<unknown>,
+  read: (address: PublicKey, name: string) => Promise<unknown>
 ): ChainClient {
   const chain = new ChainClient({} as Connection);
   return Object.assign(chain, { read });
@@ -36,7 +36,6 @@ test("public quote projection contains no encrypted price fields", async () => {
       market: marketAddress(),
       status: { active: {} },
       capacity: 1_000n,
-      remainingCapacity: 500n,
       tierCount: 1,
       expiry: 200n,
       ciphertexts: [[1, 2, 3]],
@@ -59,6 +58,7 @@ test("market and recovery projections expose only public state", async () => {
       name === "Market"
         ? {
             status: { active: {} },
+            incident: { none: {} },
             revision: 3n,
             settlementMint: PublicKey.unique(),
             oraclePriceE8: 20_000_000_000n,
@@ -68,6 +68,8 @@ test("market and recovery projections expose only public state", async () => {
             oracleSlot: 80n,
             fundingIndex: 0n,
             lastFundingTimestamp: 90n,
+            activeQuoteCount: 0,
+            activeQuotes: [],
             pendingOrder: order,
             config: {
               tradeFeeBps: 5,
@@ -88,29 +90,32 @@ test("market and recovery projections expose only public state", async () => {
               backstopMinCollateral: 1_000n,
             },
           }
+        : name === "QuoteQueue"
+        ? { market: marketAddress(), count: 0, entries: [] }
         : name === "RecoveryConfig"
-          ? {
-              market: marketAddress(),
-              recoveryKey: new Array(32).fill(7),
-              signers: new Array(5).fill(signer),
-              accountCount: 2,
-            }
-          : {
-              market: marketAddress(),
-              priceE8: 20_000_000_000n,
-              fundingIndex: 3n,
-              expectedAccounts: 2,
-              revealedAccounts: 1,
-              paidAccounts: 0,
-              grossPositive: 1_000n,
-              payoutPool: 900n,
-              remainingPool: 900n,
-              finalized: false,
-              recoveryPrivateKey: "must-not-leak",
-            },
+        ? {
+            market: marketAddress(),
+            recoveryKey: new Array(32).fill(7),
+            signers: new Array(5).fill(signer),
+            accountCount: 2,
+          }
+        : {
+            market: marketAddress(),
+            priceE8: 20_000_000_000n,
+            fundingIndex: 3n,
+            expectedAccounts: 2,
+            revealedAccounts: 1,
+            paidAccounts: 0,
+            grossPositive: 1_000n,
+            payoutPool: 900n,
+            remainingPool: 900n,
+            finalized: false,
+            recoveryPrivateKey: "must-not-leak",
+          },
   }));
   const market = await new MarketService(chain).get();
   assert.equal(market?.pending_order, order.toBase58());
+  assert.equal(market?.incident, "none");
   assert.deepEqual(market?.quote_tiers, ["100", "200", "500", "1000"]);
   assert.equal(market?.funding_interval_seconds, 3_600);
   assert.equal(market?.max_quote_deviation_bps, 500);
@@ -171,20 +176,20 @@ test("Fastify routes validate identifiers and return chain snapshots", async () 
     assert.equal((await app.inject("/v1/markets/BTC-USD")).statusCode, 404);
     assert.equal(
       (await app.inject("/v1/markets/SOL-USD/winddown")).statusCode,
-      404,
+      404
     );
     assert.equal((await app.inject("/v1/quotes/%2F")).statusCode, 400);
     assert.equal(
       (await app.inject({ method: "HEAD", url: "/v1/markets" })).statusCode,
-      200,
+      200
     );
     assert.equal(
       (await app.inject({ method: "OPTIONS", url: "/v1/markets" })).statusCode,
-      204,
+      204
     );
     assert.equal(
       (await app.inject({ method: "POST", url: "/v1/markets" })).statusCode,
-      404,
+      404
     );
   } finally {
     await app.close();
@@ -204,7 +209,6 @@ test("Fastify sends only the quote's public projection and masks RPC errors", as
         market: marketAddress(),
         status: { active: {} },
         capacity: 1_000n,
-        remainingCapacity: 800n,
         tierCount: 1,
         expiry: 999n,
         ciphertexts: "must-not-leak",
@@ -215,7 +219,7 @@ test("Fastify sends only the quote's public projection and masks RPC errors", as
   try {
     const response = await app.inject(`/v1/quotes/${id.toBase58()}`);
     assert.equal(response.statusCode, 200);
-    assert.equal(response.json().remaining_capacity, "800");
+    assert.equal(response.json().capacity, "1000");
     assert.doesNotMatch(response.body, /ciphertexts|must-not-leak/);
 
     failing = true;
@@ -237,7 +241,7 @@ test("chain reader identifies only Depth account discriminators", async () => {
   } as unknown as Connection;
   const result = await new ChainClient(connection).identify(
     PublicKey.unique(),
-    ["OrderRecord"],
+    ["OrderRecord"]
   );
   assert.equal(result, undefined);
 });
