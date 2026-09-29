@@ -7,6 +7,7 @@ import { OracleService } from "@/features/oracle/oracle.service";
 import { RiskService } from "@/features/risk/risk.service";
 import { FeeService } from "@/features/fee/fee.service";
 import { FundingService } from "@/features/funding/funding.service";
+import { QuoteWorker } from "@/features/quote/quote.worker";
 
 const config = keeperConfig();
 const wallet = new anchor.Wallet(config.keypair);
@@ -15,8 +16,10 @@ const oracle = new OracleService(keeper, config.priceAccount);
 const risk = new RiskService(keeper);
 const fees = new FeeService(keeper);
 const funding = new FundingService(keeper);
+const quotes = new QuoteWorker(keeper);
 const services = [
   { advance: () => funding.advance() },
+  { advance: () => quotes.advance() },
   {
     advance: async () => {
       const signature = await risk.advance();
@@ -67,7 +70,7 @@ while (running) {
     lastError = "";
     if (progress) {
       process.stdout.write(
-        `${progress.stage} ${progress.order} ${progress.signature}\n`,
+        `${progress.stage} ${progress.order} ${progress.signature}\n`
       );
     }
   } catch (error) {

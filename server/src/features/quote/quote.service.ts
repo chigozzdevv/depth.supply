@@ -22,7 +22,6 @@ export class QuoteService {
       market_id: SOL_USD_MARKET_ID,
       status: variant(value.status),
       capacity: integer(value.capacity),
-      remaining_capacity: integer(value.remainingCapacity),
       tier_count: value.tierCount,
       expiry: integer(value.expiry),
       slot,

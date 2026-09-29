@@ -1,5 +1,5 @@
-import { SOL_USD_FEED_ID } from "@depth/bindings";
 import { PublicKey } from "@solana/web3.js";
+import { priceTimestamp } from "@/features/oracle/oracle.price";
 import type { ChainSigner } from "@/shared/chain/chain.signer";
 
 export type OracleMarket = {
@@ -24,26 +24,8 @@ export class OracleService {
       this.address,
       "confirmed",
     );
-    if (
-      !info ||
-      !info.owner.equals(
-        new PublicKey("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"),
-      ) ||
-      info.data.length < 133 ||
-      !info.data
-        .subarray(0, 8)
-        .equals(Buffer.from("22f123639d7ef4cd", "hex")) ||
-      info.data[40] !== 1 ||
-      !info.data.subarray(41, 73).equals(SOL_USD_FEED_ID)
-    ) {
-      throw new Error(
-        "Configured price account is not a verified SOL/USD Pyth update",
-      );
-    }
-    if (
-      info.data.readBigInt64LE(93) <= BigInt(market.oracleTimestamp.toString())
-    )
-      return;
+    if (!info) throw new Error("Configured Pyth price account is missing");
+    if (BigInt(priceTimestamp(info)) <= BigInt(market.oracleTimestamp.toString())) return;
     return this.chain.program.methods
       .refreshOracle()
       .accountsPartial({

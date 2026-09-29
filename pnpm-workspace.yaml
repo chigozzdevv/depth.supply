@@ -3,5 +3,7 @@ packages:
   - "server"
 nodeLinker: hoisted
 allowBuilds:
+  bigint-buffer: true
   bufferutil: false
+  protobufjs: true
   utf-8-validate: false

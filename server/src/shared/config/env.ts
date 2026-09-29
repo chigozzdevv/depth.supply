@@ -1,4 +1,5 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
+import { SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
 
 export type ServerConfig = { rpcUrl: string; host: string; port: number };
 export type KeeperConfig = {
@@ -6,6 +7,14 @@ export type KeeperConfig = {
   keypair: Keypair;
   priceAccount: PublicKey;
   oracleIntervalMs: number;
+};
+export type PublisherConfig = KeeperConfig & {
+  apiKey: string;
+  hermesUrl: string;
+  shardId: number;
+  publishAfterSeconds: number;
+  intervalMs: number;
+  healthPort: number;
 };
 
 function rpcUrl(value: string | undefined, name: string): string {
@@ -18,7 +27,7 @@ function rpcUrl(value: string | undefined, name: string): string {
 }
 
 export function serverConfig(
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = process.env
 ): ServerConfig {
   const url = rpcUrl(env.SOLANA_RPC_URL, "SOLANA_RPC_URL");
   const port = Number(env.PORT ?? "8787");
@@ -29,7 +38,7 @@ export function serverConfig(
 }
 
 export function keeperConfig(
-  env: NodeJS.ProcessEnv = process.env,
+  env: NodeJS.ProcessEnv = process.env
 ): KeeperConfig {
   const url = rpcUrl(env.DEPTH_RPC_URL, "DEPTH_RPC_URL");
   if (!env.DEPTH_KEEPER_KEYPAIR) {
@@ -43,16 +52,60 @@ export function keeperConfig(
   ) {
     throw new Error("DEPTH_KEEPER_KEYPAIR must be a 64-byte JSON array");
   }
-  if (!env.DEPTH_PRICE_ACCOUNT)
-    throw new Error("DEPTH_PRICE_ACCOUNT is required");
   const interval = Number(env.DEPTH_ORACLE_INTERVAL_MS ?? "10000");
   if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 60000) {
     throw new Error("DEPTH_ORACLE_INTERVAL_MS must be between 1000 and 60000");
   }
   return {
-    priceAccount: new PublicKey(env.DEPTH_PRICE_ACCOUNT),
+    priceAccount: env.DEPTH_PRICE_ACCOUNT
+      ? new PublicKey(env.DEPTH_PRICE_ACCOUNT)
+      : SOL_USD_PUSH_ACCOUNT,
     oracleIntervalMs: interval,
     rpcUrl: url,
     keypair: Keypair.fromSecretKey(Uint8Array.from(bytes)),
+  };
+}
+
+export function publisherConfig(
+  env: NodeJS.ProcessEnv = process.env
+): PublisherConfig {
+  const keeper = keeperConfig(env);
+  if (!env.PYTH_API_KEY) throw new Error("PYTH_API_KEY is required");
+  const hermesUrl = env.PYTH_HERMES_URL ?? "https://pyth.dourolabs.app/hermes";
+  if (new URL(hermesUrl).protocol !== "https:") {
+    throw new Error("PYTH_HERMES_URL must use HTTPS");
+  }
+  const shardId = Number(env.DEPTH_PYTH_SHARD_ID ?? "0");
+  if (!Number.isInteger(shardId) || shardId < 0 || shardId > 65_535) {
+    throw new Error("DEPTH_PYTH_SHARD_ID must be a 16-bit integer");
+  }
+  const publishAfterSeconds = Number(env.DEPTH_PUBLISH_AFTER_SECONDS ?? "75");
+  if (
+    !Number.isInteger(publishAfterSeconds) ||
+    publishAfterSeconds < 15 ||
+    publishAfterSeconds > 240
+  ) {
+    throw new Error("DEPTH_PUBLISH_AFTER_SECONDS must be 15 to 240");
+  }
+  const intervalMs = Number(env.DEPTH_PUBLISH_INTERVAL_MS ?? "10000");
+  if (
+    !Number.isInteger(intervalMs) ||
+    intervalMs < 1_000 ||
+    intervalMs > 60_000
+  ) {
+    throw new Error("DEPTH_PUBLISH_INTERVAL_MS must be 1000 to 60000");
+  }
+  const healthPort = Number(env.DEPTH_PUBLISH_HEALTH_PORT ?? "8788");
+  if (!Number.isInteger(healthPort) || healthPort < 1 || healthPort > 65_535) {
+    throw new Error("DEPTH_PUBLISH_HEALTH_PORT must be a valid TCP port");
+  }
+  return {
+    ...keeper,
+    apiKey: env.PYTH_API_KEY,
+    hermesUrl,
+    shardId,
+    publishAfterSeconds,
+    intervalMs,
+    healthPort,
   };
 }

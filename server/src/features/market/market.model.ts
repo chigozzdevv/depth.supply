@@ -3,6 +3,7 @@ import type { IntegerValue, Variant } from "@/shared/chain/chain.format";
 
 export type MarketAccount = {
   status: Variant;
+  incident: Variant;
   revision: IntegerValue;
   settlementMint: PublicKey;
   oraclePriceE8: IntegerValue;
@@ -13,6 +14,8 @@ export type MarketAccount = {
   fundingIndex: IntegerValue;
   lastFundingTimestamp: IntegerValue;
   pendingOrder: PublicKey;
+  activeQuoteCount: number;
+  activeQuotes: PublicKey[];
   config: {
     tradeFeeBps: number;
     insuranceFeeBps: number;
@@ -31,4 +34,10 @@ export type MarketAccount = {
     quoteTiers: IntegerValue[];
     backstopMinCollateral: IntegerValue;
   };
+};
+
+export type QuoteQueueAccount = {
+  market: PublicKey;
+  count: number;
+  entries: PublicKey[];
 };

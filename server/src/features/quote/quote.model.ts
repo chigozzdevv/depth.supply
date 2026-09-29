@@ -7,7 +7,6 @@ export type QuoteAccount = {
   market: PublicKey;
   status: Variant;
   capacity: IntegerValue;
-  remainingCapacity: IntegerValue;
   tierCount: number;
   expiry: IntegerValue;
 };
