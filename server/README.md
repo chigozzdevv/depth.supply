@@ -32,8 +32,9 @@ checks, and initiates unclaimed trade-fee distributions. Account scans cache
 addresses and fetch bounded batches; risk and fee tasks alternate to avoid starvation. Every step uses the
 confirmed onchain status, so restarting the process resumes the same workflow.
 
-Set `DEPTH_RPC_URL` and `DEPTH_KEEPER_KEYPAIR` to the RPC endpoint and a
-JSON array containing the keeper wallet's secret-key bytes. The default price
+Set `DEPTH_RPC_URL` to the RPC endpoint and `DEPTH_KEEPER_KEYPAIR_PATH` to a
+local Solana keypair JSON file. `DEPTH_KEEPER_KEYPAIR` also accepts the keypair
+JSON array directly; configure only one signer source. The default price
 account is Pyth's sponsored SOL/USD push feed on shard 0. Set
 `DEPTH_PRICE_ACCOUNT` to a maintained Pyth SOL/USD price-update account when
 using a different feed account, including localnet. Its owner, discriminator,
@@ -49,7 +50,7 @@ can begin. SIGINT and SIGTERM stop the worker after the current iteration.
 ## Oracle publisher
 
 Run `pnpm --dir server publisher` as a separate supervised process with
-`DEPTH_RPC_URL`, `DEPTH_KEEPER_KEYPAIR`, and `PYTH_API_KEY`. The signer needs SOL
+`DEPTH_RPC_URL`, a keeper signer source, and `PYTH_API_KEY`. The signer needs SOL
 for Pyth receiver updates. The publisher fetches a verified SOL/USD proof from
 Hermes when the persistent feed account is at least 75 seconds old, submits the
 Pyth receiver transactions, and checks the confirmed account's publish time.
