@@ -150,7 +150,7 @@ pub fn submit_quote_handler(
     expiry: i64,
     expected_revision: u64,
     expected_oracle_timestamp: i64,
-    ciphertexts: [[u8; 32]; 8],
+    ciphertexts: [[u8; 32]; 6],
     input_key: [u8; 32],
     input_nonce: u128,
 ) -> Result<()> {
@@ -210,7 +210,6 @@ pub fn submit_quote_handler(
     quote.market = market.key();
     quote.nonce = nonce;
     quote.capacity = capacity;
-    quote.remaining_capacity = capacity;
     quote.required_margin = required_margin;
     quote.expiry = expiry;
     quote.tier_count = tier_count;
@@ -231,6 +230,8 @@ pub fn submit_quote_handler(
         .plaintext_u64(market.oracle_price_e8)
         .plaintext_u16(market.config.max_quote_deviation_bps)
         .plaintext_u8(tier_count)
+        .plaintext_u64(capacity)
+        .plaintext_u64(required_margin)
         .build();
     queue_computation(
         ctx.accounts,
@@ -283,7 +284,7 @@ pub fn prepare_quote_callback_handler(
         ErrorCode::WrongPendingComputation
     );
     let clock = Clock::get()?;
-    if result.field_1
+    if result.field_2
         && quote.market_revision == ctx.accounts.market.revision
         && quote.oracle_timestamp == ctx.accounts.market.oracle_timestamp
         && quote.expiry > clock.unix_timestamp
@@ -293,6 +294,8 @@ pub fn prepare_quote_callback_handler(
     {
         quote.ciphertexts = result.field_0.ciphertexts;
         quote.cipher_nonce = result.field_0.nonce.to_le_bytes();
+        quote.balance_ciphertext = result.field_1.ciphertexts[0];
+        quote.balance_nonce = result.field_1.nonce.to_le_bytes();
         quote.status = QuoteStatus::Validated;
     } else {
         quote.status = QuoteStatus::Rejected;

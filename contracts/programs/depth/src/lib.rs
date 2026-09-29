@@ -105,8 +105,16 @@ pub mod depth {
         market::pause_market_handler(ctx)
     }
 
+    pub fn report_incident(ctx: Context<ReportIncident>, incident: MarketIncident) -> Result<()> {
+        market::report_incident_handler(ctx, incident)
+    }
+
     pub fn resume_market(ctx: Context<ResumeMarket>) -> Result<()> {
         market::resume_market_handler(ctx)
+    }
+
+    pub fn enqueue_quote(ctx: Context<EnqueueQuote>) -> Result<()> {
+        reserve::enqueue_quote_handler(ctx)
     }
 
     pub fn offer_backstop(
@@ -483,7 +491,7 @@ pub mod depth {
         expiry: i64,
         expected_revision: u64,
         expected_oracle_timestamp: i64,
-        ciphertexts: [[u8; 32]; 8],
+        ciphertexts: [[u8; 32]; 6],
         input_key: [u8; 32],
         input_nonce: u128,
     ) -> Result<()> {
@@ -768,6 +776,31 @@ pub mod depth {
 
     pub fn close_market_view(ctx: Context<CloseMarketView>) -> Result<()> {
         market_view::close_market_view_handler(ctx)
+    }
+
+    pub fn init_view_quote_comp_def(ctx: Context<InitViewQuoteCompDef>) -> Result<()> {
+        quote_view::init_view_quote_comp_def_handler(ctx)
+    }
+
+    pub fn request_quote_view(
+        ctx: Context<RequestQuoteView>,
+        computation_offset: u64,
+        nonce: u64,
+        view_key: [u8; 32],
+    ) -> Result<()> {
+        quote_view::request_quote_view_handler(ctx, computation_offset, nonce, view_key)
+    }
+
+    #[arcium_callback(encrypted_ix = "view_quote")]
+    pub fn view_quote_callback(
+        ctx: Context<ViewQuoteCallback>,
+        output: SignedComputationOutputs<ViewQuoteOutput>,
+    ) -> Result<()> {
+        quote_view::view_quote_callback_handler(ctx, output)
+    }
+
+    pub fn close_quote_view(ctx: Context<CloseQuoteView>) -> Result<()> {
+        quote_view::close_quote_view_handler(ctx)
     }
 
     pub fn init_view_fill_comp_def(ctx: Context<InitViewFillCompDef>) -> Result<()> {

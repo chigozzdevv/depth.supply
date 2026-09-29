@@ -8,7 +8,7 @@ use crate::{
     oracle::read_price,
     state::{
         BackstopOffer, BackstopStatus, ClearingAccount, ClearingStatus, Market, MarketConfig,
-        MarketStatus, Protocol, RecoveryConfig,
+        MarketIncident, MarketStatus, Protocol, QuoteQueue, RecoveryConfig,
     },
 };
 
@@ -30,6 +30,8 @@ pub struct CreateMarket<'info> {
         bump,
     )]
     pub market: Box<Account<'info, Market>>,
+    #[account(init, payer = authority, space = 8 + QuoteQueue::INIT_SPACE, seeds = [b"quote-queue", market.key().as_ref()], bump)]
+    pub quote_queue: Box<Account<'info, QuoteQueue>>,
     #[account(init, payer = authority, space = 8 + RecoveryConfig::INIT_SPACE, seeds = [b"recovery-config", market.key().as_ref()], bump)]
     pub recovery_config: Box<Account<'info, RecoveryConfig>>,
     pub system_program: Program<'info, System>,
@@ -91,6 +93,17 @@ pub struct PauseMarket<'info> {
 }
 
 #[derive(Accounts)]
+pub struct ReportIncident<'info> {
+    pub actor: Signer<'info>,
+    #[account(mut, seeds = [b"protocol"], bump = protocol.bump, has_one = vault)]
+    pub protocol: Box<Account<'info, Protocol>>,
+    #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(token::mint = protocol.settlement_mint, token::authority = protocol)]
+    pub vault: Box<Account<'info, TokenAccount>>,
+}
+
+#[derive(Accounts)]
 pub struct ResumeMarket<'info> {
     pub authority: Signer<'info>,
     #[account(mut, seeds = [b"protocol"], bump = protocol.bump, has_one = authority, has_one = vault)]
@@ -143,7 +156,12 @@ pub fn create_market_handler(
     market.pending_orders = 0;
     market.pending_order = Pubkey::default();
     market.status = MarketStatus::Draft;
+    market.incident = MarketIncident::None;
     market.bump = ctx.bumps.market;
+    ctx.accounts.quote_queue.market = market.key();
+    ctx.accounts.quote_queue.entries = [Pubkey::default(); 8];
+    ctx.accounts.quote_queue.count = 0;
+    ctx.accounts.quote_queue.bump = ctx.bumps.quote_queue;
     let recovery = &mut ctx.accounts.recovery_config;
     recovery.market = market.key();
     recovery.recovery_key = recovery_key;
@@ -214,7 +232,7 @@ pub fn refresh_oracle_handler(ctx: Context<RefreshOracle>) -> Result<()> {
                 market.last_funding_timestamp += i64::from(market.config.funding_interval_seconds);
             }
             FundingAction::Pause => {
-                market.status = MarketStatus::Paused;
+                market.pause(MarketIncident::MissedFunding);
                 ctx.accounts.protocol.trading_enabled = false;
             }
         }
@@ -291,6 +309,7 @@ pub fn activate_market_handler(
         ErrorCode::InvalidRecoveryState
     );
     market.status = MarketStatus::Active;
+    market.incident = MarketIncident::None;
     market.last_funding_timestamp = market.oracle_timestamp;
     protocol.trading_enabled = true;
     Ok(())
@@ -310,7 +329,43 @@ pub fn pause_market_handler(ctx: Context<PauseMarket>) -> Result<()> {
         ctx.accounts.actor.key() == ctx.accounts.protocol.authority || stale,
         ErrorCode::Unauthorized
     );
-    market.status = MarketStatus::Paused;
+    market.pause(if stale {
+        MarketIncident::StaleOracle
+    } else {
+        MarketIncident::ManualPause
+    });
+    ctx.accounts.protocol.trading_enabled = false;
+    Ok(())
+}
+
+pub fn report_incident_handler(
+    ctx: Context<ReportIncident>,
+    incident: MarketIncident,
+) -> Result<()> {
+    let market = &mut ctx.accounts.market;
+    require!(
+        market.status == MarketStatus::Active,
+        ErrorCode::MarketNotActive
+    );
+    let clock = Clock::get()?;
+    let verified = match incident {
+        MarketIncident::StaleOracle => {
+            clock.unix_timestamp < market.oracle_timestamp
+                || clock.unix_timestamp.saturating_sub(market.oracle_timestamp)
+                    > i64::from(market.config.max_oracle_age_seconds)
+        }
+        MarketIncident::CollateralDeficit => {
+            u128::from(ctx.accounts.protocol.pending_total)
+                + u128::from(ctx.accounts.protocol.credited_total)
+                > u128::from(ctx.accounts.vault.amount)
+        }
+        MarketIncident::ClusterUnavailable | MarketIncident::CallbackFailure => {
+            ctx.accounts.actor.key() == ctx.accounts.protocol.authority
+        }
+        _ => false,
+    };
+    require!(verified, ErrorCode::Unauthorized);
+    market.pause(incident);
     ctx.accounts.protocol.trading_enabled = false;
     Ok(())
 }
@@ -353,6 +408,7 @@ pub fn resume_market_handler(ctx: Context<ResumeMarket>) -> Result<()> {
         ErrorCode::VaultUnderfunded
     );
     market.status = MarketStatus::Active;
+    market.incident = MarketIncident::None;
     market.last_funding_timestamp = market.oracle_timestamp;
     ctx.accounts.protocol.trading_enabled = true;
     Ok(())
@@ -442,6 +498,7 @@ fn validate_config(config: &MarketConfig) -> Result<()> {
     );
     require!(
         config.max_account_notional > 0
+            && config.max_account_notional <= 500_000_000_000
             && config.max_market_notional >= config.max_account_notional
             && config.backstop_min_collateral > 0,
         ErrorCode::InvalidMarketConfig

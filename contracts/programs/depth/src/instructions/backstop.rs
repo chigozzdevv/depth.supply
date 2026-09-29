@@ -8,8 +8,8 @@ use crate::{
     },
     error::ErrorCode,
     state::{
-        BackstopOffer, BackstopStatus, Market, MarketAccount, MarketAccountStatus, MarketStatus,
-        Protocol,
+        BackstopOffer, BackstopStatus, Market, MarketAccount, MarketAccountStatus, MarketIncident,
+        MarketStatus, Protocol,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -396,7 +396,7 @@ pub fn release_backstop_handler(
     );
     require!(account.version < u64::MAX, ErrorCode::RevisionOverflow);
     if market.status == MarketStatus::Active {
-        market.status = MarketStatus::Paused;
+        market.pause(MarketIncident::BackstopUnavailable);
         ctx.accounts.protocol.trading_enabled = false;
     }
     offer.status = BackstopStatus::Releasing;

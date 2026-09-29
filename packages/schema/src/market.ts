@@ -4,6 +4,15 @@ export type PublicMarket = {
   id: string;
   address: string;
   status: "draft" | "active" | "paused" | "settling";
+  incident:
+    | "none"
+    | "manualPause"
+    | "staleOracle"
+    | "missedFunding"
+    | "clusterUnavailable"
+    | "collateralDeficit"
+    | "callbackFailure"
+    | "backstopUnavailable";
   revision: string;
   settlement_mint: string;
   oracle_price_e8: string;
@@ -13,6 +22,8 @@ export type PublicMarket = {
   oracle_slot: string;
   funding_index: string;
   last_funding_timestamp: string;
+  active_quote_ids: string[];
+  waiting_quote_ids: string[];
   fee_bps: number;
   insurance_fee_bps: number;
   initial_margin_bps: number;
@@ -39,6 +50,7 @@ export const publicMarketSchema = {
     "id",
     "address",
     "status",
+    "incident",
     "revision",
     "settlement_mint",
     "oracle_price_e8",
@@ -48,6 +60,8 @@ export const publicMarketSchema = {
     "oracle_slot",
     "funding_index",
     "last_funding_timestamp",
+    "active_quote_ids",
+    "waiting_quote_ids",
     "fee_bps",
     "insurance_fee_bps",
     "initial_margin_bps",
@@ -71,6 +85,19 @@ export const publicMarketSchema = {
     id: { type: "string", const: "SOL-USD" },
     address: keyString,
     status: { type: "string", enum: ["draft", "active", "paused", "settling"] },
+    incident: {
+      type: "string",
+      enum: [
+        "none",
+        "manualPause",
+        "staleOracle",
+        "missedFunding",
+        "clusterUnavailable",
+        "collateralDeficit",
+        "callbackFailure",
+        "backstopUnavailable",
+      ],
+    },
     revision: integerString,
     settlement_mint: keyString,
     oracle_price_e8: integerString,
@@ -80,6 +107,8 @@ export const publicMarketSchema = {
     oracle_slot: integerString,
     funding_index: signedString,
     last_funding_timestamp: signedString,
+    active_quote_ids: { type: "array", items: keyString, maxItems: 4 },
+    waiting_quote_ids: { type: "array", items: keyString, maxItems: 8 },
     fee_bps: { type: "integer", minimum: 0 },
     insurance_fee_bps: { type: "integer", minimum: 0 },
     initial_margin_bps: { type: "integer", minimum: 0 },
@@ -94,7 +123,12 @@ export const publicMarketSchema = {
     max_order_queue_seconds: { type: "integer", minimum: 0 },
     funding_interval_seconds: { type: "integer", minimum: 0 },
     funding_rate_cap_bps: { type: "integer", minimum: 0 },
-    quote_tiers: { type: "array", items: integerString, minItems: 4, maxItems: 4 },
+    quote_tiers: {
+      type: "array",
+      items: integerString,
+      minItems: 4,
+      maxItems: 4,
+    },
     backstop_min_collateral: integerString,
     pending_order: keyString,
     slot: slotNumber,

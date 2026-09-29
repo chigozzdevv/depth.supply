@@ -7,7 +7,6 @@ export type PublicQuote = {
   market_id: string;
   status: string;
   capacity: string;
-  remaining_capacity: string;
   tier_count: number;
   expiry: string;
   slot: number;
@@ -22,7 +21,6 @@ export const publicQuoteSchema = {
     "market_id",
     "status",
     "capacity",
-    "remaining_capacity",
     "tier_count",
     "expiry",
     "slot",
@@ -35,7 +33,6 @@ export const publicQuoteSchema = {
     market_id: { type: "string", const: "SOL-USD" },
     status: { type: "string" },
     capacity: integerString,
-    remaining_capacity: integerString,
     tier_count: { type: "integer", minimum: 0, maximum: 4 },
     expiry: integerString,
     slot: slotNumber,

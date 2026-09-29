@@ -7,7 +7,8 @@ use crate::{
     error::ErrorCode,
     state::{
         BackstopOffer, BackstopStatus, ClearingAccount, ClearingStatus, Market, MarketAccount,
-        MarketAccountStatus, MarketStatus, OrderKind, OrderRecord, OrderStatus, Protocol,
+        MarketAccountStatus, MarketIncident, MarketStatus, OrderKind, OrderRecord, OrderStatus,
+        Protocol,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -384,7 +385,7 @@ pub fn liquidate_callback_handler(
         offer.pending_computation = Pubkey::default();
         market.clear_pending(order.key())?;
         if result.field_3 && fresh {
-            market.status = MarketStatus::Paused;
+            market.pause(MarketIncident::CollateralDeficit);
             ctx.accounts.protocol.trading_enabled = false;
         }
     }
@@ -432,7 +433,7 @@ pub fn cancel_liquidation_handler(ctx: Context<CancelLiquidation>) -> Result<()>
         );
         ctx.accounts.offer.status = BackstopStatus::Active;
         ctx.accounts.offer.pending_computation = Pubkey::default();
-        ctx.accounts.market.status = MarketStatus::Paused;
+        ctx.accounts.market.pause(MarketIncident::CollateralDeficit);
         ctx.accounts.protocol.trading_enabled = false;
         return Ok(());
     }
@@ -458,7 +459,7 @@ pub fn cancel_liquidation_handler(ctx: Context<CancelLiquidation>) -> Result<()>
     ctx.accounts.offer.status = BackstopStatus::Active;
     ctx.accounts.offer.pending_computation = Pubkey::default();
     ctx.accounts.market.clear_pending(order.key())?;
-    ctx.accounts.market.status = MarketStatus::Paused;
+    ctx.accounts.market.pause(MarketIncident::CollateralDeficit);
     ctx.accounts.protocol.trading_enabled = false;
     Ok(())
 }

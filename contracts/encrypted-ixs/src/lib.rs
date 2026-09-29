@@ -24,12 +24,20 @@ mod circuits {
     pub struct QuoteCurve {
         pub bid: [u64; 4],
         pub ask: [u64; 4],
+        pub bid_reciprocal: [u64; 4],
+        pub ask_reciprocal: [u64; 4],
+    }
+
+    #[derive(Copy, Clone)]
+    pub struct QuoteBalance {
+        pub remaining_capacity: u64,
+        pub remaining_margin: u64,
     }
 
     #[derive(Copy, Clone)]
     pub struct OrderInput {
         pub side: i8,
-        pub size: u64,
+        pub amount: u64,
         pub margin: u64,
         pub limit_price: u64,
         pub max_fee: u64,
@@ -279,6 +287,14 @@ mod circuits {
     }
 
     #[instruction]
+    pub fn view_quote(
+        encrypted: Enc<Mxe, Pack<QuoteBalance>>,
+        view_key: ArcisX25519Pubkey,
+    ) -> Enc<Shared, Pack<QuoteBalance>> {
+        Shared::new(view_key).from_arcis(encrypted.to_arcis())
+    }
+
+    #[instruction]
     pub fn view_fill(
         encrypted: Enc<Mxe, Pack<TradePlan>>,
         view_key: ArcisX25519Pubkey,
@@ -482,14 +498,24 @@ mod circuits {
 
     #[instruction]
     pub fn prepare_quote(
-        input: Enc<Shared, QuoteCurve>,
+        input: Enc<Shared, Pack<QuoteCurve>>,
         oracle_price: u64,
         deviation_bps: u16,
         tier_count: u8,
-    ) -> (Enc<Mxe, Pack<QuoteCurve>>, bool) {
-        let quote = input.to_arcis();
-        let mut valid =
-            oracle_price > 0 && deviation_bps <= 1_000 && tier_count > 0 && tier_count <= 4;
+        capacity: u64,
+        required_margin: u64,
+    ) -> (
+        Enc<Mxe, Pack<QuoteCurve>>,
+        Enc<Mxe, Pack<QuoteBalance>>,
+        bool,
+    ) {
+        let quote = input.to_arcis().unpack();
+        let mut valid = oracle_price > 0
+            && deviation_bps <= 1_000
+            && tier_count > 0
+            && tier_count <= 4
+            && capacity > 0
+            && required_margin > 0;
         let lower = oracle_price as u128 * (10_000u128 - deviation_bps as u128);
         let upper = oracle_price as u128 * (10_000u128 + deviation_bps as u128);
         for i in 0..4 {
@@ -497,6 +523,13 @@ mod circuits {
                 valid = valid
                     && quote.bid[i] > 0
                     && quote.ask[i] > quote.bid[i]
+                    && quote.bid[i] >= 100_000_000
+                    && quote.bid_reciprocal[i] < u64::MAX
+                    && quote.ask_reciprocal[i] < u64::MAX
+                    && quote.bid_reciprocal[i] as u128 * quote.bid[i] as u128 <= 1u128 << 76
+                    && (quote.bid_reciprocal[i] as u128 + 1) * quote.bid[i] as u128 > 1u128 << 76
+                    && quote.ask_reciprocal[i] as u128 * quote.ask[i] as u128 <= 1u128 << 76
+                    && (quote.ask_reciprocal[i] as u128 + 1) * quote.ask[i] as u128 > 1u128 << 76
                     && quote.bid[i] as u128 * 10_000u128 >= lower
                     && quote.ask[i] as u128 * 10_000u128 <= upper;
                 if i > 0 {
@@ -505,10 +538,22 @@ mod circuits {
                         && quote.ask[i] >= quote.ask[i - 1];
                 }
             } else {
-                valid = valid && quote.bid[i] == 0 && quote.ask[i] == 0;
+                valid = valid
+                    && quote.bid[i] == 0
+                    && quote.ask[i] == 0
+                    && quote.bid_reciprocal[i] == 0
+                    && quote.ask_reciprocal[i] == 0;
             }
         }
-        (Mxe::get().from_arcis(Pack::new(quote)), valid.reveal())
+        let balance = QuoteBalance {
+            remaining_capacity: capacity,
+            remaining_margin: required_margin,
+        };
+        (
+            Mxe::get().from_arcis(Pack::new(quote)),
+            Mxe::get().from_arcis(Pack::new(balance)),
+            valid.reveal(),
+        )
     }
 
     #[instruction]
@@ -520,6 +565,10 @@ mod circuits {
         quote_1: Enc<Mxe, Pack<QuoteCurve>>,
         quote_2: Enc<Mxe, Pack<QuoteCurve>>,
         quote_3: Enc<Mxe, Pack<QuoteCurve>>,
+        balance_0: Enc<Mxe, Pack<QuoteBalance>>,
+        balance_1: Enc<Mxe, Pack<QuoteBalance>>,
+        balance_2: Enc<Mxe, Pack<QuoteBalance>>,
+        balance_3: Enc<Mxe, Pack<QuoteBalance>>,
         active_count: u8,
         capacities: [u64; 4],
         tier_counts: [u8; 4],
@@ -548,13 +597,13 @@ mod circuits {
         let absolute = if position < 0 { -position } else { position } as u64;
         let opposite = (position > 0 && order.side == -1) || (position < 0 && order.side == 1);
         let intent_valid = if order.intent == 0 {
-            position == 0 || !opposite
+            order.amount > 0 && (position == 0 || !opposite)
         } else if order.intent == 1 {
-            opposite && order.size <= absolute
+            opposite && order.amount > 0 && order.amount <= absolute
         } else if order.intent == 2 {
-            opposite && order.size == absolute
+            opposite && order.amount == 0
         } else if order.intent == 3 {
-            opposite && order.size > absolute
+            opposite && order.amount > 0
         } else {
             false
         };
@@ -564,7 +613,27 @@ mod circuits {
             quote_2.to_arcis().unpack(),
             quote_3.to_arcis().unpack(),
         ];
-        let reference_notional = order.size as u128 * oracle_price as u128 / 100_000_000_000u128;
+        let balances = [
+            balance_0.to_arcis().unpack(),
+            balance_1.to_arcis().unpack(),
+            balance_2.to_arcis().unpack(),
+            balance_3.to_arcis().unpack(),
+        ];
+        let closing_size = if order.intent == 2 {
+            absolute
+        } else if order.intent == 1 {
+            order.amount
+        } else if order.intent == 3 {
+            absolute
+        } else {
+            0
+        };
+        let reference_notional = if order.intent == 0 || order.intent == 3 {
+            order.amount as u128
+        } else {
+            0
+        } + closing_size as u128 * oracle_price as u128
+            / 100_000_000_000u128;
         let mut tier = 4usize;
         for index in 0..4 {
             if tier == 4 && reference_notional <= size_tiers[index] as u128 {
@@ -574,8 +643,8 @@ mod circuits {
         let valid_order = intent_valid
             && (!reduce_only || order.intent == 1 || order.intent == 2)
             && order.version == trader_version
+            && order.amount <= 500_000_000_000
             && (order.side == 1 || order.side == -1)
-            && order.size > 0
             && order.margin > 0
             && order.limit_price > 0
             && oracle_price > 0
@@ -594,8 +663,10 @@ mod circuits {
         let mut execution_insurance_fee = 0u64;
         let mut execution_app_fee = 0u64;
         let mut execution_maker_rebate = 0u64;
+        let mut execution_size = 0u64;
         for index in 0..4 {
             let mut price = 0u64;
+            let mut reciprocal = 0u64;
             for price_tier in 0..4 {
                 if tier == price_tier {
                     price = if order.side == 1 {
@@ -603,24 +674,36 @@ mod circuits {
                     } else {
                         quotes[index].bid[price_tier]
                     };
+                    reciprocal = if order.side == 1 {
+                        quotes[index].ask_reciprocal[price_tier]
+                    } else {
+                        quotes[index].bid_reciprocal[price_tier]
+                    };
                 }
             }
-            let notional = order.size as u128 * price as u128 / 100_000_000_000u128;
+            let bounded_amount = if order.amount <= 500_000_000_000 {
+                order.amount
+            } else {
+                0
+            };
+            let target = bounded_amount as u128 * 100_000_000_000u128;
+            let approximate = target * reciprocal as u128 >> 76;
+            let opening_size = if order.intent == 0 || order.intent == 3 {
+                approximate
+                    + if (approximate + 1) * price as u128 <= target {
+                        1
+                    } else {
+                        0
+                    }
+            } else {
+                0
+            };
+            let fill_size = closing_size as u128 + opening_size;
+            let notional = fill_size * price as u128 / 100_000_000_000u128;
             let fee = (notional * (trade_fee_bps + app_fee_bps) as u128 + 9_999u128) / 10_000u128;
             let insurance_fee = notional * insurance_fee_bps as u128 / 10_000u128;
             let app_fee = notional * app_fee_bps as u128 / 10_000u128;
             let maker_rebate = notional / 10_000u128;
-            let opening_size = if order.intent == 1 || order.intent == 2 {
-                0u64
-            } else if order.intent == 3 {
-                if order.size > absolute {
-                    order.size - absolute
-                } else {
-                    0
-                }
-            } else {
-                order.size
-            };
             let opening_notional = opening_size as u128 * price as u128 / 100_000_000_000u128;
             let initial_margin =
                 (opening_notional * initial_margin_bps as u128 + 9_999u128) / 10_000u128;
@@ -631,11 +714,15 @@ mod circuits {
                 && !self_matches[index]
                 && tier < tier_counts[index] as usize
                 && price > 0
+                && fill_size > 0
+                && fill_size <= u64::MAX as u128
+                && (order.intent == 1 || order.intent == 2 || opening_size > 0)
                 && price as u128 * 10_000u128 >= lower
                 && price as u128 * 10_000u128 <= upper
                 && notional > 0
                 && notional <= capacities[index] as u128
-                && notional <= max_account_notional as u128
+                && notional <= balances[index].remaining_capacity as u128
+                && opening_notional <= max_account_notional as u128
                 && fee <= order.max_fee as u128
                 && fee <= u64::MAX as u128
                 && insurance_fee + app_fee + maker_rebate <= fee
@@ -653,6 +740,7 @@ mod circuits {
                 };
             if eligible && better {
                 selected = index as u8;
+                execution_size = fill_size as u64;
                 execution_price = price;
                 execution_fee = fee as u64;
                 execution_insurance_fee = insurance_fee as u64;
@@ -663,7 +751,7 @@ mod circuits {
         let filled = valid_order && selected < 4;
         let plan = TradePlan {
             side: if filled { order.side } else { 0 },
-            size: if filled { order.size } else { 0 },
+            size: if filled { execution_size } else { 0 },
             margin: if filled { order.margin } else { 0 },
             execution_price: if filled { execution_price } else { 0 },
             fee: if filled { execution_fee } else { 0 },
@@ -762,6 +850,8 @@ mod circuits {
         trader_cipher: Enc<Mxe, Pack<MarketState>>,
         maker_cipher: Enc<Mxe, Pack<MarketState>>,
         clearing_cipher: Enc<Mxe, Pack<ClearingState>>,
+        balance_cipher: Enc<Mxe, Pack<QuoteBalance>>,
+        quote_capacity: u64,
         quote_reserve: u64,
         oracle_price: u64,
         funding_index: i128,
@@ -772,12 +862,34 @@ mod circuits {
         Enc<Mxe, Pack<MarketState>>,
         Enc<Mxe, Pack<MarketState>>,
         Enc<Mxe, Pack<ClearingState>>,
+        Enc<Mxe, Pack<QuoteBalance>>,
         bool,
     ) {
         let plan = plan_cipher.to_arcis().unpack();
         let trader = trader_cipher.to_arcis().unpack();
         let maker = maker_cipher.to_arcis().unpack();
         let clearing = clearing_cipher.to_arcis().unpack();
+        let quote = balance_cipher.to_arcis().unpack();
+        let fill_notional = plan.size as u128 * plan.execution_price as u128 / 100_000_000_000u128;
+        let capacity_valid = fill_notional > 0
+            && fill_notional <= quote.remaining_capacity as u128
+            && quote.remaining_capacity <= quote_capacity
+            && quote.remaining_margin <= quote_reserve;
+        let remaining_capacity = if capacity_valid {
+            quote.remaining_capacity - fill_notional as u64
+        } else {
+            quote.remaining_capacity
+        };
+        let remaining_margin =
+            (remaining_capacity as u128 * initial_margin_bps as u128 + 9_999u128) / 10_000u128;
+        let reserve_valid = capacity_valid
+            && quote.remaining_margin as u128 >= remaining_margin
+            && maker.reserved as u128 >= quote.remaining_margin as u128 - remaining_margin;
+        let released_reserve = if reserve_valid {
+            quote.remaining_margin - remaining_margin as u64
+        } else {
+            0
+        };
         let (mut trader_next, trader_realised, trader_oi, trader_valid) =
             enter_leg(trader, plan, plan.size as i128 * plan.side as i128);
         let (mut maker_next, maker_realised, maker_oi, maker_valid) =
@@ -804,12 +916,11 @@ mod circuits {
             - plan.app_fee as i128;
         let protocol_fees = clearing.protocol_fees as u128 + protocol_fee;
         let app_fees = clearing.app_fees as u128 + plan.app_fee as u128;
-        let reserve_valid = maker.reserved >= quote_reserve;
         trader_next.collateral = trader_balance as u64;
         trader_next.funding_checkpoint = funding_index;
         maker_next.collateral = maker_balance as u64;
         maker_next.reserved = if reserve_valid {
-            maker.reserved - quote_reserve
+            maker.reserved - released_reserve
         } else {
             maker.reserved
         };
@@ -851,11 +962,14 @@ mod circuits {
             && (open_interest as u128) * (oracle_price as u128)
                 < (max_market_notional as u128 + 1) * 100_000_000_000u128;
         let mut clearing_next = clearing;
+        let mut quote_next = quote;
         if valid {
             clearing_next.insurance = insurance_balance as u64;
             clearing_next.open_interest = open_interest as u64;
             clearing_next.protocol_fees = protocol_fees as u64;
             clearing_next.app_fees = app_fees as u64;
+            quote_next.remaining_capacity = remaining_capacity;
+            quote_next.remaining_margin = remaining_margin as u64;
         } else {
             trader_next = trader;
             maker_next = maker;
@@ -864,6 +978,7 @@ mod circuits {
             trader_cipher.owner.from_arcis(Pack::new(trader_next)),
             maker_cipher.owner.from_arcis(Pack::new(maker_next)),
             clearing_cipher.owner.from_arcis(Pack::new(clearing_next)),
+            balance_cipher.owner.from_arcis(Pack::new(quote_next)),
             valid.reveal(),
         )
     }
@@ -1181,7 +1296,8 @@ mod circuits {
     #[instruction]
     pub fn release_quote(
         encrypted: Enc<Mxe, Pack<MarketState>>,
-        required: u64,
+        balance_cipher: Enc<Mxe, Pack<QuoteBalance>>,
+        maximum_reserve: u64,
         account: [u8; 32],
         version: u64,
         recovery_key: ArcisX25519Pubkey,
@@ -1192,7 +1308,9 @@ mod circuits {
         bool,
     ) {
         let current = encrypted.to_arcis().unpack();
-        let valid = required > 0 && current.reserved >= required;
+        let quote = balance_cipher.to_arcis().unpack();
+        let required = quote.remaining_margin;
+        let valid = required <= maximum_reserve && current.reserved >= required;
         let mut state = current;
         if valid {
             state.reserved = current.reserved - required;

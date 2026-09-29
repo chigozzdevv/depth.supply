@@ -134,6 +134,65 @@ pub fn init_match_order_comp_def_handler(ctx: Context<InitMatchOrderCompDef>) ->
     Ok(())
 }
 
+struct QuoteInputs {
+    capacities: [u64; 4],
+    tiers: [u8; 4],
+    self_matches: [bool; 4],
+    keys: [Pubkey; 4],
+    encrypted: Vec<([[u8; 32]; 6], [u8; 16])>,
+    balances: Vec<([u8; 32], [u8; 16])>,
+}
+
+fn quote_inputs<'info>(
+    accounts: &'info [AccountInfo<'info>],
+    market: &Market,
+    market_key: Pubkey,
+    trader: Pubkey,
+    now: i64,
+    count: usize,
+) -> Result<Box<QuoteInputs>> {
+    let mut inputs = Box::new(QuoteInputs {
+        capacities: [0; 4],
+        tiers: [0; 4],
+        self_matches: [false; 4],
+        keys: [Pubkey::default(); 4],
+        encrypted: Vec::with_capacity(4),
+        balances: Vec::with_capacity(4),
+    });
+    for (index, info) in accounts.iter().skip(1).take(count).enumerate() {
+        require_keys_eq!(
+            info.key(),
+            market.active_quotes[index],
+            ErrorCode::WrongQuoteSnapshot
+        );
+        let quote = Account::<QuoteRecord>::try_from(info)?;
+        require_keys_eq!(quote.market, market_key, ErrorCode::WrongMarket);
+        require!(
+            quote.status == QuoteStatus::Active && quote.expiry > now,
+            ErrorCode::WrongQuoteStatus
+        );
+        require!(
+            quote.market_revision == market.revision,
+            ErrorCode::InvalidQuote
+        );
+        inputs.capacities[index] = quote.capacity;
+        inputs.tiers[index] = quote.tier_count;
+        inputs.self_matches[index] = quote.maker == trader;
+        inputs.keys[index] = info.key();
+        inputs
+            .encrypted
+            .push((quote.ciphertexts, quote.cipher_nonce));
+        inputs
+            .balances
+            .push((quote.balance_ciphertext, quote.balance_nonce));
+    }
+    while inputs.encrypted.len() < 4 {
+        inputs.encrypted.push(inputs.encrypted[0]);
+        inputs.balances.push(inputs.balances[0]);
+    }
+    Ok(inputs)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn submit_order_handler<'info>(
     ctx: Context<'info, SubmitOrder<'info>>,
@@ -208,8 +267,8 @@ pub fn submit_order_handler<'info>(
     let recovery_config = Account::<RecoveryConfig>::try_from(recovery_info)?;
     require_keys_eq!(recovery_config.market, market.key(), ErrorCode::WrongMarket);
     let fee_info = &ctx.remaining_accounts[count + 2];
-    let (fee_address, fee_bump) =
-        Pubkey::find_program_address(&[b"fee-recovery", ctx.accounts.order.key().as_ref()], &ID);
+    let fee_address =
+        Pubkey::find_program_address(&[b"fee-recovery", ctx.accounts.order.key().as_ref()], &ID).0;
     require_keys_eq!(fee_info.key(), fee_address, ErrorCode::InvalidOrder);
     require!(
         fee_info.is_writable && fee_info.data_is_empty(),
@@ -227,42 +286,14 @@ pub fn submit_order_handler<'info>(
             && backstop.expiry > clock.unix_timestamp,
         ErrorCode::InvalidBackstop
     );
-    let mut capacities = [0u64; 4];
-    let mut tiers = [0u8; 4];
-    let mut self_matches = [false; 4];
-    let mut keys = [Pubkey::default(); 4];
-    let mut quotes = Vec::with_capacity(4);
-    for (index, info) in ctx
-        .remaining_accounts
-        .iter()
-        .skip(1)
-        .take(count)
-        .enumerate()
-    {
-        require_keys_eq!(
-            info.key(),
-            market.active_quotes[index],
-            ErrorCode::WrongQuoteSnapshot
-        );
-        let quote = Account::<QuoteRecord>::try_from(info)?;
-        require_keys_eq!(quote.market, market.key(), ErrorCode::WrongMarket);
-        require!(
-            quote.status == QuoteStatus::Active && quote.expiry > clock.unix_timestamp,
-            ErrorCode::WrongQuoteStatus
-        );
-        require!(
-            quote.market_revision == market.revision,
-            ErrorCode::InvalidQuote
-        );
-        capacities[index] = quote.remaining_capacity;
-        tiers[index] = quote.tier_count;
-        self_matches[index] = quote.maker == ctx.accounts.trader.key();
-        keys[index] = info.key();
-        quotes.push((quote.ciphertexts, quote.cipher_nonce));
-    }
-    while quotes.len() < 4 {
-        quotes.push(quotes[0]);
-    }
+    let inputs = quote_inputs(
+        ctx.remaining_accounts,
+        market,
+        market.key(),
+        ctx.accounts.trader.key(),
+        clock.unix_timestamp,
+        count,
+    )?;
     let order = &mut ctx.accounts.order;
     order.trader = ctx.accounts.trader.key();
     order.market = market.key();
@@ -272,7 +303,7 @@ pub fn submit_order_handler<'info>(
     order.reduce_only = market.status == MarketStatus::Paused;
     order.nonce = nonce;
     order.deadline = deadline;
-    order.quote_keys = keys;
+    order.quote_keys = inputs.keys;
     order.quote_count = count as u8;
     order.market_revision = market.revision;
     order.oracle_timestamp = market.oracle_timestamp;
@@ -282,34 +313,13 @@ pub fn submit_order_handler<'info>(
     order.kind = OrderKind::Trade;
     order.status = OrderStatus::Matching;
     order.bump = ctx.bumps.order;
-    let order_key = order.key();
-    let fee_space = 8 + FeeRecoveryRecord::INIT_SPACE;
-    let fee_lamports = Rent::get()?.minimum_balance(fee_space);
-    let bump_seed = [fee_bump];
-    invoke_signed(
-        &system_instruction::create_account(
-            &ctx.accounts.trader.key(),
-            &fee_address,
-            fee_lamports,
-            fee_space as u64,
-            &ID,
-        ),
-        &[
-            ctx.accounts.trader.to_account_info(),
-            fee_info.clone(),
-            ctx.accounts.system_program.to_account_info(),
-        ],
-        &[&[b"fee-recovery", order_key.as_ref(), &bump_seed]],
+    initialize_fee_recovery(
+        &ctx.accounts.trader,
+        fee_info,
+        &ctx.accounts.system_program,
+        order.key(),
+        recovery_config.recovery_key,
     )?;
-    FeeRecoveryRecord {
-        order: order_key,
-        recovery_key: recovery_config.recovery_key,
-        ciphertexts: [[0; 32]; 3],
-        nonce: [0; 16],
-        commitment: [0; 32],
-        bump: fee_bump,
-    }
-    .try_serialize(&mut &mut fee_info.try_borrow_mut_data()?[..])?;
     ctx.accounts.market_account.status = MarketAccountStatus::Matching;
     ctx.accounts.market_account.pending_computation = ctx.accounts.computation_account.key();
     market.begin_pending(order.key())?;
@@ -326,20 +336,25 @@ pub fn submit_order_handler<'info>(
         args = args.encrypted_u64(field);
     }
     args = args.plaintext_u64(ctx.accounts.market_account.version);
-    for (fields, cipher_nonce) in quotes {
-        args = args.plaintext_u128(u128::from_le_bytes(cipher_nonce));
+    for (fields, cipher_nonce) in &inputs.encrypted {
+        args = args.plaintext_u128(u128::from_le_bytes(*cipher_nonce));
         for field in fields {
-            args = args.encrypted_u64(field);
+            args = args.encrypted_u64(*field);
         }
     }
+    for (field, cipher_nonce) in &inputs.balances {
+        args = args
+            .plaintext_u128(u128::from_le_bytes(*cipher_nonce))
+            .encrypted_u64(*field);
+    }
     args = args.plaintext_u8(count as u8);
-    for capacity in capacities {
+    for capacity in inputs.capacities {
         args = args.plaintext_u64(capacity);
     }
-    for tier in tiers {
+    for tier in inputs.tiers {
         args = args.plaintext_u8(tier);
     }
-    for self_match in self_matches {
+    for self_match in inputs.self_matches {
         args = args.plaintext_bool(self_match);
     }
     for size_tier in market.config.quote_tiers {
@@ -393,6 +408,45 @@ pub fn submit_order_handler<'info>(
         0,
         0,
     )?;
+    Ok(())
+}
+
+fn initialize_fee_recovery<'info>(
+    trader: &Signer<'info>,
+    fee_info: &AccountInfo<'info>,
+    system_program: &Program<'info, System>,
+    order_key: Pubkey,
+    recovery_key: [u8; 32],
+) -> Result<()> {
+    let (fee_address, fee_bump) =
+        Pubkey::find_program_address(&[b"fee-recovery", order_key.as_ref()], &ID);
+    require_keys_eq!(fee_info.key(), fee_address, ErrorCode::InvalidOrder);
+    let fee_space = 8 + FeeRecoveryRecord::INIT_SPACE;
+    let bump_seed = [fee_bump];
+    invoke_signed(
+        &system_instruction::create_account(
+            &trader.key(),
+            &fee_address,
+            Rent::get()?.minimum_balance(fee_space),
+            fee_space as u64,
+            &ID,
+        ),
+        &[
+            trader.to_account_info(),
+            fee_info.clone(),
+            system_program.to_account_info(),
+        ],
+        &[&[b"fee-recovery", order_key.as_ref(), &bump_seed]],
+    )?;
+    FeeRecoveryRecord {
+        order: order_key,
+        recovery_key,
+        ciphertexts: [[0; 32]; 3],
+        nonce: [0; 16],
+        commitment: [0; 32],
+        bump: fee_bump,
+    }
+    .try_serialize(&mut &mut fee_info.try_borrow_mut_data()?[..])?;
     Ok(())
 }
 

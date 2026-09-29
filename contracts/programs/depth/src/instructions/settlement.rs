@@ -118,7 +118,7 @@ pub struct CancelTrade<'info> {
     pub trader_account: Box<Account<'info, MarketAccount>>,
     #[account(mut, seeds = [b"market-account", market.key().as_ref(), quote.maker.as_ref()], bump = maker_account.bump)]
     pub maker_account: Box<Account<'info, MarketAccount>>,
-    #[account(seeds = [b"quote", market.key().as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
+    #[account(mut, seeds = [b"quote", market.key().as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
     pub quote: Box<Account<'info, QuoteRecord>>,
     #[account(mut, seeds = [b"order", market.key().as_ref(), order.trader.as_ref(), order.nonce.to_le_bytes().as_ref()], bump = order.bump)]
     pub order: Box<Account<'info, OrderRecord>>,
@@ -235,7 +235,11 @@ pub fn settle_trade_handler<'info>(
     for field in ctx.accounts.trade.clearing.ciphertexts {
         args = args.encrypted_u64(field);
     }
+    args = args
+        .plaintext_u128(u128::from_le_bytes(quote.balance_nonce))
+        .encrypted_u64(quote.balance_ciphertext);
     let args = args
+        .plaintext_u64(quote.capacity)
         .plaintext_u64(quote.required_margin)
         .plaintext_u64(market.oracle_price_e8)
         .plaintext_i128(market.funding_index)
@@ -343,7 +347,7 @@ pub fn settle_trade_callback_handler(
     );
     require_keys_eq!(clearing.market, market.key(), ErrorCode::WrongMarket);
     let clock = Clock::get()?;
-    let eligible = result.field_3
+    let eligible = result.field_4
         && (market.status == MarketStatus::Active
             || (market.status == MarketStatus::Paused && order.reduce_only))
         && quote.status == QuoteStatus::Active
@@ -365,6 +369,8 @@ pub fn settle_trade_callback_handler(
         order.candidate_secondary_nonce = result.field_1.nonce.to_le_bytes();
         order.candidate_clearing = result.field_2.ciphertexts;
         order.candidate_clearing_nonce = result.field_2.nonce.to_le_bytes();
+        quote.pending_balance_ciphertext = result.field_3.ciphertexts[0];
+        quote.pending_balance_nonce = result.field_3.nonce.to_le_bytes();
         order.status = OrderStatus::RiskApproved;
     } else {
         order.status = OrderStatus::Rejected;
@@ -441,6 +447,8 @@ pub fn cancel_trade_handler(ctx: Context<CancelTrade>) -> Result<()> {
     ctx.accounts.maker_account.pending_computation = Pubkey::default();
     ctx.accounts.clearing.status = ClearingStatus::Ready;
     ctx.accounts.clearing.pending_computation = Pubkey::default();
+    ctx.accounts.quote.pending_balance_ciphertext = [0; 32];
+    ctx.accounts.quote.pending_balance_nonce = [0; 16];
     ctx.accounts.market.clear_pending(order.key())?;
     Ok(())
 }

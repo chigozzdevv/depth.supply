@@ -7,8 +7,8 @@ use crate::{
     error::ErrorCode,
     state::{
         BackstopOffer, BackstopStatus, ClearingAccount, ClearingStatus, Market, MarketAccount,
-        MarketAccountStatus, MarketStatus, OrderKind, OrderRecord, OrderStatus, Protocol,
-        QuoteRecord, QuoteStatus,
+        MarketAccountStatus, MarketIncident, MarketStatus, OrderKind, OrderRecord, OrderStatus,
+        Protocol, QuoteRecord, QuoteStatus,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -672,23 +672,10 @@ pub fn seal_clearing_callback_handler(
         match order.kind {
             OrderKind::Trade => {
                 let mut quote = read_quote(&ctx.accounts.source)?;
-                let count = usize::from(market.active_quote_count);
-                let index = market.active_quotes[..count]
-                    .iter()
-                    .position(|key| *key == ctx.accounts.source.key())
-                    .ok_or(ErrorCode::WrongQuoteSnapshot)?;
-                for i in index..count - 1 {
-                    market.active_quotes[i] = market.active_quotes[i + 1];
-                }
-                market.active_quotes[count - 1] = Pubkey::default();
-                market.active_quote_count -= 1;
-                market.quoted_notional = market
-                    .quoted_notional
-                    .checked_sub(quote.capacity)
-                    .ok_or(ErrorCode::QuoteCapacityExceeded)?;
-                quote.remaining_capacity = 0;
-                quote.required_margin = 0;
-                quote.status = QuoteStatus::Filled;
+                quote.balance_ciphertext = quote.pending_balance_ciphertext;
+                quote.balance_nonce = quote.pending_balance_nonce;
+                quote.pending_balance_ciphertext = [0; 32];
+                quote.pending_balance_nonce = [0; 16];
                 write_quote(&ctx.accounts.source, &quote)?;
             }
             OrderKind::Liquidation => {
@@ -697,19 +684,25 @@ pub fn seal_clearing_callback_handler(
                 offer.pending_computation = Pubkey::default();
                 write_offer(&ctx.accounts.source, &offer)?;
                 market.backstop_offer = Pubkey::default();
-                market.status = MarketStatus::Paused;
+                market.pause(MarketIncident::BackstopUnavailable);
                 ctx.accounts.protocol.trading_enabled = false;
             }
         }
         order.status = OrderStatus::Filled;
     } else {
         order.status = OrderStatus::Rejected;
+        if order.kind == OrderKind::Trade {
+            let mut quote = read_quote(&ctx.accounts.source)?;
+            quote.pending_balance_ciphertext = [0; 32];
+            quote.pending_balance_nonce = [0; 16];
+            write_quote(&ctx.accounts.source, &quote)?;
+        }
         if order.kind == OrderKind::Liquidation {
             let mut offer = read_offer(&ctx.accounts.source)?;
             offer.status = BackstopStatus::Active;
             offer.pending_computation = Pubkey::default();
             write_offer(&ctx.accounts.source, &offer)?;
-            market.status = MarketStatus::Paused;
+            market.pause(MarketIncident::CollateralDeficit);
             ctx.accounts.protocol.trading_enabled = false;
         }
     }

@@ -28,6 +28,7 @@ pub const COMP_DEF_OFFSET_RELEASE_BACKSTOP: u32 = comp_def_offset("release_backs
 pub const COMP_DEF_OFFSET_SEAL_MARKET: u32 = comp_def_offset("seal_market");
 pub const COMP_DEF_OFFSET_SEAL_CLEARING: u32 = comp_def_offset("seal_clearing");
 pub const COMP_DEF_OFFSET_VIEW_MARKET: u32 = comp_def_offset("view_market");
+pub const COMP_DEF_OFFSET_VIEW_QUOTE: u32 = comp_def_offset("view_quote");
 pub const COMP_DEF_OFFSET_VIEW_FILL: u32 = comp_def_offset("view_fill");
 
 pub const MIN_SOL_PRICE_E8: u64 = 100_000_000;

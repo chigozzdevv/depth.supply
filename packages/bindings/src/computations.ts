@@ -23,5 +23,6 @@ export const computations = [
   "settle_trade",
   "view_balance",
   "view_fill",
-  "view_market"
+  "view_market",
+  "view_quote"
 ] as const;

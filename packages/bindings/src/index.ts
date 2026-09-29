@@ -10,10 +10,24 @@ export const SOL_USD_FEED_ID = Buffer.from(
   "hex",
 );
 export const SOL_USD_MARKET_ID = "SOL-USD";
+export const PYTH_PUSH_ORACLE_ID = new PublicKey(
+  "pythWSnswVUd12oZpeFP8e9CVaEqJg25g1Vtc2biRsT",
+);
+export const SOL_USD_PUSH_ACCOUNT = PublicKey.findProgramAddressSync(
+  [Buffer.alloc(2), SOL_USD_FEED_ID],
+  PYTH_PUSH_ORACLE_ID,
+)[0];
 
 export function marketAddress(programId = DEPTH_PROGRAM_ID): PublicKey {
   return PublicKey.findProgramAddressSync(
     [Buffer.from("market"), SOL_USD_FEED_ID],
+    programId,
+  )[0];
+}
+
+export function quoteQueueAddress(programId = DEPTH_PROGRAM_ID): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("quote-queue"), marketAddress(programId).toBuffer()],
     programId,
   )[0];
 }
@@ -114,6 +128,8 @@ export function withdrawalAddress(
 }
 
 export { circuits } from "@/circuits";
+export { packQuoteCurve } from "@/quote";
+export type { EncryptedQuote } from "@/quote";
 
 export { computations } from "@/computations";
 export { accountOffsets, enumValues } from "@/layout";

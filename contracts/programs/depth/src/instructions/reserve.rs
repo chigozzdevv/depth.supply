@@ -8,7 +8,7 @@ use crate::{
     instructions::operator::authorize_operator,
     state::{
         Market, MarketAccount, MarketAccountStatus, MarketStatus, OperatorGrant, Protocol,
-        QuoteRecord, QuoteStatus,
+        QuoteQueue, QuoteRecord, QuoteStatus,
     },
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -210,6 +210,20 @@ pub struct StopQuote<'info> {
     pub actor: Signer<'info>,
     #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
+    #[account(mut, seeds = [b"quote-queue", market.key().as_ref()], bump = quote_queue.bump, constraint = quote_queue.market == market.key() @ ErrorCode::WrongMarket)]
+    pub quote_queue: Box<Account<'info, QuoteQueue>>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
+    #[account(mut, constraint = quote.market == market.key() @ ErrorCode::WrongMarket, seeds = [b"quote", market.key().as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
+    pub quote: Box<Account<'info, QuoteRecord>>,
+}
+
+#[derive(Accounts)]
+pub struct EnqueueQuote<'info> {
+    pub actor: Signer<'info>,
+    #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(mut, seeds = [b"quote-queue", market.key().as_ref()], bump = quote_queue.bump, constraint = quote_queue.market == market.key() @ ErrorCode::WrongMarket)]
+    pub quote_queue: Box<Account<'info, QuoteQueue>>,
     pub grant: Option<Box<Account<'info, OperatorGrant>>>,
     #[account(mut, constraint = quote.market == market.key() @ ErrorCode::WrongMarket, seeds = [b"quote", market.key().as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
     pub quote: Box<Account<'info, QuoteRecord>>,
@@ -271,8 +285,13 @@ fn authorize_quote_actor(
 }
 
 pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64) -> Result<()> {
+    let waiting = ctx.accounts.quote.status == QuoteStatus::Waiting;
     authorize_quote_actor(
-        ctx.accounts.payer.key(),
+        if waiting {
+            ctx.accounts.quote.operator
+        } else {
+            ctx.accounts.payer.key()
+        },
         &ctx.accounts.quote,
         ctx.accounts.grant.as_deref(),
     )?;
@@ -280,7 +299,21 @@ pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64
         ctx.accounts.market.pending_orders == 0,
         ErrorCode::WrongOrderStatus
     );
-    let market = &ctx.accounts.market;
+    let market = &mut ctx.accounts.market;
+    require!(
+        ctx.remaining_accounts.len() == 1,
+        ErrorCode::WrongQuoteSnapshot
+    );
+    let queue_info = &ctx.remaining_accounts[0];
+    let expected_queue =
+        Pubkey::find_program_address(&[b"quote-queue", market.key().as_ref()], &ID).0;
+    require_keys_eq!(queue_info.key(), expected_queue, ErrorCode::WrongMarket);
+    require_keys_eq!(*queue_info.owner, ID, ErrorCode::WrongMarket);
+    require!(queue_info.is_writable, ErrorCode::WrongMarket);
+    let queue_data = queue_info.try_borrow_data()?;
+    let mut quote_queue = QuoteQueue::try_deserialize(&mut &queue_data[..])?;
+    drop(queue_data);
+    require_keys_eq!(quote_queue.market, market.key(), ErrorCode::WrongMarket);
     let quote = &mut ctx.accounts.quote;
     let account = &mut ctx.accounts.market_account;
     let clock = Clock::get()?;
@@ -289,9 +322,17 @@ pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64
         ErrorCode::InvalidQuote
     );
     require!(
-        quote.status == QuoteStatus::Validated,
+        quote.status == QuoteStatus::Validated || quote.status == QuoteStatus::Waiting,
         ErrorCode::WrongQuoteStatus
     );
+    if quote_queue.count > 0 {
+        require!(
+            waiting && quote_queue.entries[0] == quote.key(),
+            ErrorCode::WrongQuoteStatus
+        );
+    } else {
+        require!(!waiting, ErrorCode::WrongQuoteStatus);
+    }
     require!(
         account.status == MarketAccountStatus::Ready,
         ErrorCode::WrongMarketAccountStatus
@@ -319,6 +360,11 @@ pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64
                 <= i64::from(market.config.max_oracle_age_seconds),
         ErrorCode::StaleOracle
     );
+    if waiting {
+        quote_queue.remove(quote.key())?;
+        let mut data = queue_info.try_borrow_mut_data()?;
+        quote_queue.try_serialize(&mut &mut data[..])?;
+    }
     quote.status = QuoteStatus::Reserving;
     quote.funding_index = market.funding_index;
     quote.pending_computation = ctx.accounts.computation_account.key();
@@ -461,6 +507,42 @@ pub fn reserve_quote_callback_handler(
     Ok(())
 }
 
+pub fn enqueue_quote_handler(ctx: Context<EnqueueQuote>) -> Result<()> {
+    authorize_quote_actor(
+        ctx.accounts.actor.key(),
+        &ctx.accounts.quote,
+        ctx.accounts.grant.as_deref(),
+    )?;
+    let market = &mut ctx.accounts.market;
+    let quote = &mut ctx.accounts.quote;
+    require!(
+        quote.status == QuoteStatus::Validated,
+        ErrorCode::WrongQuoteStatus
+    );
+    require!(
+        market.status != MarketStatus::Paused && market.status != MarketStatus::Settling,
+        ErrorCode::MarketNotActive
+    );
+    require!(
+        market.active_quote_count == 4
+            || ctx.accounts.quote_queue.count > 0
+            || market
+                .quoted_notional
+                .checked_add(quote.capacity)
+                .is_none_or(|total| total > market.config.max_market_notional),
+        ErrorCode::WrongQuoteStatus
+    );
+    require!(
+        quote.market_revision == market.revision
+            && quote.oracle_timestamp == market.oracle_timestamp
+            && quote.expiry > Clock::get()?.unix_timestamp,
+        ErrorCode::InvalidQuote
+    );
+    ctx.accounts.quote_queue.enqueue(quote.key())?;
+    quote.status = QuoteStatus::Waiting;
+    Ok(())
+}
+
 pub fn stop_quote_handler(ctx: Context<StopQuote>) -> Result<()> {
     require!(
         ctx.accounts.market.pending_orders == 0,
@@ -468,6 +550,21 @@ pub fn stop_quote_handler(ctx: Context<StopQuote>) -> Result<()> {
     );
     let quote = &mut ctx.accounts.quote;
     let market = &mut ctx.accounts.market;
+    if quote.status == QuoteStatus::Waiting {
+        if Clock::get()?.unix_timestamp < quote.expiry
+            && quote.market_revision == market.revision
+            && quote.oracle_timestamp == market.oracle_timestamp
+        {
+            authorize_quote_actor(
+                ctx.accounts.actor.key(),
+                quote,
+                ctx.accounts.grant.as_deref(),
+            )?;
+        }
+        ctx.accounts.quote_queue.remove(quote.key())?;
+        quote.status = QuoteStatus::Cancelled;
+        return Ok(());
+    }
     require!(
         quote.status == QuoteStatus::Active,
         ErrorCode::WrongQuoteStatus
@@ -498,11 +595,6 @@ pub fn release_quote_handler(ctx: Context<ReleaseQuote>, computation_offset: u64
         ctx.accounts.market.status != MarketStatus::Settling,
         ErrorCode::MarketNotActive
     );
-    authorize_quote_actor(
-        ctx.accounts.payer.key(),
-        &ctx.accounts.quote,
-        ctx.accounts.grant.as_deref(),
-    )?;
     require!(
         ctx.accounts.market.pending_orders == 0,
         ErrorCode::WrongOrderStatus
@@ -530,7 +622,9 @@ pub fn release_quote_handler(ctx: Context<ReleaseQuote>, computation_offset: u64
         .encrypted_u64(account.ciphertexts[0])
         .encrypted_u64(account.ciphertexts[1])
         .encrypted_u64(account.ciphertexts[2])
-        .plaintext_u64(quote.required_margin);
+        .plaintext_u128(u128::from_le_bytes(quote.balance_nonce))
+        .encrypted_u64(quote.balance_ciphertext);
+    args = args.plaintext_u64(quote.required_margin);
     for byte in account.key().to_bytes() {
         args = args.plaintext_u8(byte);
     }

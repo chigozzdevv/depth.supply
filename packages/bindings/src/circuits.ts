@@ -38,7 +38,7 @@ export type MarketStateOutput = {
 
 export type OrderInput = {
     side: number | bigint;
-    size: number | bigint;
+    amount: number | bigint;
     margin: number | bigint;
     limit_price: number | bigint;
     max_fee: number | bigint;
@@ -48,7 +48,7 @@ export type OrderInput = {
 
 export type OrderInputOutput = {
     side: bigint;
-    size: bigint;
+    amount: bigint;
     margin: bigint;
     limit_price: bigint;
     max_fee: bigint;
@@ -56,14 +56,28 @@ export type OrderInputOutput = {
     version: bigint;
 }
 
+export type QuoteBalance = {
+    remaining_capacity: number | bigint;
+    remaining_margin: number | bigint;
+}
+
+export type QuoteBalanceOutput = {
+    remaining_capacity: bigint;
+    remaining_margin: bigint;
+}
+
 export type QuoteCurve = {
     bid: (number | bigint)[];
     ask: (number | bigint)[];
+    bid_reciprocal: (number | bigint)[];
+    ask_reciprocal: (number | bigint)[];
 }
 
 export type QuoteCurveOutput = {
     bid: bigint[];
     ask: bigint[];
+    bid_reciprocal: bigint[];
+    ask_reciprocal: bigint[];
 }
 
 export type TradePlan = {
@@ -106,13 +120,17 @@ export const circuits = {
     ] as const, 'MarketState'),
     OrderInput: createPacker<OrderInput, OrderInputOutput>([
         { name: 'side', type: { Integer: { signed: true, width: 8 } } },
-        { name: 'size', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'amount', type: { Integer: { signed: false, width: 64 } } },
         { name: 'margin', type: { Integer: { signed: false, width: 64 } } },
         { name: 'limit_price', type: { Integer: { signed: false, width: 64 } } },
         { name: 'max_fee', type: { Integer: { signed: false, width: 64 } } },
         { name: 'intent', type: { Integer: { signed: false, width: 8 } } },
         { name: 'version', type: { Integer: { signed: false, width: 64 } } },
     ] as const, 'OrderInput'),
+    QuoteBalance: createPacker<QuoteBalance, QuoteBalanceOutput>([
+        { name: 'remaining_capacity', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'remaining_margin', type: { Integer: { signed: false, width: 64 } } },
+    ] as const, 'QuoteBalance'),
     QuoteCurve: createPacker<QuoteCurve, QuoteCurveOutput>([
         { name: 'bid[0]', type: { Integer: { signed: false, width: 64 } } },
         { name: 'bid[1]', type: { Integer: { signed: false, width: 64 } } },
@@ -122,6 +140,14 @@ export const circuits = {
         { name: 'ask[1]', type: { Integer: { signed: false, width: 64 } } },
         { name: 'ask[2]', type: { Integer: { signed: false, width: 64 } } },
         { name: 'ask[3]', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'bid_reciprocal[0]', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'bid_reciprocal[1]', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'bid_reciprocal[2]', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'bid_reciprocal[3]', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'ask_reciprocal[0]', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'ask_reciprocal[1]', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'ask_reciprocal[2]', type: { Integer: { signed: false, width: 64 } } },
+        { name: 'ask_reciprocal[3]', type: { Integer: { signed: false, width: 64 } } },
     ] as const, 'QuoteCurve'),
     TradePlan: createPacker<TradePlan, TradePlanOutput>([
         { name: 'side', type: { Integer: { signed: true, width: 8 } } },

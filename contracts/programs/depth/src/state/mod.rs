@@ -24,10 +24,18 @@ pub struct Market {
     pub pending_orders: u16,
     pub pending_order: Pubkey,
     pub status: MarketStatus,
+    pub incident: MarketIncident,
     pub bump: u8,
 }
 
 impl Market {
+    pub fn pause(&mut self, incident: MarketIncident) {
+        if self.status != MarketStatus::Paused {
+            self.incident = incident;
+        }
+        self.status = MarketStatus::Paused;
+    }
+
     pub fn begin_pending(&mut self, order: Pubkey) -> Result<()> {
         require!(
             order != Pubkey::default()
@@ -48,6 +56,43 @@ impl Market {
         require!(self.has_pending(order), ErrorCode::WrongOrderStatus);
         self.pending_orders = 0;
         self.pending_order = Pubkey::default();
+        Ok(())
+    }
+}
+
+#[account]
+#[derive(InitSpace)]
+pub struct QuoteQueue {
+    pub market: Pubkey,
+    pub entries: [Pubkey; 8],
+    pub count: u8,
+    pub bump: u8,
+}
+
+impl QuoteQueue {
+    pub fn enqueue(&mut self, key: Pubkey) -> Result<()> {
+        let count = usize::from(self.count);
+        require!(count < self.entries.len(), ErrorCode::QuoteSnapshotFull);
+        require!(
+            !self.entries[..count].contains(&key),
+            ErrorCode::InvalidQuote
+        );
+        self.entries[count] = key;
+        self.count += 1;
+        Ok(())
+    }
+
+    pub fn remove(&mut self, key: Pubkey) -> Result<()> {
+        let count = usize::from(self.count);
+        let index = self.entries[..count]
+            .iter()
+            .position(|entry| *entry == key)
+            .ok_or(ErrorCode::InvalidQuote)?;
+        for current in index..count - 1 {
+            self.entries[current] = self.entries[current + 1];
+        }
+        self.entries[count - 1] = Pubkey::default();
+        self.count -= 1;
         Ok(())
     }
 }
@@ -78,6 +123,18 @@ pub enum MarketStatus {
     Active,
     Paused,
     Settling,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]
+pub enum MarketIncident {
+    None,
+    ManualPause,
+    StaleOracle,
+    MissedFunding,
+    ClusterUnavailable,
+    CollateralDeficit,
+    CallbackFailure,
+    BackstopUnavailable,
 }
 
 #[account]
@@ -341,15 +398,18 @@ pub struct QuoteRecord {
     pub market: Pubkey,
     pub nonce: u64,
     pub capacity: u64,
-    pub remaining_capacity: u64,
     pub required_margin: u64,
     pub expiry: i64,
     pub tier_count: u8,
     pub market_revision: u64,
     pub oracle_timestamp: i64,
     pub funding_index: i128,
-    pub ciphertexts: [[u8; 32]; 3],
+    pub ciphertexts: [[u8; 32]; 6],
     pub cipher_nonce: [u8; 16],
+    pub balance_ciphertext: [u8; 32],
+    pub balance_nonce: [u8; 16],
+    pub pending_balance_ciphertext: [u8; 32],
+    pub pending_balance_nonce: [u8; 16],
     pub pending_computation: Pubkey,
     pub attached_orders: u16,
     pub status: QuoteStatus,
@@ -360,6 +420,7 @@ pub struct QuoteRecord {
 pub enum QuoteStatus {
     Validating,
     Validated,
+    Waiting,
     Reserving,
     Active,
     Closing,
@@ -519,6 +580,21 @@ pub struct MarketView {
 
 #[account]
 #[derive(InitSpace)]
+pub struct QuoteView {
+    pub owner: Pubkey,
+    pub quote: Pubkey,
+    pub nonce: u64,
+    pub source_nonce: [u8; 16],
+    pub view_key: [u8; 32],
+    pub pending_computation: Pubkey,
+    pub ciphertext: [u8; 32],
+    pub output_nonce: [u8; 16],
+    pub status: ViewStatus,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
 pub struct FillView {
     pub owner: Pubkey,
     pub order: Pubkey,
@@ -543,7 +619,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn pending_lock_cannot_be_cleared_by_another_order() {
+    fn market_locks_queue_and_incident_reason_remain_consistent() {
         let mut market = Market {
             market_id: [0; 32],
             settlement_mint: Pubkey::default(),
@@ -581,6 +657,7 @@ mod tests {
             pending_orders: 0,
             pending_order: Pubkey::default(),
             status: MarketStatus::Draft,
+            incident: MarketIncident::None,
             bump: 0,
         };
         let first = Pubkey::new_unique();
@@ -593,5 +670,46 @@ mod tests {
         market.clear_pending(first).unwrap();
         market.begin_pending(second).unwrap();
         assert!(market.has_pending(second));
+        market.status = MarketStatus::Active;
+        market.pause(MarketIncident::CollateralDeficit);
+        market.pause(MarketIncident::ManualPause);
+        assert!(market.incident == MarketIncident::CollateralDeficit);
+        let mut queue = QuoteQueue {
+            market: Pubkey::default(),
+            entries: [Pubkey::default(); 8],
+            count: 0,
+            bump: 0,
+        };
+        queue.enqueue(first).unwrap();
+        queue.enqueue(second).unwrap();
+        assert!(queue.enqueue(first).is_err());
+        queue.remove(first).unwrap();
+        assert_eq!(queue.entries[0], second);
+        assert_eq!(queue.count, 1);
+    }
+
+    #[test]
+    fn quote_waiting_queue_preserves_order_across_removal_and_reuse() {
+        let mut queue = QuoteQueue {
+            market: Pubkey::new_unique(),
+            entries: [Pubkey::default(); 8],
+            count: 0,
+            bump: 0,
+        };
+        let keys: Vec<_> = (0..9).map(|_| Pubkey::new_unique()).collect();
+        for key in &keys[..8] {
+            queue.enqueue(*key).unwrap();
+        }
+        assert!(queue.enqueue(keys[8]).is_err());
+        queue.remove(keys[3]).unwrap();
+        queue.enqueue(keys[8]).unwrap();
+        assert_eq!(queue.count, 8);
+        assert_eq!(
+            queue.entries[..8],
+            [keys[0], keys[1], keys[2], keys[4], keys[5], keys[6], keys[7], keys[8],]
+        );
+        queue.remove(keys[0]).unwrap();
+        assert_eq!(queue.entries[0], keys[1]);
+        assert_eq!(queue.entries[7], Pubkey::default());
     }
 }
