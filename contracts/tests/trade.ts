@@ -446,11 +446,20 @@ describe("confidential trade settlement", () => {
 
     const maker = payer;
     const trader = Keypair.generate();
+    const otherMaker = Keypair.generate();
     const airdrop = await provider.connection.requestAirdrop(
       trader.publicKey,
       2 * anchor.web3.LAMPORTS_PER_SOL
     );
     await provider.connection.confirmTransaction(airdrop, "confirmed");
+    const otherMakerAirdrop = await provider.connection.requestAirdrop(
+      otherMaker.publicKey,
+      2 * anchor.web3.LAMPORTS_PER_SOL
+    );
+    await provider.connection.confirmTransaction(
+      otherMakerAirdrop,
+      "confirmed"
+    );
     const [appConfig] = PublicKey.findProgramAddressSync(
       [Buffer.from("app"), trader.publicKey.toBuffer()],
       program.programId
@@ -673,6 +682,7 @@ describe("confidential trade settlement", () => {
     await harness.finalize(offset);
     const makerState = await fundUser(maker, makerRecovery, 1);
     const traderState = await fundUser(trader, traderRecovery, 2);
+    const otherMakerState = await fundUser(otherMaker, makerRecovery, 3);
     const operator = Keypair.generate();
     const operatorAirdrop = await provider.connection.requestAirdrop(
       operator.publicKey,
@@ -946,6 +956,98 @@ describe("confidential trade settlement", () => {
       active: {},
     });
 
+    const extraQuotes: Array<{
+      id: PublicKey;
+      maker: Keypair;
+      marketAccount: PublicKey;
+    }> = [];
+    for (const value of [81, 82, 83]) {
+      const extraNonce = new anchor.BN(value);
+      const extraMaker = value === 81 ? otherMaker : maker;
+      const extraAccount =
+        value === 81 ? otherMakerState.marketAccount : makerState.marketAccount;
+      const extraSigners = extraMaker.publicKey.equals(authority)
+        ? []
+        : [extraMaker];
+      const [extraQuote] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("quote"),
+          market.toBuffer(),
+          extraMaker.publicKey.toBuffer(),
+          extraNonce.toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+      const worsePrices = encryptQuote([
+        19_800_000_000n,
+        0n,
+        0n,
+        0n,
+        20_200_000_000n,
+        0n,
+        0n,
+        0n,
+      ]);
+      const snapshot = await program.account.market.fetch(market);
+      offset = harness.offset();
+      await program.methods
+        .submitQuote(
+          offset,
+          extraNonce,
+          new anchor.BN(1_100_000),
+          1,
+          new anchor.BN(Math.floor(Date.now() / 1000) + 115),
+          snapshot.revision,
+          snapshot.oracleTimestamp,
+          worsePrices.ciphertexts,
+          worsePrices.inputKey,
+          worsePrices.inputNonce
+        )
+        .accountsPartial({
+          ...harness.queue(offset, "prepare_quote"),
+          payer: extraMaker.publicKey,
+          market,
+          marketAccount: extraAccount,
+          grant: null,
+          quote: extraQuote,
+        })
+        .signers(extraSigners)
+        .rpc(options);
+      await harness.finalize(offset);
+      expect(
+        (await program.account.quoteRecord.fetch(extraQuote)).status
+      ).to.deep.equal({ validated: {} });
+      offset = harness.offset();
+      await program.methods
+        .reserveQuote(offset)
+        .accountsPartial({
+          ...harness.queue(offset, "reserve_quote"),
+          payer: extraMaker.publicKey,
+          protocol,
+          market,
+          marketAccount: extraAccount,
+          grant: null,
+          quote: extraQuote,
+        })
+        .remainingAccounts([
+          { pubkey: quoteQueue, isSigner: false, isWritable: true },
+        ])
+        .signers(extraSigners)
+        .rpc(options);
+      await harness.finalize(offset);
+      expect(
+        (await program.account.quoteRecord.fetch(extraQuote)).status
+      ).to.deep.equal({ active: {} });
+      extraQuotes.push({
+        id: extraQuote,
+        maker: extraMaker,
+        marketAccount: extraAccount,
+      });
+    }
+    expect(
+      (await program.account.market.fetch(market)).activeQuoteCount
+    ).to.equal(4);
+
     const encryptOrder = (values: bigint[]) => {
       const [side, amount, margin, limit_price, max_fee, intent, version] =
         values;
@@ -1037,7 +1139,10 @@ describe("confidential trade settlement", () => {
     });
     const catalog = await sdk.catalog.market("SOL-USD");
     expect(catalog.policy.tradeFeeBps).to.equal(5);
-    expect(catalog.activeQuoteIds[0].equals(quote)).to.equal(true);
+    expect(catalog.activeQuoteIds.some((id) => id.equals(quote))).to.equal(
+      true
+    );
+    expect(catalog.activeQuoteIds).to.have.length(4);
     const submitted = await sdk.trade.submit({
       marketId: "SOL-USD",
       direction: "long",
@@ -1165,6 +1270,40 @@ describe("confidential trade settlement", () => {
     await harness.finalize(offset);
     orderState = await program.account.orderRecord.fetch(order);
     expect(orderState.status).to.deep.equal({ filled: {} });
+    for (const extraQuote of extraQuotes) {
+      const extraSigners = extraQuote.maker.publicKey.equals(authority)
+        ? []
+        : [extraQuote.maker];
+      await program.methods
+        .stopQuote()
+        .accountsPartial({
+          actor: extraQuote.maker.publicKey,
+          market,
+          quoteQueue,
+          grant: null,
+          quote: extraQuote.id,
+        })
+        .signers(extraSigners)
+        .rpc(options);
+      offset = harness.offset();
+      await program.methods
+        .releaseQuote(offset)
+        .accountsPartial({
+          ...harness.queue(offset, "release_quote"),
+          payer: extraQuote.maker.publicKey,
+          protocol,
+          market,
+          grant: null,
+          marketAccount: extraQuote.marketAccount,
+          quote: extraQuote.id,
+        })
+        .signers(extraSigners)
+        .rpc(options);
+      await harness.finalize(offset);
+      expect(
+        (await program.account.quoteRecord.fetch(extraQuote.id)).status
+      ).to.deep.equal({ cancelled: {} });
+    }
     const marketState = await program.account.market.fetch(market);
     expect(marketState.pendingOrders).to.equal(0);
     expect(marketState.pendingOrder.equals(PublicKey.default)).to.equal(true);
@@ -1193,6 +1332,9 @@ describe("confidential trade settlement", () => {
     const makerAccount = await program.account.marketAccount.fetch(
       makerState.marketAccount
     );
+    const otherMakerAccount = await program.account.marketAccount.fetch(
+      otherMakerState.marketAccount
+    );
     const makerCipher = new RescueCipher(
       x25519.getSharedSecret(makerRecoveryPrivate, harness.mxePublicKey)
     );
@@ -1208,6 +1350,12 @@ describe("confidential trade settlement", () => {
         Uint8Array.from(makerAccount.recoveryNonce)
       )
     );
+    const otherMakerValues = await unpackMarket(
+      makerCipher.decrypt(
+        otherMakerAccount.recoveryCiphertexts.map((word) => Array.from(word)),
+        Uint8Array.from(otherMakerAccount.recoveryNonce)
+      )
+    );
     const finalClearing = await program.account.clearingAccount.fetch(clearing);
     const clearingValues = clearingPacker.unpack(
       clearingCipher.decrypt(
@@ -1217,6 +1365,9 @@ describe("confidential trade settlement", () => {
     );
     expect(traderValues.position).to.equal(filledSize);
     expect(makerValues.position).to.equal(-filledSize);
+    expect(otherMakerValues.position).to.equal(0n);
+    expect(otherMakerValues.collateral).to.equal(2_000_000n);
+    expect(otherMakerValues.reserved).to.equal(0n);
     expect(traderValues.entry_price).to.equal(20_100_000_000n);
     expect(makerValues.entry_price).to.equal(20_100_000_000n);
     expect(traderValues.collateral).to.equal(1_999_400n);
@@ -1302,16 +1453,17 @@ describe("confidential trade settlement", () => {
     expect(
       traderValues.collateral +
         makerValues.collateral +
+        otherMakerValues.collateral +
         clearingValues.insurance +
         protocolFees +
         appFees
-    ).to.equal(212_000_000n);
+    ).to.equal(214_000_000n);
     expect((await getAccount(provider.connection, vault)).amount).to.equal(
-      212_000_000n
+      214_000_000n
     );
     expect(
       (await program.account.protocol.fetch(protocol)).creditedTotal.toNumber()
-    ).to.equal(212_000_000);
+    ).to.equal(214_000_000);
 
     const viewPrivate = new Uint8Array(32).fill(13);
     const viewKey = Array.from(x25519.getPublicKey(viewPrivate));
@@ -2279,12 +2431,13 @@ describe("confidential trade settlement", () => {
     expect(
       traderAfter.collateral +
         makerAfter.collateral +
+        otherMakerValues.collateral +
         clearingAfter.insurance +
         clearingAfter.protocol_fees +
         clearingAfter.app_fees +
         protocolFees +
         appFees
-    ).to.equal(212_000_000n);
+    ).to.equal(214_000_000n);
 
     await program.methods
       .stopQuote()
@@ -2710,12 +2863,13 @@ describe("confidential trade settlement", () => {
     expect(
       traderFinal.collateral +
         makerFinal.collateral +
+        otherMakerValues.collateral +
         clearingFinal.insurance +
         clearingFinal.protocol_fees +
         clearingFinal.app_fees +
         protocolFees +
         appFees
-    ).to.equal(212_000_000n);
+    ).to.equal(214_000_000n);
 
     await program.methods
       .stopQuote()
@@ -3024,16 +3178,24 @@ describe("confidential trade settlement", () => {
       reader
     ).revealAll();
     reader.destroy();
-    expect(recovered.accounts).to.equal(2);
+    expect(recovered.accounts).to.equal(3);
     expect(recovered.fees).to.equal(2);
     const [makerClaim] = PublicKey.findProgramAddressSync(
       [Buffer.from("winddown-claim"), makerState.marketAccount.toBuffer()],
       program.programId
     );
+    const [otherMakerClaim] = PublicKey.findProgramAddressSync(
+      [Buffer.from("winddown-claim"), otherMakerState.marketAccount.toBuffer()],
+      program.programId
+    );
     const finalWinddown = await program.account.winddown.fetch(winddown);
-    expect(finalWinddown.expectedAccounts).to.equal(2);
+    expect(finalWinddown.expectedAccounts).to.equal(3);
     expect(finalWinddown.grossPositive.toString()).to.equal(
-      (traderFinal.collateral + releasedState.collateral).toString()
+      (
+        traderFinal.collateral +
+        releasedState.collateral +
+        otherMakerValues.collateral
+      ).toString()
     );
     const creditedBeforeWinddown = (
       await program.account.protocol.fetch(protocol)
@@ -3092,9 +3254,21 @@ describe("confidential trade settlement", () => {
         )
       )
       .rpc();
+    await program.methods
+      .claimWinddown()
+      .accountsPartial(
+        claimAccounts(
+          otherMaker.publicKey,
+          otherMakerState.marketAccount,
+          otherMakerClaim,
+          otherMakerState.source
+        )
+      )
+      .signers([otherMaker])
+      .rpc();
     expect(
       (await program.account.winddown.fetch(winddown)).paidAccounts
-    ).to.equal(2);
+    ).to.equal(3);
     await expectRejected(
       program.methods
         .sweepWinddown()
