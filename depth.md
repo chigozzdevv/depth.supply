@@ -395,6 +395,11 @@ backstop put the market in a published restricted state.
 Pyth Core is the first market's selected oracle. Its Solana receiver lets a
 program verify the update account owner, feed ID, publish time, price,
 confidence, and exponent.
+The first deployment reads Pyth's sponsored SOL/USD push feed on shard 0 at
+`7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE`. The keeper verifies
+the receiver account and advances the market only on a newer update. A
+deployment using another account must supply it explicitly and maintain that
+account's updates; stale or unavailable prices block risk actions.
 Depth must normalize units, reject non-positive or stale data, apply a
 confidence threshold, and reject old but still technically valid updates
 chosen opportunistically by a caller. Pyth's own derivative guidance calls

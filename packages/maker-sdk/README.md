@@ -31,6 +31,8 @@ The maker wallet opens its free balance and market account with `account.open()`
 
 `quote.cancel()` stops selection and releases margin when attached orders have resolved. If attached orders remain, it returns their current state; call it again after settlement. `maker.quote.active()` returns this maker's active handles. `maker.quote.replace(priorId, input, { timeoutMs })` stops and releases the exact prior quote before publishing the replacement. If the prior quote is still pending, resume with the same IDs. Replacement is asynchronous and may temporarily leave no active quote.
 
+`maker.quote.list({ cursor, limit })` scans this maker's onchain quote records, including quotes that are still validating or releasing. Each result includes its nonce, status, and resumable handle, so a new process can find a submitted quote without the original session state.
+
 ## Backstop offers
 
 The maker owner can opt into liquidation backstop capacity after opening and funding its market account. The offer reserves the market's initial margin onchain. The market must have a fresh oracle update, no pending orders, and no existing backstop; the owner account must be ready and meet the minimum collateral policy.

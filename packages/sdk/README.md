@@ -1,6 +1,6 @@
 # Depth trader SDK
 
-The SDK submits encrypted SOL-USD orders to Solana and reads authenticated private results from Arcium. USDC amounts use six decimals, SOL order sizes use nine decimals, and prices use eight decimals.
+The SDK submits encrypted SOL-USD orders to Solana and reads authenticated private results from Arcium. USDC amounts use six decimals, SOL position quantities use nine decimals, and prices use eight decimals.
 
 ## Connect
 
@@ -36,30 +36,28 @@ The command reads the deployed accounts, signs their configuration, and creates 
 
 ## Trade
 
-Persist the client nonce and request before submission. Reusing a nonce resolves the same operation; it never submits a second order with that nonce.
+Supply a stable client nonce when you need to retry a request after a disconnect. Reusing a nonce resolves the same onchain order. The SDK generates a nonce when you omit it.
 
 ```ts
-const position = await depth.position.summary();
-if (position.status !== "ready") throw new Error("Position view is not ready");
-
 const order = await depth.trade.submit({
   marketId: "SOL-USD",
   direction: "long",
-  size: 5_000_000n,
+  notional: 1_000_000n,
   margin: 200_000n,
-  worstPriceE8: 20_100_000_000n,
+  slippageBps: 50,
   maxFee: 1_000n,
-  expiresAt: Math.floor(Date.now() / 1000) + 120,
+  validForSeconds: 120,
   clientNonce: savedNonce,
-  positionVersion: position.version,
 });
 const { orderId } = await order.confirm();
 const fill = await order.privateResult();
 ```
 
-`submit` opens or increases the same side. `reduce` permits only an opposite fill no larger than the current position. `close` requires its entire size, and `reverse` requires a size larger than the old position. Every method binds the encrypted request to the supplied position version. A stale version rejects; direction, size, intent, and price limits stay encrypted.
+`notional` is the requested USDC execution value. Matching derives SOL quantity at the selected encrypted maker price, rounding down. `submit` opens or increases the same side. `reduce` takes a SOL quantity, `close` derives the full position quantity, and `reverse` takes the desired final USDC exposure on the opposite side. The SDK reads a fresh private position view and binds the encrypted request to its version.
 
-The requested margin must cover the fee and initial margin on newly opened exposure. A full close requires no opening margin; every settlement still checks the remaining position and maker collateral.
+`slippageBps` derives the worst executable price from the verified oracle mark; `validForSeconds` derives the deadline within the market policy. Advanced callers can supply `worstPriceE8` and `expiresAt` instead. The SDK rejects requests that mix both forms.
+
+`margin` is additional USDC collateral allocated from the free balance before an opening or reversal. Use `0n` when current market collateral is sufficient. If the later trade fails, the allocation remains in the market account and can be released through `position.removeMargin`. Every settlement checks current collateral and risk.
 
 Submission confirms the queue transaction. `order.confirm()` waits for a finalized fill and returns its order ID; it raises a typed pending or terminal error otherwise. `order.privateResult()` requests a trader-authorized encrypted fill view, decrypts it, and closes the temporary view after a successful read. A pending computation or uncertain cleanup can be retried on the same operation handle. `order.wait()` returns the latest verified snapshot after its default timeout, including a still pending order. After restarting, use `depth.trade.operation(savedNonce)` or `depth.operation(orderAddress)`. `subscribe(listener, { onError })` returns an unsubscribe function. An ambiguous submission raises `DepthError` with an operation ID and reconciliation action; keep the original nonce.
 
@@ -71,14 +69,16 @@ Open the free balance with `account.open()` and the market account with `positio
 
 | Action | Next step |
 | --- | --- |
-| `account.deposit(source, amount, nonce)` | Call the receipt's `credit()` while pending, then wait for `credited`. |
-| `account.allocate(amount, nonce)` | Call the transfer's `settle()` when in escrow, then wait for `settled`. |
-| `account.release(amount, nonce)` | Settle escrow into free balance after the private debit succeeds. |
-| `account.withdraw(destination, amount, nonce)` | Read the withdrawal receipt until `paid`, `rejected`, or `cancelled`. |
+| `account.deposit(source, amount, nonce)` | `confirm()` advances private credit and waits for `credited`. |
+| `account.allocate(amount, nonce)` | `confirm()` settles escrow into the market account. |
+| `account.release(amount, nonce)` | `confirm()` settles escrow into the free balance. |
+| `account.withdraw(destination, amount, nonce)` | `confirm()` waits for `paid` or reports a terminal outcome. |
 
 Persist each nonce before signing. Restore handles with `depositHandle(nonce)`, `transferHandle(nonce)`, or `withdrawalHandle(nonce)`. Deposits and escrow transfers can be refunded to the owner's token account. Queued withdrawals can be cancelled with `handle.cancel()`. A paid withdrawal receipt remains available after later balance updates.
 
 `account.pending({ cursor, limit })` scans this wallet's confirmed onchain deposit, margin-transfer, withdrawal, and order accounts. It returns public receipt IDs and nonces with a continuation cursor, so a wallet can rediscover pending actions after changing browsers. An RPC that cannot serve account scans returns an error rather than an empty history.
+
+`trade.unpairedAllocations({ cursor, limit })` finds settled allocations whose nonce has no corresponding order. The results include each transfer ID, amount, nonce, and canonical order ID. A standalone allocation can also appear, so inspect the original action before resubmitting a trade with that nonce or releasing excess margin.
 
 `position.addMargin` and `position.removeMargin` use the allocation and release flow. Removing margin checks current funding, reserved margin, and initial-margin health against a fresh oracle snapshot. It never releases unrealized profit. A changed or expired snapshot rejects the debit.
 

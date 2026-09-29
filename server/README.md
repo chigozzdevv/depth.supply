@@ -33,14 +33,33 @@ addresses and fetch bounded batches; risk and fee tasks alternate to avoid starv
 confirmed onchain status, so restarting the process resumes the same workflow.
 
 Set `DEPTH_RPC_URL` and `DEPTH_KEEPER_KEYPAIR` to the RPC endpoint and a
-JSON array containing the keeper wallet's secret-key bytes. Set
-`DEPTH_PRICE_ACCOUNT` to a maintained Pyth SOL/USD price-update account. Its
-owner, discriminator, verification level, feed, freshness, and confidence are
-validated before the market accepts an update. The price publisher must update
-that account independently. `DEPTH_ORACLE_INTERVAL_MS` defaults to `10000`. Run
+JSON array containing the keeper wallet's secret-key bytes. The default price
+account is Pyth's sponsored SOL/USD push feed on shard 0. Set
+`DEPTH_PRICE_ACCOUNT` to a maintained Pyth SOL/USD price-update account when
+using a different feed account, including localnet. Its owner, discriminator,
+verification level, feed, freshness, and confidence are validated before the
+market accepts an update. `DEPTH_ORACLE_INTERVAL_MS` defaults to `10000`. Run
 `pnpm --dir server keeper`. The keeper wallet pays Solana and Arcium queue
 fees and needs SOL. It has no custody permission.
 
 Oracle refresh waits while a settlement holds the market lock, preserving its
 price snapshot. Recipient free-balance accounts must exist before fee claims
 can begin. SIGINT and SIGTERM stop the worker after the current iteration.
+
+## Oracle publisher
+
+Run `pnpm --dir server publisher` as a separate supervised process with
+`DEPTH_RPC_URL`, `DEPTH_KEEPER_KEYPAIR`, and `PYTH_API_KEY`. The signer needs SOL
+for Pyth receiver updates. The publisher fetches a verified SOL/USD proof from
+Hermes when the persistent feed account is at least 75 seconds old, submits the
+Pyth receiver transactions, and checks the confirmed account's publish time.
+It does not write a market price directly; the keeper's oracle worker refreshes
+the Depth market from that account.
+
+`DEPTH_PYTH_SHARD_ID` defaults to 0 and must derive the configured
+`DEPTH_PRICE_ACCOUNT`. `PYTH_HERMES_URL` defaults to Pyth's HTTPS Hermes
+endpoint. `DEPTH_PUBLISH_AFTER_SECONDS`, `DEPTH_PUBLISH_INTERVAL_MS`, and
+`DEPTH_PUBLISH_HEALTH_PORT` default to 75, 10000, and 8788. Monitor
+`http://127.0.0.1:8788/healthz`; it returns 503 when the verified feed is stale
+or unavailable. Run the keeper and publisher under separate process
+supervisors and alert on an unhealthy feed.
