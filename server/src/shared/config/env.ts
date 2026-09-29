@@ -3,10 +3,12 @@ import { SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
 import { readFileSync } from "node:fs";
 
 export type ServerConfig = { rpcUrl: string; host: string; port: number };
+export type OracleMode = "sponsored" | "hermes";
 export type KeeperConfig = {
   rpcUrl: string;
   keypair: Keypair;
   priceAccount: PublicKey;
+  oracleMode: OracleMode;
   oracleIntervalMs: number;
 };
 export type PublisherConfig = KeeperConfig & {
@@ -27,6 +29,14 @@ function rpcUrl(value: string | undefined, name: string): string {
   return value;
 }
 
+export function oracleMode(env: NodeJS.ProcessEnv = process.env): OracleMode {
+  const value = env.PYTH_ORACLE_MODE ?? "sponsored";
+  if (value !== "sponsored" && value !== "hermes") {
+    throw new Error("PYTH_ORACLE_MODE must be sponsored or hermes");
+  }
+  return value;
+}
+
 export function serverConfig(
   env: NodeJS.ProcessEnv = process.env
 ): ServerConfig {
@@ -42,6 +52,7 @@ export function keeperConfig(
   env: NodeJS.ProcessEnv = process.env
 ): KeeperConfig {
   const url = rpcUrl(env.DEPTH_RPC_URL, "DEPTH_RPC_URL");
+  const mode = oracleMode(env);
   if (env.DEPTH_KEEPER_KEYPAIR && env.DEPTH_KEEPER_KEYPAIR_PATH) {
     throw new Error("Configure one keeper signer source");
   }
@@ -69,6 +80,7 @@ export function keeperConfig(
     priceAccount: env.DEPTH_PRICE_ACCOUNT
       ? new PublicKey(env.DEPTH_PRICE_ACCOUNT)
       : SOL_USD_PUSH_ACCOUNT,
+    oracleMode: mode,
     oracleIntervalMs: interval,
     rpcUrl: url,
     keypair: Keypair.fromSecretKey(Uint8Array.from(bytes)),
@@ -78,8 +90,11 @@ export function keeperConfig(
 export function publisherConfig(
   env: NodeJS.ProcessEnv = process.env
 ): PublisherConfig {
-  const keeper = keeperConfig(env);
+  if (oracleMode(env) !== "hermes") {
+    throw new Error("PYTH_ORACLE_MODE=hermes is required to run the publisher");
+  }
   if (!env.PYTH_API_KEY) throw new Error("PYTH_API_KEY is required");
+  const keeper = keeperConfig(env);
   const hermesUrl = env.PYTH_HERMES_URL ?? "https://pyth.dourolabs.app/hermes";
   if (new URL(hermesUrl).protocol !== "https:") {
     throw new Error("PYTH_HERMES_URL must use HTTPS");

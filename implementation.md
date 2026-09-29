@@ -45,13 +45,15 @@ economically safe market.
    steps. Managed maker fill polling persists its cursor after the handler
    succeeds; browser persistence, orphaned temporary-view cleanup, and a
    real external hedge crash/partial-fill rehearsal remain.
-4. **Oracle liveness.** The Hermes/Pyth receiver publisher is implemented and
-   tested locally but has not been run against a public cluster. It requires a
-   Hermes API key, a funded publisher signer, a process supervisor, and external
-   alerting. The configured sponsored SOL/USD feed existed on devnet and was
-   32 seconds old at the 2026-09-29 21:43 UTC check; that one observation is
-   not sustained publisher liveness. Its health endpoint measures feed
-   freshness; a live publisher transaction and sustained record remain required.
+4. **Oracle liveness.** The devnet demo uses the sponsored SOL/USD feed without
+   a Hermes key or Depth publisher. The configured feed existed on devnet and
+   was 32 seconds old at the 2026-09-29 21:43 UTC check; that one observation
+   is not sustained feed liveness. Depth's Hermes/Pyth receiver publisher is
+   implemented and tested locally but has not been run against a public
+   cluster. The Hermes mode requires an API key, a funded publisher signer,
+   a process supervisor, and external alerting before production use. The
+   contract still accepts any fully verified SOL/USD price-update account
+   within its age limit, so pinning the selected account remains open.
 5. **Independent committee operation.** Code creates envelopes for five
    distinct recipient keys and reconstructs only from three shares. Real
    committee identities, separate key custody, distribution attestations,

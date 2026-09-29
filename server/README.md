@@ -34,8 +34,10 @@ confirmed onchain status, so restarting the process resumes the same workflow.
 
 Set `DEPTH_RPC_URL` to the RPC endpoint and `DEPTH_KEEPER_KEYPAIR_PATH` to a
 local Solana keypair JSON file. `DEPTH_KEEPER_KEYPAIR` also accepts the keypair
-JSON array directly; configure only one signer source. The default price
-account is Pyth's sponsored SOL/USD push feed on shard 0. Set
+JSON array directly; configure only one signer source. Set
+`PYTH_ORACLE_MODE=sponsored` for the devnet demo; this is the default and does
+not require `PYTH_API_KEY`. The keeper reads Pyth's sponsored SOL/USD push feed
+on shard 0 and submits verified updates to the Depth market. Set
 `DEPTH_PRICE_ACCOUNT` to a maintained Pyth SOL/USD price-update account when
 using a different feed account, including localnet. Its owner, discriminator,
 verification level, feed, freshness, and confidence are validated before the
@@ -47,13 +49,15 @@ Oracle refresh waits while a settlement holds the market lock, preserving its
 price snapshot. Recipient free-balance accounts must exist before fee claims
 can begin. SIGINT and SIGTERM stop the worker after the current iteration.
 
-## Oracle publisher
+## Hermes publisher
 
-Run `pnpm --dir server publisher` as a separate supervised process with
-`DEPTH_RPC_URL`, a keeper signer source, and `PYTH_API_KEY`. The signer needs SOL
-for Pyth receiver updates. The publisher fetches a verified SOL/USD proof from
-Hermes when the persistent feed account is at least 75 seconds old, submits the
-Pyth receiver transactions, and checks the confirmed account's publish time.
+Set `PYTH_ORACLE_MODE=hermes` and run `pnpm --dir server publisher` as a separate
+supervised process with `DEPTH_RPC_URL`, a keeper signer source, and
+`PYTH_API_KEY`. The publisher refuses to start in sponsored mode or without the
+API key. The signer needs SOL for Pyth receiver updates. The publisher fetches a
+verified SOL/USD proof from Hermes when the persistent feed account is at least
+75 seconds old, submits the Pyth receiver transactions, and checks the
+confirmed account's publish time.
 It does not write a market price directly; the keeper's oracle worker refreshes
 the Depth market from that account.
 

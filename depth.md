@@ -400,6 +400,9 @@ The first deployment reads Pyth's sponsored SOL/USD push feed on shard 0 at
 the receiver account and advances the market only on a newer update. A
 deployment using another account must supply it explicitly and maintain that
 account's updates; stale or unavailable prices block risk actions.
+The devnet demo uses `PYTH_ORACLE_MODE=sponsored` and does not call Hermes.
+`PYTH_ORACLE_MODE=hermes` runs Depth's separate price publisher and requires a
+Pyth API key; the keeper still reads the verified onchain account in both modes.
 Depth must normalize units, reject non-positive or stale data, apply a
 confidence threshold, and reject old but still technically valid updates
 chosen opportunistically by a caller. Pyth's own derivative guidance calls

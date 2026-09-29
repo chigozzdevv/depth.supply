@@ -47,6 +47,7 @@ test("publisher leaves a recently updated verified feed alone", async () => {
   const config = publisherConfig({
     DEPTH_RPC_URL: "https://rpc.example.test",
     DEPTH_KEEPER_KEYPAIR: JSON.stringify(Array.from(signer.secretKey)),
+    PYTH_ORACLE_MODE: "hermes",
     PYTH_API_KEY: "test-key",
   });
   const connection = {
