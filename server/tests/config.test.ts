@@ -1,6 +1,9 @@
 import { Keypair } from "@solana/web3.js";
 import { SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import {
   keeperConfig,
@@ -44,6 +47,38 @@ test("shared configuration validates RPC URLs and the keeper signer", () => {
       }),
     /64-byte JSON array/
   );
+});
+
+test("keeper and publisher can load one signer from a local file", () => {
+  const signer = Keypair.generate();
+  const directory = mkdtempSync(join(tmpdir(), "depth-signer-"));
+  const path = join(directory, "wallet.json");
+  try {
+    writeFileSync(path, JSON.stringify(Array.from(signer.secretKey)), {
+      mode: 0o600,
+    });
+    const env = {
+      DEPTH_RPC_URL: "https://rpc.example.test",
+      DEPTH_KEEPER_KEYPAIR_PATH: path,
+    };
+    assert.ok(keeperConfig(env).keypair.publicKey.equals(signer.publicKey));
+    assert.ok(
+      publisherConfig({
+        ...env,
+        PYTH_API_KEY: "test-key",
+      }).keypair.publicKey.equals(signer.publicKey)
+    );
+    assert.throws(
+      () =>
+        keeperConfig({
+          ...env,
+          DEPTH_KEEPER_KEYPAIR: JSON.stringify(Array.from(signer.secretKey)),
+        }),
+      /one keeper signer source/
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("publisher configuration requires a Pyth key and a valid shard", () => {
