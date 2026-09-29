@@ -7,9 +7,11 @@ import {
 } from "@arcium-hq/client";
 import {
   accountOffsets,
+  packQuoteCurve,
   DEPTH_IDL,
   DEPTH_PROGRAM_ID,
   marketAddress,
+  quoteQueueAddress,
   protocolAddress,
   SOL_USD_MARKET_ID,
 } from "@depth/bindings";
@@ -18,10 +20,23 @@ import { DepthRecovery } from "@depth/sdk/recovery";
 import type { FillSnapshot, PositionSnapshot } from "@depth/sdk/views";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
-import { DepthProvider, FundingClient, verifyDeployment } from "@depth/sdk";
+import {
+  DepthClient,
+  DepthProvider,
+  FundingClient,
+  verifyDeployment,
+} from "@depth/sdk";
+import type {
+  AmountSelector,
+  CloseInput,
+  ReductionInput,
+  ReverseInput,
+  TradeInput,
+} from "@depth/sdk";
 import { mxeAccount, queueAccounts } from "@/chain/arcium";
 import { BackstopHandle } from "@/backstop/backstop";
 import { FillHistory } from "@/fill/history";
+import { FillCursorStore } from "@/fill/cursor";
 import { QuoteHandle } from "@/quote/quote";
 import type {
   GrantState,
@@ -55,18 +70,35 @@ function stateName(value: Record<string, unknown>): string {
 export class MakerClient {
   readonly provider: anchor.AnchorProvider;
   readonly program: anchor.Program;
+  readonly position: ReturnType<MakerClient["positionActions"]>;
   readonly marketAddress = marketAddress();
+  readonly quoteQueueAddress = quoteQueueAddress();
   readonly protocolAddress = protocolAddress();
   readonly backstop: ((id: PublicKey) => BackstopHandle) & {
     offer: (input: BackstopInput) => Promise<BackstopHandle>;
   };
+  private ownerClient?: Promise<DepthClient>;
+
+  private owned(): Promise<DepthClient> {
+    if (!this.options.wallet.publicKey.equals(this.options.maker))
+      throw new Error(
+        "Operator wallet cannot move or trade the maker's collateral"
+      );
+    this.ownerClient ??= DepthClient.create({
+      deployment: this.options.deployment,
+      connection: this.options.connection,
+      wallet: this.options.wallet,
+      appId: this.options.appId,
+    });
+    return this.ownerClient;
+  }
 
   get funding(): FundingClient {
     return new FundingClient(
       this.program,
       this.options.connection,
       this.options.maker,
-      (name, offset) => this.queue(name, offset),
+      (name, offset) => this.queue(name, offset)
     );
   }
 
@@ -74,23 +106,20 @@ export class MakerClient {
     return new DepthRecovery(
       this.program,
       this.options.connection,
-      this.options.maker,
+      this.options.maker
     );
   }
 
   private constructor(readonly options: MakerOptions) {
-    this.provider = new DepthProvider(
-      options.connection,
-      options.wallet,
-      {
-        commitment: "confirmed",
-        preflightCommitment: "confirmed",
-      },
-    );
+    this.provider = new DepthProvider(options.connection, options.wallet, {
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
     this.program = new anchor.Program(DEPTH_IDL, this.provider);
+    this.position = this.positionActions();
     this.backstop = Object.assign(
       (id: PublicKey) => new BackstopHandle(id, this),
-      { offer: (input: BackstopInput) => BackstopHandle.offer(this, input) },
+      { offer: (input: BackstopInput) => BackstopHandle.offer(this, input) }
     );
   }
 
@@ -103,7 +132,7 @@ export class MakerClient {
       client.read<MarketState>("Market", client.marketAddress),
       client.read<{ settlementMint: PublicKey; vault: PublicKey }>(
         "Protocol",
-        client.protocolAddress,
+        client.protocolAddress
       ),
     ]);
     if (
@@ -120,7 +149,7 @@ export class MakerClient {
     }
     const accountInfo = await options.connection.getAccountInfo(
       client.marketAccount(),
-      "confirmed",
+      "confirmed"
     );
     if (!accountInfo) return client;
     if (!accountInfo.owner.equals(DEPTH_PROGRAM_ID)) {
@@ -139,25 +168,77 @@ export class MakerClient {
     return client;
   }
 
-  readonly account = {
-    cancelOpen: () => this.funding.cancelOpenBalance(),
-    open: async () => this.funding.openBalance(),
-    openMarket: async () => this.funding.openMarket(),
-    deposit: async (source: PublicKey, amount: bigint, clientNonce: bigint) =>
-      this.funding.deposit(source, amount, clientNonce),
-    withdrawalHandle: (clientNonce: bigint) =>
-      this.funding.withdrawalHandle(clientNonce),
-    depositHandle: (nonce: bigint) => this.funding.depositHandle(nonce),
-    withdraw: async (
-      destination: PublicKey,
-      amount: bigint,
-      clientNonce: bigint,
-    ) => this.funding.withdraw(destination, amount, clientNonce),
-    allocate: async (amount: bigint, clientNonce: bigint) =>
-      this.funding.allocate(amount, clientNonce),
-    release: async (amount: bigint, clientNonce: bigint) =>
-      this.funding.release(amount, clientNonce),
-    transferHandle: (nonce: bigint) => this.funding.transferHandle(nonce),
+  private accountActions() {
+    const actions = {
+      cancelOpen: () => this.funding.cancelOpenBalance(),
+      open: async () => this.funding.openBalance(),
+      openMarket: async () => this.funding.openMarket(),
+      summary: async () => (await this.owned()).account.summary(),
+      pending: async () => (await this.owned()).account.pending(),
+      deposit: async (
+        sourceOrAmount: PublicKey | bigint,
+        amount?: bigint,
+        clientNonce?: bigint
+      ) => {
+        if (sourceOrAmount instanceof PublicKey) {
+          if (amount === undefined || clientNonce === undefined)
+            throw new RangeError("Source deposits require amount and nonce");
+          return this.funding.deposit(sourceOrAmount, amount, clientNonce);
+        }
+        return (await this.owned()).account.deposit(sourceOrAmount);
+      },
+      withdrawalHandle: (clientNonce: bigint) =>
+        this.funding.withdrawalHandle(clientNonce),
+      depositHandle: (nonce: bigint) => this.funding.depositHandle(nonce),
+      withdraw: async (
+        destinationOrAmount: PublicKey | AmountSelector,
+        amount?: bigint,
+        clientNonce?: bigint
+      ) => {
+        if (destinationOrAmount instanceof PublicKey) {
+          if (amount === undefined || clientNonce === undefined)
+            throw new RangeError(
+              "Destination withdrawals require amount and nonce"
+            );
+          return this.funding.withdraw(
+            destinationOrAmount,
+            amount,
+            clientNonce
+          );
+        }
+        return (await this.owned()).account.withdraw(destinationOrAmount);
+      },
+      allocate: async (
+        input:
+          | bigint
+          | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
+        clientNonce?: bigint
+      ) => (await this.owned()).account.allocate(input, clientNonce),
+      release: async (
+        input:
+          | bigint
+          | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
+        clientNonce?: bigint
+      ) => (await this.owned()).account.release(input, clientNonce),
+      transferHandle: (nonce: bigint) => this.funding.transferHandle(nonce),
+    };
+    return Object.assign(() => actions, actions);
+  }
+
+  readonly account = this.accountActions();
+
+  readonly positions = {
+    list: async () => (await this.owned()).positions.list(),
+  };
+
+  readonly trade = {
+    submit: async (input: TradeInput) =>
+      (await this.owned()).trade.submit(input),
+    reduce: async (input: ReductionInput) =>
+      (await this.owned()).trade.reduce(input),
+    close: async (input: CloseInput) => (await this.owned()).trade.close(input),
+    reverse: async (input: ReverseInput) =>
+      (await this.owned()).trade.reverse(input),
   };
 
   marketAccount(): PublicKey {
@@ -180,14 +261,14 @@ export class MakerClient {
   async read<T>(name: string, address: PublicKey): Promise<T> {
     const info = await this.options.connection.getAccountInfo(
       address,
-      "confirmed",
+      "confirmed"
     );
     if (!info || !info.owner.equals(DEPTH_PROGRAM_ID)) {
       throw new Error(`${name} account is unavailable`);
     }
     return this.program.coder.accounts.decode<T>(
       name[0].toLowerCase() + name.slice(1),
-      info.data,
+      info.data
     );
   }
 
@@ -207,13 +288,13 @@ export class MakerClient {
       this.provider,
       this.options.connection,
       name,
-      computationOffset,
+      computationOffset
     );
   }
 
   private async grantFor(
     capacity: bigint,
-    expiry: number,
+    expiry: number
   ): Promise<PublicKey | undefined> {
     if (this.options.wallet.publicKey.equals(this.options.maker))
       return undefined;
@@ -257,23 +338,23 @@ export class MakerClient {
               },
             },
           ],
-        },
+        }
       );
       return grants
         .map(({ pubkey, account }) => ({
           id: pubkey,
           state: this.program.coder.accounts.decode<GrantState>(
             "operatorGrant",
-            account.data,
+            account.data
           ),
         }))
         .filter(
           ({ state }) =>
             state.maker.equals(this.options.maker) &&
-            state.market.equals(this.marketAddress),
+            state.market.equals(this.marketAddress)
         )
         .sort((a, b) =>
-          a.state.operator.toBase58().localeCompare(b.state.operator.toBase58()),
+          a.state.operator.toBase58().localeCompare(b.state.operator.toBase58())
         );
     },
     authorize: async (input: {
@@ -292,7 +373,7 @@ export class MakerClient {
         .grantOperator(
           u64(input.maxCapacity, "maxCapacity"),
           new anchor.BN(input.expiresAt),
-          input.canView,
+          input.canView
         )
         .accountsPartial({
           maker: this.options.maker,
@@ -320,7 +401,8 @@ export class MakerClient {
   readonly quote = {
     publish: async (request: QuoteRequest): Promise<QuoteHandle> => {
       const clientNonce =
-        request.clientNonce ?? BigInt(new anchor.BN(randomBytes(8), "le").toString());
+        request.clientNonce ??
+        BigInt(new anchor.BN(randomBytes(8), "le").toString());
       const quoteNonce = u64(clientNonce, "clientNonce");
       const id = pda([
         Buffer.from("quote"),
@@ -341,27 +423,45 @@ export class MakerClient {
       const grant = await this.grantFor(input.maxCapacity, input.expiresAt);
       const account = await this.read<{ status: Record<string, unknown> }>(
         "MarketAccount",
-        this.marketAccount(),
+        this.marketAccount()
       );
       if (stateName(account.status) !== "ready") {
         throw new Error("Maker account is processing another operation");
       }
       const mxePublicKey = await getMXEPublicKey(
         this.provider,
-        DEPTH_PROGRAM_ID,
+        DEPTH_PROGRAM_ID
       );
       if (!mxePublicKey) throw new Error("MXE public key is unavailable");
       const secret = x25519.utils.randomSecretKey();
       const inputKey = x25519.getPublicKey(secret);
       const inputNonce = randomBytes(16);
       const cipher = new RescueCipher(
-        x25519.getSharedSecret(secret, mxePublicKey),
+        x25519.getSharedSecret(secret, mxePublicKey)
       );
-      const prices = [
-        ...Array.from({ length: 4 }, (_, i) => input.tiers[i]?.bidE8 ?? 0n),
-        ...Array.from({ length: 4 }, (_, i) => input.tiers[i]?.askE8 ?? 0n),
-      ];
-      const ciphertexts = cipher.encrypt(prices, inputNonce);
+      const bid = Array.from(
+        { length: 4 },
+        (_, i) => input.tiers[i]?.bidE8 ?? 0n
+      );
+      const ask = Array.from(
+        { length: 4 },
+        (_, i) => input.tiers[i]?.askE8 ?? 0n
+      );
+      const reciprocal = (price: bigint) => {
+        if (price === 0n) return 0n;
+        if (price < 100_000_000n)
+          throw new RangeError("SOL quote prices must be at least $1");
+        return (1n << 76n) / price;
+      };
+      const ciphertexts = cipher.encrypt(
+        packQuoteCurve({
+          bid,
+          ask,
+          bidReciprocal: bid.map(reciprocal),
+          askReciprocal: ask.map(reciprocal),
+        }),
+        inputNonce
+      );
       const computationOffset = offset();
       const queue = await this.queue("prepare_quote", computationOffset);
       const signature = await this.program.methods
@@ -375,20 +475,91 @@ export class MakerClient {
           market.oracleTimestamp,
           ciphertexts,
           Array.from(inputKey),
-          new anchor.BN(inputNonce, "le"),
+          new anchor.BN(inputNonce, "le")
         )
         .accountsPartial({
           ...queue,
           payer: this.options.wallet.publicKey,
           market: this.marketAddress,
           marketAccount: this.marketAccount(),
-          ...(grant ? { grant } : {}),
+          grant: grant ?? this.program.programId,
           quote: id,
         })
         .rpc({ commitment: "confirmed" });
       return new QuoteHandle(id, signature, this);
     },
     get: (id: PublicKey): QuoteHandle => new QuoteHandle(id, undefined, this),
+    list: async (options: { cursor?: string; limit?: number } = {}) => {
+      const limit = options.limit ?? 20;
+      if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+        throw new RangeError("limit must be an integer from 1 to 100");
+      const cursor = options.cursor
+        ? new PublicKey(options.cursor).toBase58()
+        : undefined;
+      const accounts = await this.options.connection.getProgramAccounts(
+        DEPTH_PROGRAM_ID,
+        {
+          commitment: "confirmed",
+          dataSlice: { offset: 0, length: 0 },
+          filters: [
+            { memcmp: this.program.coder.accounts.memcmp("quoteRecord") },
+            {
+              memcmp: {
+                offset: accountOffsets.QuoteRecord.maker,
+                bytes: this.options.maker.toBase58(),
+              },
+            },
+            {
+              memcmp: {
+                offset: accountOffsets.QuoteRecord.market,
+                bytes: this.marketAddress.toBase58(),
+              },
+            },
+          ],
+        }
+      );
+      const ids = accounts
+        .map(({ pubkey }) => pubkey)
+        .filter((id) => !cursor || id.toBase58() > cursor)
+        .sort((a, b) => a.toBase58().localeCompare(b.toBase58()));
+      const selected = ids.slice(0, limit);
+      if (selected.length === 0) return { items: [], nextCursor: null };
+      const infos = await this.options.connection.getMultipleAccountsInfo(
+        selected,
+        "confirmed"
+      );
+      const items = selected.map((id, index) => {
+        const info = infos[index];
+        if (!info?.owner.equals(DEPTH_PROGRAM_ID))
+          throw new Error("Quote changed during discovery");
+        const quote = this.program.coder.accounts.decode<QuoteState>(
+          "quoteRecord",
+          info.data
+        );
+        const canonical = pda([
+          Buffer.from("quote"),
+          this.marketAddress.toBuffer(),
+          this.options.maker.toBuffer(),
+          quote.nonce.toArrayLike(Buffer, "le", 8),
+        ]);
+        if (
+          !id.equals(canonical) ||
+          !quote.maker.equals(this.options.maker) ||
+          !quote.market.equals(this.marketAddress)
+        )
+          throw new Error("Quote identity changed during discovery");
+        return {
+          id,
+          nonce: BigInt(quote.nonce.toString()),
+          status: stateName(quote.status),
+          handle: this.quote.get(id),
+        };
+      });
+      return {
+        items,
+        nextCursor: ids.length > limit ? selected.at(-1)!.toBase58() : null,
+      };
+    },
     active: async (): Promise<QuoteHandle[]> => {
       const market = await this.read<MarketState>("Market", this.marketAddress);
       const handles: QuoteHandle[] = [];
@@ -402,13 +573,13 @@ export class MakerClient {
     replace: async (
       prior: PublicKey,
       input: QuoteRequest,
-      options: { timeoutMs: number },
+      options: { timeoutMs: number }
     ): Promise<QuoteHandle> => {
       const previous = this.quote.get(prior);
       const snapshot = await previous.status();
       if (
         !["active", "closing", "releasing", "cancelled", "filled"].includes(
-          snapshot.status,
+          snapshot.status
         )
       ) {
         throw new Error("Prior quote cannot be replaced in its current state");
@@ -418,7 +589,7 @@ export class MakerClient {
       const final = await previous.wait(options);
       if (final.status !== "cancelled" && final.status !== "filled") {
         throw new Error(
-          "Prior quote still has reserved capital or attached orders; resume replacement with the same IDs",
+          "Prior quote still has reserved capital or attached orders; resume replacement with the same IDs"
         );
       }
       return this.quote.publish(input);
@@ -428,7 +599,7 @@ export class MakerClient {
   private flatQuote(
     input: Exclude<QuoteRequest, QuoteInput>,
     market: MarketState,
-    clientNonce: bigint,
+    clientNonce: bigint
   ): QuoteInput {
     if (input.marketId !== SOL_USD_MARKET_ID)
       throw new Error("Only SOL-USD is supported");
@@ -478,7 +649,7 @@ export class MakerClient {
   async requestMarketView(): Promise<DepthView> {
     const account = await this.read<{ status: Record<string, unknown> }>(
       "MarketAccount",
-      this.marketAccount(),
+      this.marketAccount()
     );
     if (stateName(account.status) !== "ready") {
       throw new Error("Maker account is processing another operation");
@@ -493,7 +664,7 @@ export class MakerClient {
     return this.requestView("market", view, viewNonce, {
       market: this.marketAddress,
       marketAccount: this.marketAccount(),
-      ...(grant ? { grant } : {}),
+      grant: grant ?? null,
     });
   }
 
@@ -522,15 +693,37 @@ export class MakerClient {
     ]);
     return this.requestView("fill", view, viewNonce, {
       order,
-      ...(grant ? { grant } : {}),
+      grant: grant ?? null,
+    });
+  }
+
+  async requestQuoteView(quote: PublicKey): Promise<DepthView> {
+    const state = await this.quoteState(quote);
+    if (
+      stateName(state.status) !== "active" &&
+      stateName(state.status) !== "closing"
+    )
+      throw new Error("Quote balance is unavailable in this state");
+    const grant = await this.viewGrant();
+    const viewNonce = offset();
+    const view = pda([
+      Buffer.from("quote-view"),
+      quote.toBuffer(),
+      this.options.wallet.publicKey.toBuffer(),
+      viewNonce.toArrayLike(Buffer, "le", 8),
+    ]);
+    return this.requestView("quote", view, viewNonce, {
+      market: this.marketAddress,
+      quote,
+      grant: grant ?? null,
     });
   }
 
   private async requestView(
-    kind: "market" | "fill",
+    kind: "market" | "fill" | "quote",
     view: PublicKey,
     viewNonce: anchor.BN,
-    accounts: Record<string, PublicKey>,
+    accounts: Record<string, PublicKey | null>
   ): Promise<DepthView> {
     const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
     if (!mxePublicKey) throw new Error("MXE public key is unavailable");
@@ -538,20 +731,30 @@ export class MakerClient {
     const publicKey = x25519.getPublicKey(secret);
     const computationOffset = offset();
     const queue = await this.queue(
-      kind === "market" ? "view_market" : "view_fill",
-      computationOffset,
+      kind === "market"
+        ? "view_market"
+        : kind === "fill"
+        ? "view_fill"
+        : "view_quote",
+      computationOffset
     );
     const builder =
       kind === "market"
         ? this.program.methods.requestMarketView(
             computationOffset,
             viewNonce,
-            Array.from(publicKey),
+            Array.from(publicKey)
           )
-        : this.program.methods.requestFillView(
+        : kind === "fill"
+        ? this.program.methods.requestFillView(
             computationOffset,
             viewNonce,
-            Array.from(publicKey),
+            Array.from(publicKey)
+          )
+        : this.program.methods.requestQuoteView(
+            computationOffset,
+            viewNonce,
+            Array.from(publicKey)
           );
     const signature = await builder
       .accountsPartial({
@@ -570,35 +773,87 @@ export class MakerClient {
       publicKey,
       mxePublicKey,
       this.program,
-      this.options.connection,
+      this.options.connection
     );
   }
 
-  readonly position = {
-    cancelOpen: () => this.funding.cancelOpenMarket(),
-    addMargin: (amount: bigint, clientNonce: bigint) =>
-      this.funding.allocate(amount, clientNonce),
-    removeMargin: (amount: bigint, clientNonce: bigint) =>
-      this.funding.release(amount, clientNonce),
-    summary: async (
-      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
-    ): Promise<PositionSnapshot> => {
-      const view = await this.requestMarketView();
-      return (await view.wait(options)) as PositionSnapshot;
-    },
-  };
+  private positionActions(id?: PublicKey | string) {
+    const address = this.marketAccount();
+    if (
+      id &&
+      (typeof id === "string" ? id : id.toBase58()) !== address.toBase58()
+    )
+      throw new Error("Position does not belong to this maker and market");
+    const actions = {
+      id: address,
+      cancelOpen: () => this.funding.cancelOpenMarket(),
+      addMargin: async (amount: AmountSelector, clientNonce?: bigint) =>
+        (await this.owned()).position.addMargin(amount, clientNonce),
+      removeMargin: async (amount: AmountSelector, clientNonce?: bigint) =>
+        (await this.owned()).position.removeMargin(amount, clientNonce),
+      summary: async (
+        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
+      ): Promise<PositionSnapshot> => {
+        const view = await this.requestMarketView();
+        const result = (await view.wait(options)) as PositionSnapshot;
+        if (result.status !== "pending") await view.close();
+        return result;
+      },
+    };
+    return Object.assign(
+      (positionId?: PublicKey | string) => this.positionActions(positionId),
+      actions
+    );
+  }
 
   readonly fills = {
     list: (options?: Parameters<FillHistory["list"]>[0]) =>
       new FillHistory(this).list(options),
-    subscribe: (...args: Parameters<FillHistory["subscribe"]>) =>
-      new FillHistory(this).subscribe(...args),
+    subscribe: async (options: {
+      marketId: typeof SOL_USD_MARKET_ID;
+      onFill: (fill: {
+        id: string;
+        signature: string;
+        slot: number;
+        execution: FillSnapshot;
+      }) => Promise<void>;
+      onError: (error: unknown) => void;
+      pollMs?: number;
+    }) => {
+      if (options.marketId !== SOL_USD_MARKET_ID)
+        throw new Error("Only SOL-USD is supported");
+      const genesis = await this.options.connection.getGenesisHash();
+      const store = new FillCursorStore(
+        genesis,
+        this.options.maker.toBase58(),
+        this.options.cursorDirectory
+      );
+      const cursor = await store.load();
+      return new FillHistory(this).subscribe(
+        async (fill) => {
+          const execution = await this.fills.get(new PublicKey(fill.id));
+          if (execution.status !== "ready")
+            throw new Error(
+              `Private maker fill ${fill.id} is ${execution.status}`
+            );
+          await options.onFill({ ...fill, execution });
+        },
+        {
+          cursor,
+          pollMs: options.pollMs,
+          saveCursor: (head) => store.save(head),
+          onError: options.onError,
+        }
+      );
+    },
     get: async (
       order: PublicKey,
-      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
+      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
     ): Promise<FillSnapshot> => {
       const view = await this.requestFillView(order);
-      return (await view.wait(options)) as FillSnapshot;
+      const result = (await view.wait(options)) as FillSnapshot;
+      if (result.status !== "pending") await view.close();
+      return result;
     },
   };
 
@@ -624,9 +879,7 @@ export class MakerClient {
     if (
       input.maxCapacity < input.tiers.at(-1)!.size ||
       input.maxCapacity > BigInt(market.config.maxAccountNotional.toString()) ||
-      BigInt(market.quotedNotional.toString()) + input.maxCapacity >
-        BigInt(market.config.maxMarketNotional.toString()) ||
-      market.activeQuoteCount >= 4
+      input.maxCapacity > BigInt(market.config.maxMarketNotional.toString())
     ) {
       throw new Error("Quote exceeds market capacity");
     }
@@ -645,7 +898,7 @@ export class MakerClient {
 }
 
 export async function createDepthMaker(
-  options: MakerOptions,
+  options: MakerOptions
 ): Promise<MakerClient> {
   return MakerClient.create(options);
 }

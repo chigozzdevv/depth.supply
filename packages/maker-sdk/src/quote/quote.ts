@@ -2,13 +2,13 @@ import * as anchor from "@anchor-lang/core";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import type { MakerClient } from "@/client/client";
+import type { MarketState, QuoteQueueState } from "@/client/types";
 import { DepthError } from "@depth/sdk";
 
 export type QuoteSnapshot = {
   id: string;
   status: string;
-  capacity: bigint;
-  remainingCapacity: bigint;
+  maxCapacity: bigint;
   attachedOrders: number;
 };
 
@@ -19,11 +19,12 @@ function name(value: Record<string, unknown>): string {
 export class QuoteHandle {
   reserveSignature?: string;
   releaseSignature?: string;
+  private balanceView?: Awaited<ReturnType<MakerClient["requestQuoteView"]>>;
 
   constructor(
     readonly id: PublicKey,
     readonly prepareSignature: string | undefined,
-    private readonly client: MakerClient,
+    private readonly client: MakerClient
   ) {}
 
   async status(): Promise<QuoteSnapshot> {
@@ -31,23 +32,42 @@ export class QuoteHandle {
     return {
       id: this.id.toBase58(),
       status: name(state.status),
-      capacity: BigInt(state.capacity.toString()),
-      remainingCapacity: BigInt(state.remainingCapacity.toString()),
+      maxCapacity: BigInt(state.capacity.toString()),
       attachedOrders: state.attachedOrders,
     };
   }
 
   async capacity(): Promise<bigint> {
-    return (await this.status()).remainingCapacity;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const view =
+        this.balanceView ?? (await this.client.requestQuoteView(this.id));
+      this.balanceView = view;
+      const snapshot = await view.wait({ timeoutMs: 60_000 });
+      if (snapshot.status === "pending")
+        throw new Error(
+          `Quote balance view ${view.id.toBase58()} is still pending`
+        );
+      await view.close();
+      this.balanceView = undefined;
+      if (
+        snapshot.status === "ready" &&
+        "remainingCapacity" in snapshot &&
+        snapshot.remainingCapacity !== undefined
+      )
+        return snapshot.remainingCapacity;
+    }
+    throw new Error("Quote balance changed while the private view was running");
   }
 
   async confirm(
-    options: { timeoutMs?: number; pollMs?: number } = {},
+    options: { timeoutMs?: number; pollMs?: number } = {}
   ): Promise<{ quoteId: PublicKey; snapshot: QuoteSnapshot }> {
     const timeoutMs = options.timeoutMs ?? 60_000;
     const started = Date.now();
     let snapshot = await this.activate({ timeoutMs, pollMs: options.pollMs });
-    if (!["active", "filled", "cancelled", "rejected"].includes(snapshot.status))
+    if (
+      !["active", "filled", "cancelled", "rejected"].includes(snapshot.status)
+    )
       snapshot = await this.wait({
         timeoutMs: Math.max(0, timeoutMs - (Date.now() - started)),
         pollMs: options.pollMs,
@@ -68,7 +88,7 @@ export class QuoteHandle {
         : "Quote is not active yet",
       snapshot.status !== "rejected" && snapshot.status !== "cancelled",
       "Read the quote status and resume activation if it remains pending",
-      this.id.toBase58(),
+      this.id.toBase58()
     );
   }
 
@@ -85,17 +105,20 @@ export class QuoteHandle {
     }
     const deadline = Date.now() + options.timeoutMs;
     for (;;) {
-      const snapshot = await this.status();
+      let snapshot = await this.status();
+      if (snapshot.status === "waiting" || snapshot.status === "validated") {
+        snapshot = await this.activate({ timeoutMs: 0, pollMs });
+      }
       if (
         ["active", "filled", "cancelled", "rejected"].includes(
-          snapshot.status,
+          snapshot.status
         ) ||
         Date.now() >= deadline
       ) {
         return snapshot;
       }
       await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(pollMs, deadline - Date.now())),
+        setTimeout(resolve, Math.min(pollMs, deadline - Date.now()))
       );
     }
   }
@@ -117,12 +140,51 @@ export class QuoteHandle {
       if (snapshot.status === "active" || snapshot.status === "rejected") {
         return snapshot;
       }
-      if (snapshot.status === "validated") {
+      if (snapshot.status === "validated" || snapshot.status === "waiting") {
+        const market = await this.client.read<MarketState>(
+          "Market",
+          this.client.marketAddress
+        );
+        const queueState = await this.client.read<QuoteQueueState>(
+          "QuoteQueue",
+          this.client.quoteQueueAddress
+        );
+        if (!queueState.market.equals(this.client.marketAddress)) {
+          throw new Error("Quote queue belongs to another market");
+        }
         const grant = this.client.options.wallet.publicKey.equals(
-          this.client.options.maker,
+          this.client.options.maker
         )
           ? undefined
           : this.client.grantAddress();
+        if (
+          snapshot.status === "validated" &&
+          (market.activeQuoteCount >= 4 ||
+            queueState.count > 0 ||
+            BigInt(market.quotedNotional.toString()) + snapshot.maxCapacity >
+              BigInt(market.config.maxMarketNotional.toString()))
+        ) {
+          await this.client.program.methods
+            .enqueueQuote()
+            .accountsPartial({
+              actor: this.client.options.wallet.publicKey,
+              market: this.client.marketAddress,
+              quoteQueue: this.client.quoteQueueAddress,
+              grant: grant ?? this.client.program.programId,
+              quote: this.id,
+            })
+            .rpc({ commitment: "confirmed" });
+          return this.status();
+        }
+        if (
+          snapshot.status === "waiting" &&
+          (market.activeQuoteCount >= 4 ||
+            market.pendingOrders > 0 ||
+            !queueState.entries[0]?.equals(this.id) ||
+            BigInt(market.quotedNotional.toString()) + snapshot.maxCapacity >
+              BigInt(market.config.maxMarketNotional.toString()))
+        )
+          return snapshot;
         const offset = new anchor.BN(randomBytes(8), "le");
         const queue = await this.client.queue("reserve_quote", offset);
         this.reserveSignature = await this.client.program.methods
@@ -133,9 +195,16 @@ export class QuoteHandle {
             protocol: this.client.protocolAddress,
             market: this.client.marketAddress,
             marketAccount: this.client.marketAccount(),
-            ...(grant ? { grant } : {}),
+            grant: grant ?? this.client.program.programId,
             quote: this.id,
           })
+          .remainingAccounts([
+            {
+              pubkey: this.client.quoteQueueAddress,
+              isSigner: false,
+              isWritable: true,
+            },
+          ])
           .rpc({ commitment: "confirmed" });
         return this.status();
       }
@@ -143,7 +212,7 @@ export class QuoteHandle {
         return snapshot;
       }
       await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(pollMs, deadline - Date.now())),
+        setTimeout(resolve, Math.min(pollMs, deadline - Date.now()))
       );
     }
   }
@@ -159,19 +228,20 @@ export class QuoteHandle {
         .cancelPreparedQuote()
         .accountsPartial({
           actor,
-          ...(grant ? { grant } : {}),
+          grant: grant ?? this.client.program.programId,
           quote: this.id,
         })
         .rpc({ commitment: "confirmed" });
       return this.status();
     }
-    if (snapshot.status === "active") {
+    if (snapshot.status === "active" || snapshot.status === "waiting") {
       await this.client.program.methods
         .stopQuote()
         .accountsPartial({
           actor,
           market: this.client.marketAddress,
-          ...(grant ? { grant } : {}),
+          quoteQueue: this.client.quoteQueueAddress,
+          grant: grant ?? this.client.program.programId,
           quote: this.id,
         })
         .rpc({ commitment: "confirmed" });
@@ -179,6 +249,7 @@ export class QuoteHandle {
       throw new Error("Quote cannot be cancelled in its current state");
     }
     const current = await this.status();
+    if (snapshot.status === "waiting") return current;
     if (current.attachedOrders > 0) return current;
     const offset = new anchor.BN(randomBytes(8), "le");
     const queue = await this.client.queue("release_quote", offset);
@@ -190,7 +261,7 @@ export class QuoteHandle {
         protocol: this.client.protocolAddress,
         market: this.client.marketAddress,
         marketAccount: this.client.marketAccount(),
-        ...(grant ? { grant } : {}),
+        grant: grant ?? this.client.program.programId,
         quote: this.id,
       })
       .rpc({ commitment: "confirmed" });

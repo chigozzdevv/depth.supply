@@ -7,7 +7,9 @@ export type MakerOptions = {
   deployment: DeploymentPolicy;
   wallet: anchor.Wallet;
   maker: PublicKey;
+  appId?: PublicKey;
   connection: Connection;
+  cursorDirectory?: string;
 };
 
 export type QuoteTier = { size: bigint; bidE8: bigint; askE8: bigint };
@@ -36,8 +38,8 @@ export type QuoteState = {
   operator: PublicKey;
   operatorVersion: anchor.BN;
   market: PublicKey;
+  nonce: anchor.BN;
   capacity: anchor.BN;
-  remainingCapacity: anchor.BN;
   expiry: anchor.BN;
   attachedOrders: number;
 };
@@ -62,6 +64,12 @@ export type MarketState = {
     maxOracleAgeSeconds: number;
     backstopMinCollateral: anchor.BN;
   };
+};
+
+export type QuoteQueueState = {
+  market: PublicKey;
+  count: number;
+  entries: PublicKey[];
 };
 
 export type BackstopInput = {
