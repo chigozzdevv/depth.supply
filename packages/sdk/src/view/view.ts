@@ -1,6 +1,6 @@
 import * as anchor from "@anchor-lang/core";
 import { createPacker, RescueCipher, x25519 } from "@arcium-hq/client";
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { circuits, DEPTH_PROGRAM_ID } from "@depth/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 export type BalanceSnapshot = {
@@ -27,6 +27,7 @@ export type FillSnapshot = {
   status: "pending" | "ready" | "stale";
   id: string;
   slot: number;
+  positionId?: PublicKey;
   side?: bigint;
   size?: bigint;
   margin?: bigint;
@@ -35,6 +36,14 @@ export type FillSnapshot = {
   insuranceFee?: bigint;
   appFee?: bigint;
   makerRebate?: bigint;
+};
+
+export type QuoteBalanceSnapshot = {
+  status: "pending" | "ready" | "stale";
+  id: string;
+  slot: number;
+  remainingCapacity?: bigint;
+  remainingMargin?: bigint;
 };
 
 type ViewState = {
@@ -109,19 +118,21 @@ export class DepthView {
   constructor(
     readonly id: PublicKey,
     readonly signature: string,
-    readonly kind: "balance" | "market" | "fill",
+    readonly kind: "balance" | "market" | "fill" | "quote",
     private readonly owner: PublicKey,
     private readonly secret: Uint8Array,
     private readonly publicKey: Uint8Array,
     private readonly mxePublicKey: Uint8Array,
     private readonly program: anchor.Program,
-    private readonly connection: Connection,
+    private readonly connection: Connection
   ) {}
 
-  async status(): Promise<BalanceSnapshot | PositionSnapshot | FillSnapshot> {
+  async status(): Promise<
+    BalanceSnapshot | PositionSnapshot | FillSnapshot | QuoteBalanceSnapshot
+  > {
     const response = await this.connection.getAccountInfoAndContext(
       this.id,
-      "confirmed",
+      "confirmed"
     );
     if (!response.value || !response.value.owner.equals(DEPTH_PROGRAM_ID)) {
       throw new Error("Private view account is unavailable");
@@ -131,8 +142,10 @@ export class DepthView {
         ? "balanceView"
         : this.kind === "market"
         ? "marketView"
-        : "fillView",
-      response.value.data,
+        : this.kind === "fill"
+        ? "fillView"
+        : "quoteView",
+      response.value.data
     );
     if (
       !state.owner.equals(this.owner) ||
@@ -153,7 +166,7 @@ export class DepthView {
     };
     if (status !== "ready") return base;
     const cipher = new RescueCipher(
-      x25519.getSharedSecret(this.secret, this.mxePublicKey),
+      x25519.getSharedSecret(this.secret, this.mxePublicKey)
     );
     const nonce = Uint8Array.from(state.outputNonce);
     if (this.kind === "balance") {
@@ -163,6 +176,16 @@ export class DepthView {
         amount: cipher.decrypt([Array.from(state.ciphertext)], nonce)[0],
       };
     }
+    if (this.kind === "quote") {
+      if (!state.ciphertext) throw new Error("Quote view has no ciphertext");
+      const words = cipher.decrypt([Array.from(state.ciphertext)], nonce);
+      const balance = circuits.QuoteBalance.unpack(words);
+      return {
+        ...base,
+        remainingCapacity: balance.remaining_capacity,
+        remainingMargin: balance.remaining_margin,
+      };
+    }
     if (!state.ciphertexts) throw new Error("Private view has no ciphertexts");
     if (this.kind === "fill") {
       return {
@@ -170,8 +193,8 @@ export class DepthView {
         ...decodeFill(
           cipher.decrypt(
             state.ciphertexts.map((word) => Array.from(word)),
-            nonce,
-          ),
+            nonce
+          )
         ),
       };
     }
@@ -180,8 +203,8 @@ export class DepthView {
       ...decodeMarket(
         cipher.decrypt(
           state.ciphertexts.map((word) => Array.from(word)),
-          nonce,
-        ),
+          nonce
+        )
       ),
     };
   }
@@ -189,7 +212,9 @@ export class DepthView {
   async wait(options: {
     timeoutMs: number;
     pollMs?: number;
-  }): Promise<BalanceSnapshot | PositionSnapshot | FillSnapshot> {
+  }): Promise<
+    BalanceSnapshot | PositionSnapshot | FillSnapshot | QuoteBalanceSnapshot
+  > {
     if (!Number.isSafeInteger(options.timeoutMs) || options.timeoutMs < 0) {
       throw new RangeError("timeoutMs must be a nonnegative integer");
     }
@@ -204,7 +229,7 @@ export class DepthView {
         return snapshot;
       }
       await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(pollMs, deadline - Date.now())),
+        setTimeout(resolve, Math.min(pollMs, deadline - Date.now()))
       );
     }
   }
@@ -219,7 +244,9 @@ export class DepthView {
         ? this.program.methods.closeBalanceView()
         : this.kind === "market"
         ? this.program.methods.closeMarketView()
-        : this.program.methods.closeFillView();
+        : this.kind === "fill"
+        ? this.program.methods.closeFillView()
+        : this.program.methods.closeQuoteView();
     return builder
       .accountsPartial({ owner: this.owner, view: this.id })
       .rpc({ commitment: "confirmed" });

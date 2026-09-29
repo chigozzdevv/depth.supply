@@ -17,20 +17,20 @@ function enumName(value: Record<string, unknown>): string {
 export class DepthOperation {
   private viewPromise?: Promise<DepthView>;
   private view?: DepthView;
-  private fill?: FillSnapshot;
+  private fill?: FillSnapshot & { positionId: PublicKey };
 
   constructor(
     readonly id: PublicKey,
     readonly signature: string | undefined,
     private readonly program: anchor.Program,
     private readonly connection: Connection,
-    private readonly requestFillView?: (order: PublicKey) => Promise<DepthView>,
+    private readonly requestFillView?: (order: PublicKey) => Promise<DepthView>
   ) {}
 
   private async readOrder(): Promise<{ order: OrderState; slot: number }> {
     const response = await this.connection.getAccountInfoAndContext(
       this.id,
-      "confirmed",
+      "confirmed"
     );
     if (!response.value) {
       throw new DepthError(
@@ -39,7 +39,7 @@ export class DepthOperation {
         "Order is not visible on the confirmed chain yet",
         true,
         "Retry with the same operation ID and reconcile before submitting a new nonce",
-        this.id.toBase58(),
+        this.id.toBase58()
       );
     }
     if (!response.value.owner.equals(this.program.programId)) {
@@ -49,12 +49,12 @@ export class DepthOperation {
         "Order record is unavailable on the confirmed chain",
         false,
         "Verify the operation address and network",
-        this.id.toBase58(),
+        this.id.toBase58()
       );
     }
     const order = this.program.coder.accounts.decode<OrderState>(
       "orderRecord",
-      response.value.data,
+      response.value.data
     );
     return { order, slot: response.context.slot };
   }
@@ -96,7 +96,7 @@ export class DepthOperation {
         "Only the trader can cancel an order in this market",
         false,
         "Restore the order with its owner wallet and network",
-        this.id.toBase58(),
+        this.id.toBase58()
       );
     if (state === "cancelled") return this.status();
     if (state !== "matching" && state !== "matched")
@@ -106,7 +106,7 @@ export class DepthOperation {
         "This order can no longer be cancelled",
         false,
         "Read the current operation status",
-        this.id.toBase58(),
+        this.id.toBase58()
       );
     await this.program.methods
       .cancelOrder()
@@ -126,7 +126,7 @@ export class DepthOperation {
     options: {
       pollMs?: number;
       onError: (error: unknown) => void;
-    },
+    }
   ): () => void {
     const pollMs = options.pollMs ?? 1000;
     if (!Number.isSafeInteger(pollMs) || pollMs < 100)
@@ -157,11 +157,13 @@ export class DepthOperation {
     };
   }
 
-  async wait(options: {
-    timeoutMs?: number;
-    pollMs?: number;
-    signal?: AbortSignal;
-  } = {}): Promise<OperationSnapshot> {
+  async wait(
+    options: {
+      timeoutMs?: number;
+      pollMs?: number;
+      signal?: AbortSignal;
+    } = {}
+  ): Promise<OperationSnapshot> {
     const timeoutMs = options.timeoutMs ?? 60_000;
     if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0) {
       throw new RangeError("timeoutMs must be a nonnegative integer");
@@ -187,7 +189,7 @@ export class DepthOperation {
             true,
             "Retry status with the same operation ID",
             this.id.toBase58(),
-            { cause: error },
+            { cause: error }
           );
         }
       }
@@ -214,11 +216,13 @@ export class DepthOperation {
     }
   }
 
-  async confirm(options: {
-    timeoutMs?: number;
-    pollMs?: number;
-    signal?: AbortSignal;
-  } = {}): Promise<{ orderId: PublicKey; snapshot: OperationSnapshot }> {
+  async confirm(
+    options: {
+      timeoutMs?: number;
+      pollMs?: number;
+      signal?: AbortSignal;
+    } = {}
+  ): Promise<{ orderId: PublicKey; snapshot: OperationSnapshot }> {
     const snapshot = await this.wait(options);
     if (snapshot.status === "finalized" && snapshot.outcome === "filled")
       return { orderId: this.id, snapshot };
@@ -228,26 +232,28 @@ export class DepthOperation {
       rejected
         ? "ORDER_REJECTED"
         : cancelled
-          ? "ORDER_CANCELLED"
-          : "ORDER_PENDING",
+        ? "ORDER_CANCELLED"
+        : "ORDER_PENDING",
       "confirmation",
       rejected
         ? "Trade was rejected"
         : cancelled
-          ? "Trade was cancelled"
-          : "Trade has not finalized yet",
+        ? "Trade was cancelled"
+        : "Trade has not finalized yet",
       !rejected && !cancelled,
       rejected || cancelled
         ? "Read the final order record before submitting a new request"
         : "Read this operation again with the same order ID",
-      this.id.toBase58(),
+      this.id.toBase58()
     );
   }
 
-  async privateResult(options: {
-    timeoutMs?: number;
-    pollMs?: number;
-  } = {}): Promise<FillSnapshot> {
+  async privateResult(
+    options: {
+      timeoutMs?: number;
+      pollMs?: number;
+    } = {}
+  ): Promise<FillSnapshot & { positionId: PublicKey }> {
     if (this.fill && !this.view) return this.fill;
     const snapshot = await this.status();
     if (
@@ -261,7 +267,7 @@ export class DepthOperation {
         "This trade has no finalized private fill yet",
         snapshot.status === "queued",
         "Confirm the trade before requesting its private result",
-        this.id.toBase58(),
+        this.id.toBase58()
       );
     if (!this.requestFillView)
       throw new DepthError(
@@ -270,10 +276,9 @@ export class DepthOperation {
         "This operation has no wallet-authorized fill view",
         false,
         "Restore the operation through the Depth wallet client",
-        this.id.toBase58(),
+        this.id.toBase58()
       );
-    if (!this.viewPromise)
-      this.viewPromise = this.requestFillView(this.id);
+    if (!this.viewPromise) this.viewPromise = this.requestFillView(this.id);
     try {
       this.view = await this.viewPromise;
     } catch (error) {
@@ -296,9 +301,15 @@ export class DepthOperation {
           result.status === "pending"
             ? "Call privateResult again with the same operation"
             : "Restore this operation and request a fresh fill view",
-          this.id.toBase58(),
+          this.id.toBase58()
         );
-      this.fill = result as FillSnapshot;
+      this.fill = {
+        ...(result as FillSnapshot),
+        positionId: marketAccountAddress(
+          new PublicKey(snapshot.owner),
+          this.program.programId
+        ),
+      };
     }
     try {
       await this.view.close();
@@ -307,7 +318,7 @@ export class DepthOperation {
       try {
         remaining = await this.connection.getAccountInfo(
           this.view.id,
-          "confirmed",
+          "confirmed"
         );
       } catch (readError) {
         throw this.cleanupError(readError);
@@ -327,7 +338,7 @@ export class DepthOperation {
       true,
       "Call privateResult again with the same operation to close the view",
       this.id.toBase58(),
-      { cause },
+      { cause }
     );
   }
 }

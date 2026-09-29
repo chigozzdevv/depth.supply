@@ -27,23 +27,33 @@ import { verifyDeployment } from "@/chain/manifest";
 import { arciumAccount } from "@/chain/arcium";
 import { DepthProvider } from "@/chain/provider";
 import { AppAdmin } from "@/app/app";
+import { MarketCatalog } from "@/catalog/catalog";
 import { FundingDiscovery } from "@/account/discovery";
 import { FundingClient } from "@/account/funding";
+import { destinationTokenAccount, sourceTokenAccount } from "@/account/token";
+import { releasableMargin } from "@/account/release";
 import { submissionError } from "@/operation/error";
 import { DepthOperation } from "@/operation/operation";
 import { DepthRecovery } from "@/recovery/recovery";
 import { encodeSide, u64 } from "@/trade/input";
+import { resolveAmount } from "@/trade/amount";
+import type { AmountSelector } from "@/trade/amount";
+import { tradeDeadline, tradeLimit } from "@/trade/terms";
 import { DepthView } from "@/view/view";
 import type { BalanceSnapshot, PositionSnapshot } from "@/view/view";
 import type {
   AccountState,
   AppState,
+  CloseInput,
   DepthOptions,
   MarketState,
   OrderState,
   ProtocolState,
+  ReductionInput,
+  ReverseInput,
   TradeInput,
   TradeIntent,
+  TradeTerms,
 } from "@/client/types";
 
 function pda(seeds: Buffer[], programId = DEPTH_PROGRAM_ID): PublicKey {
@@ -61,16 +71,21 @@ function enumName(value: Record<string, unknown>): string {
 export class DepthClient {
   readonly program: anchor.Program;
   readonly provider: anchor.AnchorProvider;
+  readonly position: ReturnType<DepthClient["positionActions"]>;
   readonly marketAddress = marketAddress();
   readonly protocolAddress = protocolAddress();
   readonly mxeAddress = getMXEAccAddress(DEPTH_PROGRAM_ID);
+
+  get catalog(): MarketCatalog {
+    return new MarketCatalog(this);
+  }
 
   get funding(): FundingClient {
     return new FundingClient(
       this.program,
       this.options.connection,
       this.options.wallet.publicKey,
-      (name, offset) => this.queue(name, offset),
+      (name, offset) => this.queue(name, offset)
     );
   }
 
@@ -79,7 +94,7 @@ export class DepthClient {
       this.program,
       this.options.connection,
       this.options.wallet.publicKey,
-      this.funding,
+      this.funding
     );
   }
 
@@ -87,17 +102,17 @@ export class DepthClient {
     return new DepthRecovery(
       this.program,
       this.options.connection,
-      this.options.wallet.publicKey,
+      this.options.wallet.publicKey
     );
   }
 
   private constructor(readonly options: DepthOptions) {
-    this.provider = new DepthProvider(
-      options.connection,
-      options.wallet,
-      { commitment: "confirmed", preflightCommitment: "confirmed" },
-    );
+    this.provider = new DepthProvider(options.connection, options.wallet, {
+      commitment: "confirmed",
+      preflightCommitment: "confirmed",
+    });
     this.program = new anchor.Program(DEPTH_IDL, this.provider);
+    this.position = this.positionActions();
   }
 
   static async create(options: DepthOptions): Promise<DepthClient> {
@@ -132,14 +147,14 @@ export class DepthClient {
   private async read<T>(name: string, address: PublicKey): Promise<T> {
     const info = await this.options.connection.getAccountInfo(
       address,
-      "confirmed",
+      "confirmed"
     );
     if (!info || !info.owner.equals(DEPTH_PROGRAM_ID)) {
       throw new Error(`${name} account is unavailable`);
     }
     return this.program.coder.accounts.decode<T>(
       name[0].toLowerCase() + name.slice(1),
-      info.data,
+      info.data
     );
   }
 
@@ -148,11 +163,11 @@ export class DepthClient {
     const cluster = mxe.cluster;
     const definition = getCompDefAccAddress(
       DEPTH_PROGRAM_ID,
-      Buffer.from(getCompDefAccOffset(name)).readUInt32LE(),
+      Buffer.from(getCompDefAccOffset(name)).readUInt32LE()
     );
     const definitionInfo = await this.options.connection.getAccountInfo(
       definition,
-      "confirmed",
+      "confirmed"
     );
     if (!definitionInfo) throw new Error(`${name} computation is not deployed`);
     return {
@@ -180,7 +195,7 @@ export class DepthClient {
   }> {
     const response = await this.options.connection.getAccountInfoAndContext(
       this.marketAddress,
-      "confirmed",
+      "confirmed"
     );
     if (!response.value || !response.value.owner.equals(DEPTH_PROGRAM_ID)) {
       throw new Error("Depth market is unavailable");
@@ -189,7 +204,7 @@ export class DepthClient {
       address: this.marketAddress,
       state: this.program.coder.accounts.decode<MarketState>(
         "market",
-        response.value.data,
+        response.value.data
       ),
       slot: response.context.slot,
     };
@@ -201,7 +216,7 @@ export class DepthClient {
       undefined,
       this.program,
       this.options.connection,
-      (order) => this.requestFillView(order),
+      (order) => this.requestFillView(order)
     );
   }
 
@@ -210,7 +225,7 @@ export class DepthClient {
     const balance = pda([Buffer.from("balance"), owner.toBuffer()]);
     const state = await this.read<{ status: Record<string, unknown> }>(
       "BalanceAccount",
-      balance,
+      balance
     );
     if (enumName(state.status) !== "ready") {
       throw new Error("Balance is processing another operation");
@@ -266,7 +281,7 @@ export class DepthClient {
     kind: "balance" | "market" | "fill",
     view: PublicKey,
     viewNonce: anchor.BN,
-    accounts: Record<string, PublicKey>,
+    accounts: Record<string, PublicKey>
   ): Promise<DepthView> {
     const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
     if (!mxePublicKey) throw new Error("MXE public key is unavailable");
@@ -277,23 +292,24 @@ export class DepthClient {
       kind === "balance"
         ? "view_balance"
         : kind === "market"
-          ? "view_market"
-          : "view_fill",
-      offset,
+        ? "view_market"
+        : "view_fill",
+      offset
     );
     const builder =
       kind === "balance"
         ? this.program.methods.requestBalanceView
         : kind === "market"
-          ? this.program.methods.requestMarketView
-          : this.program.methods.requestFillView;
+        ? this.program.methods.requestMarketView
+        : this.program.methods.requestFillView;
     const signature = await builder(offset, viewNonce, Array.from(publicKey))
       .accountsPartial({
         ...queue,
         payer: this.options.wallet.publicKey,
         ...accounts,
+        ...(kind === "balance" ? {} : { grant: null }),
         view,
-      })
+      } as unknown as Record<string, PublicKey>)
       .rpc({ commitment: "confirmed" });
     return new DepthView(
       view,
@@ -304,70 +320,336 @@ export class DepthClient {
       publicKey,
       mxePublicKey,
       this.program,
-      this.options.connection,
+      this.options.connection
     );
   }
 
-  readonly account = {
-    pending: (options?: Parameters<FundingDiscovery["pending"]>[0]) =>
-      new FundingDiscovery(
-        this.program,
-        this.options.connection,
-        this.options.wallet.publicKey,
-      ).pending(options),
-    cancelOpen: () => this.funding.cancelOpenBalance(),
-    open: async () => this.funding.openBalance(),
-    deposit: async (source: PublicKey, amount: bigint, clientNonce: bigint) =>
-      this.funding.deposit(source, amount, clientNonce),
-    withdrawalHandle: (clientNonce: bigint) =>
-      this.funding.withdrawalHandle(clientNonce),
-    depositHandle: (nonce: bigint) => this.funding.depositHandle(nonce),
-    withdraw: async (
-      destination: PublicKey,
-      amount: bigint,
-      clientNonce: bigint,
-    ) => this.funding.withdraw(destination, amount, clientNonce),
-    allocate: async (amount: bigint, clientNonce: bigint) =>
-      this.funding.allocate(amount, clientNonce),
-    release: async (amount: bigint, clientNonce: bigint) =>
-      this.funding.release(amount, clientNonce),
-    transferHandle: (nonce: bigint) => this.funding.transferHandle(nonce),
-    summary: async (
-      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
-    ): Promise<BalanceSnapshot> => {
-      const view = await this.requestBalanceView();
-      return (await view.wait(options)) as BalanceSnapshot;
-    },
-  };
+  private async ensureBalanceReady(): Promise<void> {
+    const address = this.funding.balance;
+    const read = () =>
+      this.funding.read<{ status: Record<string, unknown> }>(
+        "BalanceAccount",
+        address
+      );
+    if (!(await read())) {
+      try {
+        await this.funding.openBalance();
+      } catch (error) {
+        if (!(await read())) throw error;
+      }
+    }
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      const state = await read();
+      if (state && enumName(state.status) === "ready") return;
+      if (Date.now() >= deadline)
+        throw new Error(
+          `Balance account ${address.toBase58()} is still opening`
+        );
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
 
-  readonly position = {
-    cancelOpen: () => this.funding.cancelOpenMarket(),
-    addMargin: (amount: bigint, clientNonce: bigint) =>
-      this.funding.allocate(amount, clientNonce),
-    removeMargin: (amount: bigint, clientNonce: bigint) =>
-      this.funding.release(amount, clientNonce),
-    open: async () => this.funding.openMarket(),
-    summary: async (
-      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
-    ): Promise<PositionSnapshot> => {
-      const view = await this.requestMarketView();
-      return (await view.wait(options)) as PositionSnapshot;
+  private async ensureMarketReady(): Promise<void> {
+    const address = this.accountAddress();
+    const read = () =>
+      this.funding.read<AccountState>("MarketAccount", address);
+    if (!(await read())) {
+      try {
+        await this.funding.openMarket();
+      } catch (error) {
+        if (!(await read())) throw error;
+      }
+    }
+    const deadline = Date.now() + 60_000;
+    for (;;) {
+      const state = await read();
+      if (state && enumName(state.status) === "ready") return;
+      if (Date.now() >= deadline)
+        throw new Error(
+          `Market account ${address.toBase58()} is still opening`
+        );
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+  }
+
+  private async allocateRequest(
+    input:
+      | bigint
+      | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
+    clientNonce?: bigint
+  ) {
+    if (typeof input === "bigint") {
+      if (clientNonce === undefined)
+        throw new RangeError("Allocation nonce is required");
+      return this.funding.allocate(input, clientNonce);
+    }
+    if (input.marketId !== SOL_USD_MARKET_ID)
+      throw new Error("Only SOL-USD is supported");
+    await this.ensureBalanceReady();
+    await this.ensureMarketReady();
+    const balance = await this.account.summary();
+    if (balance.status !== "ready" || balance.amount === undefined)
+      throw new Error("Private balance is unavailable for allocation");
+    const amount = resolveAmount(input.amount, balance.amount, "allocation");
+    return this.funding.allocate(
+      amount,
+      clientNonce ?? BigInt(nonce().toString())
+    );
+  }
+
+  private async releaseRequest(
+    input:
+      | bigint
+      | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
+    clientNonce?: bigint
+  ) {
+    if (typeof input === "bigint") {
+      if (clientNonce === undefined)
+        throw new RangeError("Release nonce is required");
+      return this.funding.release(input, clientNonce);
+    }
+    if (input.marketId !== SOL_USD_MARKET_ID)
+      throw new Error("Only SOL-USD is supported");
+    const [position, market] = await Promise.all([
+      this.position.summary(),
+      this.market(),
+    ]);
+    if (
+      position.status !== "ready" ||
+      position.collateral === undefined ||
+      position.reserved === undefined ||
+      position.position === undefined ||
+      position.entryPriceE8 === undefined ||
+      position.fundingCheckpoint === undefined
+    )
+      throw new Error("Private position is unavailable for release");
+    if (
+      Math.floor(Date.now() / 1_000) - market.state.oracleTimestamp.toNumber() >
+      market.state.config.maxOracleAgeSeconds
+    )
+      throw new Error("Oracle update is stale");
+    const available = releasableMargin(
+      {
+        collateral: position.collateral,
+        reserved: position.reserved,
+        position: position.position,
+        entryPriceE8: position.entryPriceE8,
+        fundingCheckpoint: position.fundingCheckpoint,
+      },
+      BigInt(market.state.oraclePriceE8.toString()),
+      BigInt(market.state.fundingIndex.toString()),
+      market.state.config.initialMarginBps
+    );
+    const amount = resolveAmount(input.amount, available, "release");
+    return this.funding.release(
+      amount,
+      clientNonce ?? BigInt(nonce().toString())
+    );
+  }
+
+  private async depositRequest(
+    sourceOrAmount: PublicKey | bigint,
+    amount?: bigint,
+    clientNonce?: bigint
+  ) {
+    if (sourceOrAmount instanceof PublicKey) {
+      if (amount === undefined || clientNonce === undefined)
+        throw new RangeError("Source deposits require amount and client nonce");
+      return this.funding.deposit(sourceOrAmount, amount, clientNonce);
+    }
+    await this.ensureBalanceReady();
+    const protocol = await this.read<ProtocolState>(
+      "Protocol",
+      this.protocolAddress
+    );
+    const source = await sourceTokenAccount(
+      this.options.connection,
+      this.options.wallet.publicKey,
+      protocol.settlementMint,
+      sourceOrAmount
+    );
+    return this.funding.deposit(
+      source,
+      sourceOrAmount,
+      amount ?? BigInt(nonce().toString())
+    );
+  }
+
+  private async withdrawRequest(
+    destinationOrAmount: PublicKey | AmountSelector,
+    amount?: bigint,
+    clientNonce?: bigint
+  ) {
+    if (destinationOrAmount instanceof PublicKey) {
+      if (amount === undefined || clientNonce === undefined)
+        throw new RangeError(
+          "Destination withdrawals require amount and client nonce"
+        );
+      return this.funding.withdraw(destinationOrAmount, amount, clientNonce);
+    }
+    const balance = await this.account.summary();
+    if (balance.status !== "ready" || balance.amount === undefined)
+      throw new Error("Private balance is unavailable for withdrawal");
+    const requested = resolveAmount(
+      destinationOrAmount,
+      balance.amount,
+      "withdrawal"
+    );
+    const protocol = await this.read<ProtocolState>(
+      "Protocol",
+      this.protocolAddress
+    );
+    const destination = await destinationTokenAccount(
+      this.provider,
+      this.options.wallet.publicKey,
+      protocol.settlementMint
+    );
+    return this.funding.withdraw(
+      destination,
+      requested,
+      amount ?? BigInt(nonce().toString())
+    );
+  }
+
+  private accountActions() {
+    const actions = {
+      pending: (options?: Parameters<FundingDiscovery["pending"]>[0]) =>
+        new FundingDiscovery(
+          this.program,
+          this.options.connection,
+          this.options.wallet.publicKey
+        ).pending(options),
+      cancelOpen: () => this.funding.cancelOpenBalance(),
+      open: async () => this.funding.openBalance(),
+      deposit: (
+        sourceOrAmount: PublicKey | bigint,
+        amount?: bigint,
+        clientNonce?: bigint
+      ) => this.depositRequest(sourceOrAmount, amount, clientNonce),
+      withdrawalHandle: (clientNonce: bigint) =>
+        this.funding.withdrawalHandle(clientNonce),
+      depositHandle: (nonce: bigint) => this.funding.depositHandle(nonce),
+      withdraw: (
+        destinationOrAmount: PublicKey | AmountSelector,
+        amount?: bigint,
+        clientNonce?: bigint
+      ) => this.withdrawRequest(destinationOrAmount, amount, clientNonce),
+      allocate: (
+        input:
+          | bigint
+          | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
+        clientNonce?: bigint
+      ) => this.allocateRequest(input, clientNonce),
+      release: (
+        input:
+          | bigint
+          | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
+        clientNonce?: bigint
+      ) => this.releaseRequest(input, clientNonce),
+      transferHandle: (nonce: bigint) => this.funding.transferHandle(nonce),
+      summary: async (
+        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
+      ): Promise<BalanceSnapshot> => {
+        const view = await this.requestBalanceView();
+        const result = (await view.wait(options)) as BalanceSnapshot;
+        if (result.status !== "pending") await view.close();
+        return result;
+      },
+    };
+    return Object.assign(() => actions, actions);
+  }
+
+  readonly account = this.accountActions();
+
+  private positionActions(id?: PublicKey | string) {
+    const address = this.accountAddress();
+    if (
+      id &&
+      (typeof id === "string" ? id : id.toBase58()) !== address.toBase58()
+    )
+      throw new Error("Position does not belong to this wallet and market");
+    const actions = {
+      id: address,
+      cancelOpen: () => this.funding.cancelOpenMarket(),
+      addMargin: (amount: AmountSelector, clientNonce?: bigint) =>
+        typeof amount === "bigint" && clientNonce !== undefined
+          ? this.funding.allocate(amount, clientNonce)
+          : this.allocateRequest(
+              { marketId: SOL_USD_MARKET_ID, amount },
+              clientNonce
+            ),
+      removeMargin: (amount: AmountSelector, clientNonce?: bigint) =>
+        typeof amount === "bigint" && clientNonce !== undefined
+          ? this.funding.release(amount, clientNonce)
+          : this.releaseRequest(
+              { marketId: SOL_USD_MARKET_ID, amount },
+              clientNonce
+            ),
+      open: async () => this.funding.openMarket(),
+      summary: async (
+        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
+      ): Promise<PositionSnapshot> => {
+        const view = await this.requestMarketView();
+        const result = (await view.wait(options)) as PositionSnapshot;
+        if (result.status !== "pending") await view.close();
+        return result;
+      },
+    };
+    return Object.assign(
+      (positionId?: PublicKey | string) => this.positionActions(positionId),
+      actions
+    );
+  }
+
+  readonly positions = {
+    list: async (options: { cursor?: string; limit?: number } = {}) => {
+      if (options.cursor && options.cursor !== "1")
+        throw new RangeError("Position cursor is invalid");
+      if (
+        options.limit !== undefined &&
+        (!Number.isInteger(options.limit) || options.limit < 1)
+      )
+        throw new RangeError("Position limit must be positive");
+      if (options.cursor === "1") return { items: [], nextCursor: null };
+      const state = await this.funding.read<AccountState>(
+        "MarketAccount",
+        this.accountAddress()
+      );
+      if (!state) return { items: [], nextCursor: null };
+      if (
+        !state.owner.equals(this.options.wallet.publicKey) ||
+        !state.market.equals(this.marketAddress)
+      )
+        throw new Error("Market account does not belong to this wallet");
+      return {
+        items: [{ id: this.accountAddress(), marketId: SOL_USD_MARKET_ID }],
+        nextCursor: null,
+      };
     },
   };
 
   readonly trade = {
     submit: (input: TradeInput) => this.submitTrade(input, "increase"),
-    reduce: (input: TradeInput) => this.submitTrade(input, "reduce"),
-    close: (input: TradeInput) => this.submitTrade(input, "close"),
-    reverse: (input: TradeInput) => this.submitTrade(input, "reverse"),
+    reduce: (input: ReductionInput) => this.submitTrade(input, "reduce"),
+    close: (input: CloseInput) => this.submitTrade(input, "close"),
+    reverse: (input: ReverseInput) => this.submitTrade(input, "reverse"),
     operation: (clientNonce: bigint) =>
       new DepthOperation(
         this.orderAddress(clientNonce),
         undefined,
         this.program,
         this.options.connection,
-        (order) => this.requestFillView(order),
+        (order) => this.requestFillView(order)
       ),
+    unpairedAllocations: (
+      options?: Parameters<FundingDiscovery["unpairedAllocations"]>[0]
+    ) =>
+      new FundingDiscovery(
+        this.program,
+        this.options.connection,
+        this.options.wallet.publicKey
+      ).unpairedAllocations(options),
   };
 
   private orderAddress(clientNonce: bigint): PublicKey {
@@ -380,19 +662,20 @@ export class DepthClient {
   }
 
   private async submitTrade(
-    input: TradeInput,
-    intent: TradeIntent,
+    input: TradeInput | ReductionInput | CloseInput | ReverseInput,
+    intent: TradeIntent
   ): Promise<DepthOperation> {
     const appId = this.options.appId;
     if (!appId) throw new Error("An app ID is required to submit a trade");
-    const orderNonce = u64(input.clientNonce, "clientNonce");
-    const order = this.orderAddress(input.clientNonce);
+    const clientNonce = input.clientNonce ?? BigInt(nonce().toString());
+    const orderNonce = u64(clientNonce, "clientNonce");
+    const order = this.orderAddress(clientNonce);
     const existing = await this.options.connection.getAccountInfo(
       order,
-      "confirmed",
+      "confirmed"
     );
     if (existing) {
-      const operation = this.trade.operation(input.clientNonce);
+      const operation = this.trade.operation(clientNonce);
       const snapshot = await operation.status();
       if (snapshot.owner !== this.options.wallet.publicKey.toBase58())
         throw new Error("Order owner does not match");
@@ -402,41 +685,151 @@ export class DepthClient {
     if (input.marketId !== SOL_USD_MARKET_ID) {
       throw new Error("Only SOL-USD is supported");
     }
-    encodeSide(input.direction);
-    const values = [input.size, input.margin, input.worstPriceE8, input.maxFee];
-    values.forEach((value, index) =>
-      u64(value, ["size", "margin", "worstPriceE8", "maxFee"][index]),
-    );
-    if (values.some((value) => value === 0n)) {
-      throw new RangeError("Trade amounts and price must be positive");
-    }
-    if (!Number.isSafeInteger(input.expiresAt)) {
-      throw new RangeError("expiresAt must be a Unix second");
-    }
-    const [market, protocol, account, app] = await Promise.all([
+    u64(input.maxFee, "maxFee");
+    if (input.maxFee === 0n)
+      throw new RangeError("Trade fee cap must be positive");
+    const additionalMargin = "margin" in input ? input.margin : 0n;
+    u64(additionalMargin, "margin");
+    let amount =
+      intent === "close"
+        ? 0n
+        : intent === "reduce"
+        ? 0n
+        : (input as TradeInput).notional;
+    u64(amount, "notional");
+    if ((intent === "increase" || intent === "reverse") && amount === 0n)
+      throw new RangeError("Trade amount must be positive");
+    if (
+      "positionId" in input &&
+      input.positionId &&
+      !input.positionId.equals(this.accountAddress())
+    )
+      throw new Error("Position does not belong to this wallet and market");
+    await this.ensureBalanceReady();
+    await this.ensureMarketReady();
+    let [market, protocol, account, app] = await Promise.all([
       this.market(),
       this.read<ProtocolState>("Protocol", this.protocolAddress),
       this.read<AccountState>("MarketAccount", this.accountAddress()),
       this.read<AppState>("AppConfig", appAddress(appId)),
     ]);
-    this.validateTrade(input, market.state, protocol, account, app, appId);
+    const deadline = tradeDeadline(
+      input,
+      Math.floor(Date.now() / 1_000),
+      market.state.config.maxOrderQueueSeconds
+    );
+    tradeLimit(input, "long", BigInt(market.state.oraclePriceE8.toString()));
+    this.validateTrade(
+      market.state,
+      protocol,
+      account,
+      app,
+      appId,
+      intent,
+      deadline
+    );
+    if (additionalMargin > 0n) {
+      const transfer = await this.funding.allocate(
+        additionalMargin,
+        clientNonce
+      );
+      const allocationDeadline = Date.now() + 120_000;
+      for (;;) {
+        const current = await transfer.status();
+        if (current.state === "settled") break;
+        if (current.state === "rejected" || current.state === "refunded")
+          throw new Error(
+            `Margin allocation ${transfer.id.toBase58()} ${current.state}`
+          );
+        if (current.state === "escrow") {
+          try {
+            await transfer.settle();
+          } catch (error) {
+            if ((await transfer.status()).state === "escrow") throw error;
+          }
+        }
+        if (Date.now() >= allocationDeadline)
+          throw new Error(
+            `Margin allocation ${transfer.id.toBase58()} is pending`
+          );
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
+      [market, protocol, account, app] = await Promise.all([
+        this.market(),
+        this.read<ProtocolState>("Protocol", this.protocolAddress),
+        this.read<AccountState>("MarketAccount", this.accountAddress()),
+        this.read<AppState>("AppConfig", appAddress(appId)),
+      ]);
+      this.validateTrade(
+        market.state,
+        protocol,
+        account,
+        app,
+        appId,
+        intent,
+        deadline
+      );
+    }
+    const position = await this.position.summary({ timeoutMs: 120_000 });
+    if (
+      position.status !== "ready" ||
+      position.collateral === undefined ||
+      position.position === undefined
+    )
+      throw new Error(
+        `Private position view ${position.id} is ${position.status}`
+      );
+    const currentSide = position.position > 0n ? "long" : "short";
+    const direction =
+      intent === "reduce" || intent === "close"
+        ? currentSide === "long"
+          ? "short"
+          : "long"
+        : (input as TradeInput).direction;
+    encodeSide(direction);
+    const worstPriceE8 = tradeLimit(
+      input,
+      direction,
+      BigInt(market.state.oraclePriceE8.toString())
+    );
+    if (
+      (intent === "reduce" || intent === "close" || intent === "reverse") &&
+      position.position === 0n
+    )
+      throw new Error("There is no position to manage");
+    if (
+      intent === "increase" &&
+      position.position !== 0n &&
+      direction !== currentSide
+    )
+      throw new Error("Use trade.reverse for an opposite-side position");
+    if (intent === "reverse" && direction === currentSide)
+      throw new Error("Reversal must choose the opposite side");
+    if (intent === "reduce")
+      amount = resolveAmount(
+        (input as ReductionInput).amount,
+        position.position < 0n ? -position.position : position.position,
+        "reduction"
+      );
+    u64(position.collateral, "collateral");
+    if (position.collateral === 0n)
+      throw new Error("The market account has no collateral");
     const quotes = market.state.activeQuotes.slice(
       0,
-      market.state.activeQuoteCount,
+      market.state.activeQuoteCount
     );
     if (quotes.length === 0) throw new Error("No active maker quote");
     const keys = [market.state.backstopOffer, ...quotes];
     const records = await this.options.connection.getMultipleAccountsInfo(
       keys,
-      "confirmed",
+      "confirmed"
     );
     records.forEach((info, index) => {
       if (!info?.owner.equals(DEPTH_PROGRAM_ID)) {
         throw new Error(`Market quote snapshot missing account ${index}`);
       }
     });
-    u64(input.positionVersion, "positionVersion");
-    if (account.version.toString() !== input.positionVersion.toString()) {
+    if (account.version.toString() !== position.version.toString()) {
       throw new Error("Position version changed; request a fresh private view");
     }
     const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
@@ -445,21 +838,21 @@ export class DepthClient {
     const inputKey = x25519.getPublicKey(secret);
     const inputNonce = randomBytes(16);
     const cipher = new RescueCipher(
-      x25519.getSharedSecret(secret, mxePublicKey),
+      x25519.getSharedSecret(secret, mxePublicKey)
     );
     const ciphertexts = cipher.encrypt(
       circuits.OrderInput.pack({
-        side: encodeSide(input.direction),
-        size: input.size,
-        margin: input.margin,
-        limit_price: input.worstPriceE8,
+        side: encodeSide(direction),
+        amount,
+        margin: position.collateral,
+        limit_price: worstPriceE8,
         max_fee: input.maxFee,
         intent: BigInt(
-          ["increase", "reduce", "close", "reverse"].indexOf(intent),
+          ["increase", "reduce", "close", "reverse"].indexOf(intent)
         ),
-        version: input.positionVersion,
+        version: position.version,
       }),
-      inputNonce,
+      inputNonce
     );
     const offset = nonce();
     const queue = await this.queue("match_order", offset);
@@ -470,12 +863,12 @@ export class DepthClient {
         appId,
         app.feeBps,
         app.version,
-        new anchor.BN(input.expiresAt),
+        new anchor.BN(deadline),
         market.state.revision,
         market.state.oracleTimestamp,
         ciphertexts,
         Array.from(inputKey),
-        new anchor.BN(inputNonce, "le"),
+        new anchor.BN(inputNonce, "le")
       )
       .accountsPartial({
         ...queue,
@@ -506,20 +899,28 @@ export class DepthClient {
       signature,
       this.program,
       this.options.connection,
-      (id) => this.requestFillView(id),
+      (id) => this.requestFillView(id)
     );
   }
 
   private validateTrade(
-    input: TradeInput,
     market: MarketState,
     protocol: ProtocolState,
     account: AccountState,
     app: AppState,
     appId: PublicKey,
+    intent: TradeIntent = "increase",
+    deadline: number
   ): void {
     const now = Math.floor(Date.now() / 1_000);
-    if (!protocol.tradingEnabled || enumName(market.status) !== "active") {
+    const marketStatus = enumName(market.status);
+    if (
+      (marketStatus !== "active" || !protocol.tradingEnabled) &&
+      !(
+        (intent === "reduce" || intent === "close") &&
+        marketStatus === "paused"
+      )
+    ) {
       throw new Error("Market is paused");
     }
     if (!app.active || !app.app.equals(appId)) {
@@ -540,8 +941,8 @@ export class DepthClient {
       throw new Error("Oracle update is stale");
     }
     if (
-      input.expiresAt <= now ||
-      input.expiresAt - now > market.config.maxOrderQueueSeconds
+      deadline <= now ||
+      deadline - now > market.config.maxOrderQueueSeconds
     ) {
       throw new Error("Order deadline is outside market policy");
     }

@@ -28,6 +28,14 @@ export type PendingPage = {
   nextCursor?: string;
 };
 
+export type UnpairedAllocation = {
+  id: PublicKey;
+  nonce: bigint;
+  amount: bigint;
+  status: string;
+  orderId: PublicKey;
+};
+
 type AccountName =
   | "depositReceipt"
   | "marginTransfer"
@@ -42,6 +50,7 @@ type AccountState = {
   status: Record<string, unknown>;
   kind?: Record<string, unknown>;
   toMarket?: boolean;
+  amount?: anchor.BN;
 };
 
 function status(state: AccountState): string {
@@ -52,13 +61,118 @@ export class FundingDiscovery {
   constructor(
     private readonly program: anchor.Program,
     private readonly connection: Connection,
-    private readonly owner: PublicKey,
+    private readonly owner: PublicKey
   ) {}
 
-  async pending(options: {
-    cursor?: string;
-    limit?: number;
-  } = {}): Promise<PendingPage> {
+  async unpairedAllocations(
+    options: {
+      cursor?: string;
+      limit?: number;
+    } = {}
+  ): Promise<{ items: UnpairedAllocation[]; nextCursor: string | null }> {
+    const limit = options.limit ?? 20;
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
+      throw new RangeError("limit must be an integer from 1 to 100");
+    const cursor = options.cursor
+      ? new PublicKey(options.cursor).toBase58()
+      : undefined;
+    const accounts = await this.connection.getProgramAccounts(
+      this.program.programId,
+      {
+        commitment: "confirmed",
+        dataSlice: { offset: 0, length: 0 },
+        filters: [
+          { memcmp: this.program.coder.accounts.memcmp("marginTransfer") },
+          {
+            memcmp: {
+              offset: accountOffsets.MarginTransfer.owner,
+              bytes: this.owner.toBase58(),
+            },
+          },
+        ],
+      }
+    );
+    const keys = accounts
+      .map(({ pubkey }) => pubkey)
+      .filter((id) => !cursor || id.toBase58() > cursor)
+      .sort((a, b) => a.toBase58().localeCompare(b.toBase58()));
+    const items: UnpairedAllocation[] = [];
+    let checked = 0;
+    while (checked < keys.length && items.length < limit) {
+      const chunk = keys.slice(checked, checked + 100);
+      const infos = await this.connection.getMultipleAccountsInfo(
+        chunk,
+        "confirmed"
+      );
+      const candidates: UnpairedAllocation[] = [];
+      infos.forEach((info, index) => {
+        const id = chunk[index];
+        if (!info?.owner.equals(this.program.programId))
+          throw new Error("Allocation changed during discovery");
+        const state = this.program.coder.accounts.decode<AccountState>(
+          "marginTransfer",
+          info.data
+        );
+        const nonce = BigInt(state.nonce.toString());
+        if (
+          !state.owner?.equals(this.owner) ||
+          !state.market?.equals(marketAddress(this.program.programId)) ||
+          !id.equals(transferAddress(this.owner, nonce, this.program.programId))
+        )
+          throw new Error("Allocation identity changed during discovery");
+        const current = status(state);
+        if (!state.toMarket || current !== "settled") return;
+        const orderId = PublicKey.findProgramAddressSync(
+          [
+            Buffer.from("order"),
+            state.market.toBuffer(),
+            this.owner.toBuffer(),
+            state.nonce.toArrayLike(Buffer, "le", 8),
+          ],
+          this.program.programId
+        )[0];
+        if (!state.amount) throw new Error("Allocation amount is unavailable");
+        candidates.push({
+          id,
+          nonce,
+          amount: BigInt(state.amount.toString()),
+          status: current,
+          orderId,
+        });
+      });
+      const orders = candidates.length
+        ? await this.connection.getMultipleAccountsInfo(
+            candidates.map((item) => item.orderId),
+            "confirmed"
+          )
+        : [];
+      const available = candidates.filter((item, index) => {
+        const order = orders[index];
+        if (order && !order.owner.equals(this.program.programId))
+          throw new Error("Order identity changed during discovery");
+        return !order;
+      });
+      const remaining = limit - items.length;
+      items.push(...available.slice(0, remaining));
+      if (available.length > remaining) {
+        const last = available[remaining - 1];
+        checked += chunk.findIndex((id) => id.equals(last.id)) + 1;
+        break;
+      }
+      checked += chunk.length;
+    }
+    return {
+      items: items.slice(0, limit),
+      nextCursor: checked < keys.length ? keys[checked - 1].toBase58() : null,
+    };
+  }
+
+  async pending(
+    options: {
+      cursor?: string;
+      limit?: number;
+    } = {}
+  ): Promise<PendingPage> {
     const limit = options.limit ?? 20;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
       throw new RangeError("limit must be an integer from 1 to 100");
@@ -100,13 +214,13 @@ export class FundingDiscovery {
                 },
               },
             ],
-          },
+          }
         ),
-      })),
+      }))
     );
     const keys = scans
       .flatMap(({ name, accounts }) =>
-        accounts.map(({ pubkey }) => ({ name, id: pubkey })),
+        accounts.map(({ pubkey }) => ({ name, id: pubkey }))
       )
       .filter(({ id }) => !cursor || id.toBase58() > cursor)
       .sort((a, b) => a.id.toBase58().localeCompare(b.id.toBase58()));
@@ -116,7 +230,7 @@ export class FundingDiscovery {
       const chunk = keys.slice(checked, checked + 100);
       const accounts = await this.connection.getMultipleAccountsInfo(
         chunk.map(({ id }) => id),
-        "confirmed",
+        "confirmed"
       );
       for (let index = 0; index < chunk.length; index += 1) {
         const entry = chunk[index];
@@ -126,7 +240,7 @@ export class FundingDiscovery {
           throw new Error("Pending account changed during discovery");
         const state = this.program.coder.accounts.decode<AccountState>(
           entry.name,
-          account.data,
+          account.data
         );
         const item = this.project(entry.name, entry.id, state);
         if (item) items.push(item);
@@ -144,7 +258,7 @@ export class FundingDiscovery {
   private project(
     name: AccountName,
     id: PublicKey,
-    state: AccountState,
+    state: AccountState
   ): PendingItem | undefined {
     const nonce = BigInt(state.nonce.toString());
     const current = status(state);
@@ -187,7 +301,7 @@ export class FundingDiscovery {
           this.owner.toBuffer(),
           bytes,
         ],
-        this.program.programId,
+        this.program.programId
       )[0];
       kind =
         Object.keys(state.kind ?? {})[0] === "liquidation" ? "risk" : "trade";
