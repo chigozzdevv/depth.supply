@@ -793,6 +793,21 @@ mod tests {
     }
 
     #[test]
+    fn maker_default_uses_insurance_before_haircutting_other_accounts() {
+        let entry = 20_000_000_000;
+        let mark = 30_000_000_000;
+        let maker = positive_equity(50_000_000, -1_000_000_000, entry, 0, mark, 0).unwrap();
+        let trader = positive_equity(50_000_000, 1_000_000_000, entry, 0, mark, 0).unwrap();
+        let other_maker = positive_equity(50_000_000, 0, 0, 0, mark, 0).unwrap();
+        assert_eq!((maker, trader, other_maker), (0, 150_000_000, 50_000_000));
+        let pool = 3 * 50_000_000 + 10_000_000;
+        let gross = maker + trader + other_maker;
+        let paid = [maker, trader, other_maker].map(|equity| payout(equity, pool, gross).unwrap());
+        assert_eq!(paid, [0, 120_000_000, 40_000_000]);
+        assert_eq!(paid.iter().sum::<u64>(), pool);
+    }
+
+    #[test]
     fn negative_equity_cannot_be_paid() {
         assert_eq!(
             positive_equity(10, 1, 200_000_000_000, 0, 100_000_000_000, 0).unwrap(),
