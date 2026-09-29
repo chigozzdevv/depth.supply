@@ -80,6 +80,16 @@ export class Harness {
         addressLookupTable: this.lookupTable,
       });
     } catch (error) {
+      console.error(error);
+      if (
+        error instanceof Error &&
+        "getLogs" in error &&
+        typeof error.getLogs === "function"
+      ) {
+        try {
+          console.error(await error.getLogs(this.provider.connection));
+        } catch {}
+      }
       throw new Error(`Failed to initialize ${name}: ${String(error)}`);
     }
     await uploadCircuit(

@@ -35,6 +35,18 @@ address = "Br7uuwx4Fpota9gQjs21GmY9bGXbxEgvcgMtPFVkTXKY"
 filename = "artifacts/localnet/price-second.json"
 
 [[test.validator.account]]
+address = "4P2wc9Vmjo6TErDdKYwZAkQMeV8EhQiTKg24rQEMwTs5"
+filename = "artifacts/localnet/price-exit.json"
+
+[[test.validator.account]]
+address = "6aSZJFsyQKiwfwLyNHsmrdHcLxtvetxzwpV7FuT5JkhD"
+filename = "artifacts/localnet/price-renewal.json"
+
+[[test.validator.account]]
+address = "EDrazymysNmmVkstyJ4dhTKNryfuGHjJWFY6eWowdJaf"
+filename = "artifacts/localnet/price-risk.json"
+
+[[test.validator.account]]
 address = "27X4fVvv5yP45ydHuVNHiekYuiZPC8tmEjVQAeoHxjU5"
 filename = "artifacts/localnet/price-crash.json"
 

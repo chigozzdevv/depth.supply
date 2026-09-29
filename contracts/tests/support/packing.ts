@@ -26,3 +26,16 @@ export async function unpackMarket(packed: bigint[]): Promise<MarketState> {
     salt: second & mask128,
   };
 }
+
+export function packQuoteCurve(prices: bigint[]): bigint[] {
+  if (prices.length !== 8) throw new RangeError("Quote requires eight prices");
+  const reciprocal = prices.map((price) =>
+    price === 0n ? 0n : (1n << 76n) / price
+  );
+  const fields = [...prices, ...reciprocal];
+  const words = Array<bigint>(6).fill(0n);
+  fields.forEach((field, index) => {
+    words[Math.floor(index / 3)] |= field << (BigInt(index % 3) * 64n);
+  });
+  return words;
+}

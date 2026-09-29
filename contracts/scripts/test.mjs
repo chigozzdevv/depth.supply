@@ -54,6 +54,36 @@ function writeOracleFixture() {
     now + 100n,
     "price-second"
   );
+  const exitAddress = Keypair.fromSeed(
+    createHash("sha256").update("depth.oracle.exit.v1").digest()
+  ).publicKey.toBase58();
+  writePriceUpdate(
+    exitAddress,
+    20_000_000_000n,
+    20_000_000n,
+    now + 300n,
+    "price-exit"
+  );
+  const renewalAddress = Keypair.fromSeed(
+    createHash("sha256").update("depth.oracle.renewal.v1").digest()
+  ).publicKey.toBase58();
+  writePriceUpdate(
+    renewalAddress,
+    20_000_000_000n,
+    20_000_000n,
+    now + 450n,
+    "price-renewal"
+  );
+  const riskAddress = Keypair.fromSeed(
+    createHash("sha256").update("depth.oracle.risk.v1").digest()
+  ).publicKey.toBase58();
+  writePriceUpdate(
+    riskAddress,
+    20_000_000_000n,
+    20_000_000n,
+    now + 600n,
+    "price-risk"
+  );
   const crashAddress = Keypair.fromSeed(
     createHash("sha256").update("depth.oracle.crash.v1").digest()
   ).publicKey.toBase58();
@@ -61,7 +91,7 @@ function writeOracleFixture() {
     crashAddress,
     100_000_000n,
     1_000_000n,
-    now + 101n,
+    now + 750n,
     "price-crash"
   );
   const followupAddress = Keypair.fromSeed(
@@ -71,7 +101,7 @@ function writeOracleFixture() {
     followupAddress,
     100_000_000n,
     1_000_000n,
-    now + 102n,
+    now + 751n,
     "price-followup"
   );
 }

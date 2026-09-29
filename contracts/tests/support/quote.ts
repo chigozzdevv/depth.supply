@@ -21,7 +21,7 @@ import { expect } from "chai";
 import { randomBytes } from "crypto";
 import * as fs from "fs";
 import { Depth } from "@/target/types/depth";
-import { unpackMarket } from "@/tests/support/packing";
+import { packQuoteCurve, unpackMarket } from "@/tests/support/packing";
 import { recoveryPrivateKey } from "@/tests/keys";
 
 const oracle = new PublicKey("3RW84c8AwWtLCVyETK2Xtruo9YsgFnMMt6uW2cDN4mzV");
@@ -34,6 +34,10 @@ export async function exerciseQuote(
   marketAccount: PublicKey
 ) {
   const owner = provider.wallet.publicKey;
+  const quoteQueue = PublicKey.findProgramAddressSync(
+    [Buffer.from("quote-queue"), market.toBuffer()],
+    program.programId
+  )[0];
   const mxeAccount = getMXEAccAddress(program.programId);
   const mxe = await getArciumProgram(provider).account.mxeAccount.fetch(
     mxeAccount
@@ -119,7 +123,7 @@ export async function exerciseQuote(
   );
   const inputNonceBytes = randomBytes(16);
   const ciphertexts = cipher.encrypt(
-    [19_900_000_000n, 0n, 0n, 0n, 20_100_000_000n, 0n, 0n, 0n],
+    packQuoteCurve([19_900_000_000n, 0n, 0n, 0n, 20_100_000_000n, 0n, 0n, 0n]),
     inputNonceBytes
   );
   const quoteNonce = new anchor.BN(77);
@@ -179,6 +183,9 @@ export async function exerciseQuote(
       marketAccount,
       quote,
     })
+    .remainingAccounts([
+      { pubkey: quoteQueue, isSigner: false, isWritable: true },
+    ])
     .rpc({ skipPreflight: true, commitment: "confirmed" });
   await finalize(reserveOffset);
   quoteState = await program.account.quoteRecord.fetch(quote);
@@ -206,7 +213,7 @@ export async function exerciseQuote(
 
   await program.methods
     .stopQuote()
-    .accountsPartial({ actor: owner, market, grant: null, quote })
+    .accountsPartial({ actor: owner, market, quoteQueue, grant: null, quote })
     .rpc();
   quoteState = await program.account.quoteRecord.fetch(quote);
   expect(quoteState.status).to.deep.equal({ closing: {} });

@@ -22,6 +22,10 @@ describe("SOL perpetual market", () => {
     [Buffer.from("market"), SOL_USD_FEED_ID],
     program.programId
   );
+  const [quoteQueue] = anchor.web3.PublicKey.findProgramAddressSync(
+    [Buffer.from("quote-queue"), market.toBuffer()],
+    program.programId
+  );
   const config = {
     initialMarginBps: 1_000,
     maintenanceMarginBps: 500,
@@ -52,7 +56,7 @@ describe("SOL perpetual market", () => {
         anchor.web3.PublicKey.unique(),
         anchor.web3.PublicKey.unique(),
       ])
-      .accountsPartial({ authority, protocol, market })
+      .accountsPartial({ authority, protocol, market, quoteQueue })
       .rpc();
 
     const stored = await program.account.market.fetch(market);

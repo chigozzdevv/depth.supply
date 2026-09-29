@@ -10,7 +10,8 @@
     "paths": {
       "@/*": ["./*"],
       "@/circuits": ["../packages/bindings/src/circuits.ts"],
-      "@/sdk": ["../packages/sdk/dist/index.js"]
+      "@/sdk": ["../packages/sdk/dist/index.js"],
+      "@/maker": ["../packages/maker-sdk/dist/index.js"]
     }
   },
   "exclude": ["build", "target", "node_modules"]
