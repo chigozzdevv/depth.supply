@@ -773,6 +773,26 @@ mod tests {
     }
 
     #[test]
+    fn default_payouts_are_pro_rata_across_multiple_accounts() {
+        let equities = [70u128, 50, 30];
+        let gross = equities.iter().sum();
+        let pool = 100u64;
+        let paid: Vec<u64> = equities
+            .iter()
+            .map(|equity| payout(*equity, pool, gross).unwrap())
+            .collect();
+        assert_eq!(paid, [46, 33, 20]);
+        assert_eq!(paid.iter().sum::<u64>(), 99);
+        assert!(paid.iter().sum::<u64>() <= pool);
+        let reversed: Vec<u64> = equities
+            .iter()
+            .rev()
+            .map(|equity| payout(*equity, pool, gross).unwrap())
+            .collect();
+        assert_eq!(reversed, [20, 33, 46]);
+    }
+
+    #[test]
     fn negative_equity_cannot_be_paid() {
         assert_eq!(
             positive_equity(10, 1, 200_000_000_000, 0, 100_000_000_000, 0).unwrap(),
