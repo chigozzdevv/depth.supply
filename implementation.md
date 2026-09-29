@@ -1,278 +1,89 @@
 # Depth implementation status
 
-Reviewed on 2026-09-27 against the repository source, local tests, and the
-updated [product specification](depth.md).
+Reviewed on 2026-09-29 against [depth.md](depth.md), the repository source,
+and local tests; public devnet accounts were checked on 2026-09-29. The SDK examples in `depth.md`
+remain the target API. A passing local suite does not establish a deployed or
+economically safe market.
 
-The program and encrypted circuits contain substantial working protocol logic.
-The complete integration flow in the SDK specification is not implemented yet,
-and several contract behaviors still differ from that specification. Remaining
-work includes implementation and verification, not only deployment.
+## Implemented
 
-This report distinguishes existing code, missing behavior, and proof that still
-needs to be produced. Source inspection and passing TypeScript tests do not
-establish production readiness.
-
-## Existing implementation
-
-| Area | What exists | Source |
+| Area | Current behavior | Source |
 | --- | --- | --- |
-| Custody | Token deposits, pending private credit, refund paths, private balance checks, persistent withdrawal receipts, and keeper continuation of authorized deposit and margin receipts. | [Vault](contracts/programs/depth/src/instructions/vault.rs), [credit](contracts/programs/depth/src/instructions/credit.rs), [margin continuation](contracts/programs/depth/src/instructions/margin_in.rs), [funding worker](server/src/features/funding/funding.service.ts). |
-| Private accounting | Encrypted free and market balances, margin transfers, positions, clearing state, and authorized balance and position views. | [Arcis circuits](contracts/encrypted-ixs/src/lib.rs), [margin instructions](contracts/programs/depth/src/instructions/margin.rs), [SDK views](packages/sdk/src/view/view.ts). |
-| Trading | Encrypted quote validation, capacity reservation, complete bounded quote snapshots, best-price selection, intent checks, settlement, PnL, and funding accounting. | [Orders](contracts/programs/depth/src/instructions/order.rs), [reservations](contracts/programs/depth/src/instructions/reserve.rs), [settlement](contracts/programs/depth/src/instructions/settlement.rs), [commit](contracts/programs/depth/src/instructions/commit.rs). |
-| Economics | The locked 5 bps base schedule, configurable 0–2 bps app fee, maker rebate, private fee claims, and recipient balance credit. | [App configuration](contracts/programs/depth/src/instructions/app.rs), [fee instructions](contracts/programs/depth/src/instructions/fees.rs), [circuits](contracts/encrypted-ixs/src/lib.rs), [fee worker](server/src/features/fee/fee.service.ts). |
-| Risk | Pyth update validation, margin checks, funding advancement, pause after missed funding intervals, private reduction and close checks during a pause, backstop offers, liquidation, insurance accounting, and emergency payout calculation. | [Oracle validation](contracts/programs/depth/src/oracle.rs), [market](contracts/programs/depth/src/instructions/market.rs), [orders](contracts/programs/depth/src/instructions/order.rs), [backstop](contracts/programs/depth/src/instructions/backstop.rs), [liquidation](contracts/programs/depth/src/instructions/liquidation.rs). |
-| Recovery | Recovery ciphertexts and commitments, committee signature checks, market-wide reveal and reconciliation, pro rata payouts, separate fee claims, and one-time payout records. | [Recovery](contracts/programs/depth/src/instructions/recovery.rs), [winddown](contracts/programs/depth/src/instructions/winddown.rs), [SDK recovery](packages/sdk/src/recovery/recovery.ts), [operator tooling](packages/sdk/src/recovery/winddown.ts). |
-| Maker operations | Owner funding, independent view-only grants, grant listing, flat or tiered quote publication, activation, replacement, cancellation, owner backstop offer and release handles, private fill retrieval, and finalized fill pagination. | [Operator rules](contracts/programs/depth/src/instructions/operator.rs), [maker client](packages/maker-sdk/src/client/client.ts), [quote handle](packages/maker-sdk/src/quote/quote.ts), [backstop handle](packages/maker-sdk/src/backstop/backstop.ts), [fill history](packages/maker-sdk/src/fill/history.ts). |
-| SDK foundations | Generated bindings, encrypted input packing, signed manifest verification, onchain owner discovery of pending receipts, private view decryption, app registration and fee administration, order polling, and retryable read errors. | [Bindings](packages/bindings), [discovery](packages/sdk/src/account/discovery.ts), [app SDK](packages/sdk/src/app/app.ts), [SDK](packages/sdk/src), [schema](packages/schema). |
-| Server | Fastify public market, app, quote, operation, and recovery reads, including complete onchain market policy; settlement, funding, risk, fee, and oracle workers. Features live under `src/features` and infrastructure under `src/shared`. | [Server composition](server/src/app.ts), [features](server/src/features), [shared services](server/src/shared). |
+| Custody and privacy | SPL USDC vault deposits, encrypted free and market accounts, escrowed margin transfers, withdrawals, authenticated private views, and onchain recovery commitments. Public transfers still expose amount, wallet, and timing metadata. | [Vault](contracts/programs/depth/src/instructions/vault.rs), [circuits](contracts/encrypted-ixs/src/lib.rs), [private views](packages/sdk/src/view/view.ts) |
+| Trading and economics | Confidential best-price matching, USDC execution notional for entry and reversal, SOL quantity for reduction, full close, trade fees, app fees, maker rebate, insurance, funding, and liquidation. A reversal closes the old quantity and opens the requested new-side notional. | [circuits](contracts/encrypted-ixs/src/lib.rs), [order submission](packages/sdk/src/client/client.ts), [settlement](contracts/programs/depth/src/instructions/settlement.rs) |
+| Quote lifecycle | Encrypted remaining capacity and reserve survive a partial fill. The public capacity envelope stays unchanged while the quote is active. A bounded FIFO queue admits waiting quotes as slots become available, and a private quote view lets an authorized maker inspect its actual remaining capacity. | [quote state](contracts/programs/depth/src/state/mod.rs), [quote instructions](contracts/programs/depth/src/instructions/reserve.rs), [quote view](contracts/programs/depth/src/instructions/quote_view.rs), [keeper](server/src/features/quote/quote.worker.ts) |
+| Failure reporting | Market incident reasons are recorded onchain and included in the public market projection. Paused markets allow only the encrypted reduction and close path subject to fresh oracle and solvency checks. | [market](contracts/programs/depth/src/instructions/market.rs), [projection](server/src/features/market/market.model.ts) |
+| Trader SDK | App registration, market policy reads, owner funding, token account selection, deposit and transfer confirmation, amount selectors, private account and position views, slippage/deadline bounds, margin allocation before trading, order handles, and private fill results. | [client](packages/sdk/src/client/client.ts), [funding](packages/sdk/src/account/funding.ts), [catalog](packages/sdk/src/catalog/catalog.ts), [operations](packages/sdk/src/operation/operation.ts) |
+| Maker SDK | Owner account and trade delegation, grant-scoped quote operations, onchain quote discovery, private quote capacity, private fills, backstop handles, and finalized fill polling with an atomic, per-maker and per-network cursor file. | [maker client](packages/maker-sdk/src/client/client.ts), [quote](packages/maker-sdk/src/quote/quote.ts), [fill history](packages/maker-sdk/src/fill/history.ts) |
+| Recovery tooling | Five encrypted committee envelopes with a three-share threshold, independent share opening, commitment-checked witness reads, and a coordinator that scans every market account and unclaimed fee record before revealing and finalizing an already authorized winddown. | [shares](packages/sdk/src/recovery/shares.ts), [witnesses](packages/sdk/src/recovery/witness.ts), [coordinator](packages/sdk/src/recovery/coordinator.ts), [winddown](packages/sdk/src/recovery/winddown.ts) |
+| Server | Fastify public reads and keeper workers for funding, settlement, fees, risk, quote admission, and oracle ingestion. A separate publisher fetches Hermes proofs, submits Pyth receiver updates, checks the confirmed feed account, and exposes a freshness health endpoint. | [features](server/src/features), [publisher](server/src/features/oracle/oracle.publisher.ts), [config](server/src/shared/config/env.ts) |
 
-“Exists” describes source functionality and associated test code. It does not
-mean every economic scenario or deployment has been validated.
+## Remaining implementation
 
-Paused markets admit a new order only through the encrypted reduce or close
-intent check; an increase is rejected by the match circuit. The same pause
-eligibility is checked through settlement and commit. A pre-pause matched
-trade can be cancelled immediately so its owner can request a safe exit.
-These paths still require a fresh oracle, an active quote, a working Arcium
-cluster, and settlement risk approval.
+1. **Complete public SDK lifecycle.** `create_depth({ environment, wallet,
+   appId? })` and `create_depth_maker` still require a caller-supplied RPC
+   connection and deployment policy. The packages are Node-oriented, import
+   `node:crypto`, and remain private. Browser wallet delivery, a signed
+   environment registry, release packaging, common `{ prepare: true }`
+   reviews, root-to-child operation recovery, typed receipts for every
+   mutation, and full preparation costs are not implemented. The current
+   owner transfer and trade helpers do not meet every example in `depth.md`.
+2. **Trade allocation recovery.** The SDK allocates approved additional
+   margin before submitting a trade and never silently deposits more. If a
+   later step fails, the allocation remains legitimate collateral, but the
+   high-level operation does not yet return a durable child receipt and
+   explicit recovery action across browser restarts. Settled allocations
+   without a matching order are now discoverable onchain, but a standalone
+   allocation is indistinguishable from a trade allocation without the
+   original prepared intent. Exact client nonces and canonical transfer
+   receipts need one reconciled operation flow. The circuit remains the final
+   authority for release safety.
+3. **Quote and fill restart behavior.** The onchain waiting queue and private
+   residual balance are implemented, and a maker can rediscover its submitted
+   quote records from chain. Quote publication/replacement still has no
+   single prepared root operation that records the child quote and release
+   steps. Managed maker fill polling persists its cursor after the handler
+   succeeds; browser persistence, orphaned temporary-view cleanup, and a
+   real external hedge crash/partial-fill rehearsal remain.
+4. **Oracle liveness.** The Hermes/Pyth receiver publisher is implemented and
+   tested locally but has not been run against a public cluster. It requires a
+   Hermes API key, a funded publisher signer, a compatible feed account, a
+   process supervisor, and external alerting. Its health endpoint measures feed
+   freshness; a live transaction and sustained liveness record remain required.
+5. **Independent committee operation.** Code creates envelopes for five
+   distinct recipient keys and reconstructs only from three shares. Real
+   committee identities, separate key custody, distribution attestations,
+   signer collection, incident authorization, a full no-MXE rehearsal, and
+   secure destruction are operational work. The local test's three member
+   keys still run within one fixture process, so it does not prove independent
+   custody.
+6. **Economic and privacy proofs.** The live fixture exercises one trader and
+   maker. Fee conservation, a four-quote order's serialized size, and pro rata
+   payout arithmetic have tests. Dedicated multi-maker closes, maker default
+   combinations, maximum four-quote callback execution and cost, sustained
+   throughput, protocol revenue against Arcium fees, and measured
+   wallet/amount/timing inference remain acceptance gates in `depth.md`.
+7. **Deployment.** The signed manifest capture and verifier exist, but the
+   Depth program was not found on public devnet in the 2026-09-29 check. The
+   Arcium CLI listed no devnet cluster with available capacity at that check.
+   The configured Solana signer path does not exist, and the local test wallet
+   has 0 SOL on devnet. This workspace has no funded release signer or Hermes
+   key. There is no verified deployed MXE, live market, published SDK, keeper fleet,
+   publisher, funded insurance, or external security review to cite. The
+   deferred hosted client is outside this implementation pass.
 
-## Contract and circuit gaps
+## Verification
 
-### 1. Execution notional and reversal semantics differ
-
-The current `TradeInput.size` and encrypted `OrderInput.size` are SOL base
-quantity. Matching multiplies this quantity by the selected price to obtain
-notional. A reverse input is the entire opposite-side quantity and must exceed
-the existing absolute position.
-
-The target accepts USDC notional; a reverse specifies the final new-side
-exposure. This requires confidential conversion, rounding, limit checks, and
-consistent packing and receipts. Estimating base quantity from an oracle in
-the SDK would not implement execution-price notional.
-
-Evidence: [TradeInput](packages/sdk/src/client/types.ts),
-[match_order circuit](contracts/encrypted-ixs/src/lib.rs).
-
-### 2. Additional-margin orchestration is absent
-
-Current `margin` is a checked collateral budget: matching compares required
-margin plus fees to it, and settlement checks it against trader collateral.
-Submitting a trade does not allocate that amount from free balance.
-
-The target `margin` means additional collateral for this action. The SDK
-needs real allocation-to-trade orchestration, correct internal budgeting,
-recovery when allocation succeeds but the trade fails, and derived close and
-reduction budgets. Passing the new margin field straight into the old circuit
-would be incorrect.
-
-Evidence: [trade submission](packages/sdk/src/client/client.ts),
-[match and settlement circuits](contracts/encrypted-ixs/src/lib.rs).
-
-### 3. A quote is retired after its first fill
-
-Final trade commit removes the selected quote from active quotes, subtracts
-its entire public capacity envelope, sets `remaining_capacity = 0`, and marks
-it `Filled`. It does not keep unused capacity active until cancellation or
-expiry as the documented lifecycle implies.
-
-Required work: resolve the specified residual-capacity behavior in the private
-reservation and settlement logic, including attached orders, maker margin,
-expiry, and cancellation. Publicly decrementing capacity by exact fill size
-would undermine the privacy requirement; it is not an acceptable shortcut.
-
-Evidence: trade branch of
-[seal_clearing_callback_handler](contracts/programs/depth/src/instructions/commit.rs)
-and [settle_trade](contracts/encrypted-ixs/src/lib.rs).
-
-### 4. Quote overflow does not have the documented waiting queue
-
-The active snapshot is bounded to four quotes. Reservation rejects
-`QuoteSnapshotFull` when it is full. Active quotes are deterministically
-sorted, but there is no implemented waiting/admission queue that automatically
-offers excess quotes a later snapshot as the specification describes.
-
-Required work: define and implement that queue's admission, expiry, capacity,
-and retry behavior, or explicitly revise the product requirement before
-claiming it is implemented.
-
-Evidence: [reserve_quote_handler and callback](contracts/programs/depth/src/instructions/reserve.rs).
-
-### 5. Incident states are less specific than the specification
-
-`MarketStatus` is `Draft`, `Active`, `Paused`, or `Settling`. It does not
-persist the distinct public oracle, cluster, collateral-deficit, and callback
-incident states described in the failure policy.
-
-Required work: canonical reason and recovery eligibility reporting, including
-clear authority for recording and clearing each condition. UI guesses from
-an RPC error cannot establish why a market is paused.
-
-Evidence: [MarketStatus](contracts/programs/depth/src/state/mod.rs),
-[pause and resume](contracts/programs/depth/src/instructions/market.rs).
-
-## SDK gaps
-
-| Required public flow | Current implementation | Remaining work |
-| --- | --- | --- |
-| `create_depth({ environment, wallet, appId? })` | The `create_depth` alias and optional app ID work for low-level options. RPC connection and deployment policy remain explicit; wallet type is Anchor's wallet. | Trusted environment resolution, supported browser wallet capabilities, advanced overrides, and environment errors. |
-| `create_depth_maker` | The agreed alias is exported; maker owner, RPC, and deployment remain explicit. | Environment-based owner/operator construction and browser-compatible signing where applicable. |
-| App registration and administration | `app.register/summary/setFee/setActive` are implemented. Registration confirmation initializes and waits for a private fee balance and can resume with the owner wallet. | Common operation status and preparation, richer earned/pending/withdrawable revenue summaries, and integration proof for fee-account onboarding. |
-| `account()` and `position(id)` | They are fixed objects; funding methods take token-account addresses, amounts, and nonces. | Resource handles, token/account initialization, nonce generation and reconciliation, and complete actor-consistent workflows. |
-| `"all"` and percentage amounts | Only explicit bigint funding amounts exist. | Fresh private available amounts, basis-specific integer parsing and rounding, reservation checks, and stale-review handling. |
-| `prepare: true` and cost review | No common preparation interface exists. | Side-effect boundaries, resolved terms, policy and account versions, approval steps, cost estimates, signed limits, and revalidation. |
-| Slippage, durations, position-derived exits | Callers provide direction, size, total margin budget, price bound, expiry, nonce, and position version. | Slippage conversion, `validForSeconds`, private current-position reads, exact close/reduce/reverse semantics, and circuit work above. |
-| Common operations and default confirmation | `DepthOperation` reads order records and exposes status/subscribe/wait/confirm with a default timeout and typed terminal errors; filled trades expose private results and eligible orders expose owner cancellation. Funding and quote handles have separate lifecycles. | A shared lifecycle for all operation kinds, explicit capability checks, child receipt relationships, and consistent errors. |
-| Cross-browser discovery | `account.pending({cursor,limit})` scans confirmed owner deposit, transfer, withdrawal, and order accounts, checks their canonical addresses, and pages pending IDs and nonces; fresh private views can recover current balances and positions. | Unified operation restoration for every receipt kind, historical discovery, a durable event index, and complete authorized position discovery. |
-| Account and position summaries | Trader summary methods request private views and return their decoded lifecycle snapshots. | Derived available amounts, pending funds and revenue, quote reservations, fee claims, current health, freshness, and unified maker summaries. |
-| Trader private fill result | `DepthOperation.privateResult()` requests the trader-authorized contract view, decrypts the final fill, resumes a pending view on the same handle, and closes it after reading. | Real localnet integration proof, durable cleanup of orphaned views after process loss, and a common result interface across operation kinds. |
-| Complete maker fill context | `FillSnapshot` contains side, size, margin, execution price, fees, and rebate. It does not include the documented funding checkpoint, resulting position change, or remaining capacity. | Supply the promised context bound to that fill's versions; a later current-position read cannot stand in for historical fill state. |
-| Flat maker quotes | Publication derives eligible policy tiers from a flat bid and ask, accepts a duration, generates a nonce, and returns a handle without waiting for validation. Explicit tier publication remains available. Quote handles expose `confirm()` and capacity. | Uniform preparation, durable pending-quote discovery, and a recoverable replacement operation with no hidden inactive interval. |
-| Maker owner trading and backstop | Owner funding, grant/revoke/list, quote handles, private views, and owner backstop offer/status/release/close handles exist. The contract backstop path passes a local Arcium integration test. | Owner trade facade, simple grant renewal, shared account/position summaries, and an integration test of the maker SDK facade. |
-| Managed fill consumption | Finalized pagination and replay exist; the caller supplies cursor persistence and performs separate private fill reads. | Default durable storage, per-owner/environment cursor isolation, private `onFill` delivery, and restart/error handling. External hedge idempotency remains the maker's responsibility. |
-| Browser and package delivery | Build script targets Node; runtime imports `node:crypto`; SDK packages are marked private. | Browser-compatible runtime and exports, package build/install tests, release configuration, and published distribution. |
-| View retention and cleanup | Views can be closed through lower-level handles; summary methods create fresh views. | Managed lifecycle and explicit authorized cleanup, rent reporting, and recovery guarantees without retaining view secrets. |
-
-Evidence:
-[SDK options](packages/sdk/src/client/types.ts),
-[SDK client](packages/sdk/src/client/client.ts),
-[operation handle](packages/sdk/src/operation/operation.ts),
-[funding handles](packages/sdk/src/account/funding.ts),
-[pending discovery](packages/sdk/src/account/discovery.ts),
-[view handles](packages/sdk/src/view/view.ts),
-[maker options](packages/maker-sdk/src/client/types.ts),
-[maker client](packages/maker-sdk/src/client/client.ts),
-[fill history](packages/maker-sdk/src/fill/history.ts),
-[build script](scripts/build-package.mjs),
-[SDK package](packages/sdk/package.json),
-[maker package](packages/maker-sdk/package.json).
-
-## Server and operational gaps
-
-- **Owner discovery and public history:** The SDK scans owner pending receipts
-  directly from confirmed onchain accounts. Public routes still read specific
-  accounts; a durable historical index and complete owner position discovery
-  are absent. Public event subscriptions and signed webhooks are optional
-  extensions, also absent.
-- **Market policy access:** The market response projects onchain quote tiers,
-  limits, oracle rules, fees, and funding schedule. The target SDK catalog
-  facade still needs to consume and verify this response.
-- **Pyth update publishing:** `OracleService` validates and consumes a
-  configured Pyth update account. It does not fetch and publish fresh Pyth
-  updates. Provision and verify an external publisher or implement this
-  service; the existing worker alone does not maintain the upstream feed.
-- **Continuation coverage:** Settlement, fee, risk, oracle, and funding workers
-  exist. Deposit credit and escrowed margin transfers can now be advanced by
-  the keeper without the owner signer. Complete quote/workflow recovery and
-  root-to-child SDK progress remain to implement and prove.
-- **App profiles and hosted integration:** Optional name/origin/callback
-  profiles and their verification are absent. The hosted UI and its exact
-  origin message protocol remain deferred under the instruction to leave
-  the client alone.
-
-Evidence: [registered routes and services](server/src/app.ts),
-[market model](server/src/features/market/market.model.ts),
-[market service](server/src/features/market/market.service.ts),
-[oracle worker](server/src/features/oracle/oracle.service.ts),
-[funding worker](server/src/features/funding/funding.service.ts),
-[settlement worker](server/src/features/settlement/settlement.worker.ts),
-[app model](server/src/features/app/app.model.ts).
-
-## Recovery, privacy, and launch proofs
-
-1. **Independent recovery custody:** The program checks three of five
-   committee signatures and committed recovery states. Tests decrypt recovery
-   witnesses using one complete recovery private key from
-   [keys.ts](contracts/tests/keys.ts), with transaction signers tested
-   separately in [trade.ts](contracts/tests/trade.ts). No independent share
-   creation, custody, reconstruction or threshold-decryption workflow was
-   found. The [winddown SDK](packages/sdk/src/recovery/winddown.ts) consumes
-   already decrypted witnesses. Real committee recovery and MXE migration
-   need operational tooling and rehearsal.
-2. **Privacy measurement:** Public margin-transfer records contain amount and
-   transfer direction in [MarginTransfer](contracts/programs/depth/src/state/mod.rs).
-   The specification now explicitly acknowledges this. Positions remain
-   encrypted, but correlations between these amounts, wallet activity,
-   maker identity, timing, and liquidation events have not been measured in
-   this audit. No complete measured privacy claim follows from ciphertext
-   storage alone.
-3. **Multi-maker economic scenarios:** The integration trade fixture exercises
-   a trader and a maker. It does not demonstrate the specified close through
-   a different maker with the old maker's unrealized loss, or broad maker
-   default and insolvency combinations. These need dedicated conservation
-   assertions covering clearing, insurance, and every fee recipient.
-4. **Maximum-state execution and economics:** The SDK wire test checks an
-   order with four quote addresses against transaction size limits. That is
-   not proof of a real four-maker competition, maximum callback/state sizes,
-   sustained throughput, Arcium queue latency, or total cost per completed
-   lifecycle. Fee profitability and market risk calibration still require
-   measured costs, liquidity, insurance funding, and stress results.
-5. **Failure and restart exercises:** Real browser wallet rejection,
-   rediscovery on another device, the complete prepared-operation lifecycle,
-   keeper completion after disconnect, and maker crash around a private fill
-   and external hedge need end-to-end coverage. Existing replay unit tests
-   do not cover an external venue's partial fills or outages.
-6. **Deployment and release verification:** This review did not verify a live
-   devnet/mainnet deployment, signed public environment manifest, working
-   publisher/keeper fleet, independent security review, or published SDK.
-   Existing deployment and manifest primitives are not evidence that these
-   launch gates are complete.
-
-## Deliberate scope boundaries
-
-These are not unexpected missing first-release features:
-
-- Additional markets beyond the approved SOL perpetual settled in USDC.
-- A hosted trading or maker UI while client work is deferred.
-- Token-2022 confidential transfer support for another custody integration.
-- A maker's proprietary pricing, external venue credentials, or hedge strategy.
-- Private ranked auto-deleveraging: the specification explicitly selects
-  committee-authorized winddown and pro rata haircut as the current fallback.
-- Optional signed webhooks and direct fill sealing in the settlement callback.
-
-## Verification during this review
-
-- `pnpm test` passed: **40 TypeScript tests**, comprising 18 trader SDK,
-  8 maker SDK, and 14 server tests.
-- `pnpm typecheck` passed across bindings, schema, both SDKs, and server.
+- `pnpm build`, `pnpm typecheck`, and `pnpm test` pass locally: 28 trader SDK,
+  11 maker SDK, and 18 server tests at this revision.
 - `cargo test --manifest-path contracts/Cargo.toml -p depth --lib --offline`
-  passed all **13 contract unit tests**, including view-only grants.
-- All 15 TypeScript documentation examples passed syntax checks; they were
-  not type-checked against the incomplete target API. Markdown fences and
-  local source links were checked, and `git diff --check` passed.
-- TypeScript tests cover selected codecs, mocked RPC transitions, views,
-  manifest checks, quote and fill handling, and server behavior. They do not
-  execute the complete protocol on a live deployment.
-- The pinned `contracts/scripts/test.mjs` wrapper generated fresh oracle
-  fixtures and ran the live Arcium/Solana integration suites on this host:
-  **4 base tests** and **1 trade test** passed. The trade test executes deposits,
-  private matching, a pause-safe close, matched-order cancellation, settlement,
-  fees, liquidation, backstop, and emergency winddown with real callbacks.
-  These fixtures cover one trader and maker, not
-  the maximum market state or independent recovery custody.
-- One earlier trade run exceeded Solana's default 200,000 compute units on an
-  encrypted submission. The SDK, maker SDK, server, and direct integration
-  provider now add a 400,000-unit limit for queued Depth instructions unless
-  the caller supplied a limit. The live trade suite passed with this change;
-  the maximum four-quote transaction still fits the serialized size limit.
-- The current revision implements the keeper continuation, view-only
-  grant, app administration, pending discovery, full market projection, and
-  flat maker quote, owner backstop, and trader fill-result changes described above.
-  The rest of the target API remains pending.
+  passed 15 Rust unit tests. `pnpm --dir contracts typecheck` passed. Live
+  Arcium runs compile the contract and encrypted circuits.
+- Docker-backed Solana and Arcium base tests passed all four cases on
+  2026-09-29. The separate confidential trade case passed end to end on
+  2026-09-29 in 13 minutes, including settlement, margin operations, risk
+  checks, and committee winddown. Oracle fixture timing and a malformed
+  recovery RPC filter found in earlier runs were corrected before this pass.
 
-## Implementation order
-
-1. Fix the remaining contract and circuit semantics: notional/reversal
-   accounting, quote capacity and overflow, and incident reporting. Prove
-   keeper continuation and view scopes in integration tests.
-2. Build the SDK foundation: browser and Node wallets, trusted environment
-   resolution, common prepared operations, durable recovery, and amount rules.
-3. Complete app, trader, and maker flows using those primitives, including
-   summaries, backstop, fee receipt onboarding, and managed fills.
-4. Add discovery and continuation services, provision price publishing, and
-   implement independent committee recovery operations.
-5. Prove the complete flows on real local Arcium/Solana execution, then verify
-   a deployed environment, costs, privacy limits, and release artifacts.
-
-The first implementation milestone should pair each changed contract rule with
-its meaningful tests and the SDK adapter that consumes it. Cosmetic wrappers
-over the current semantics would leave the documented behavior incorrect.
+The source and local tests support further integration work. They do not yet
+support the complete SDK flow or a real-collateral launch claim.
