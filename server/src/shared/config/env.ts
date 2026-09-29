@@ -1,5 +1,6 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
+import { readFileSync } from "node:fs";
 
 export type ServerConfig = { rpcUrl: string; host: string; port: number };
 export type KeeperConfig = {
@@ -41,10 +42,18 @@ export function keeperConfig(
   env: NodeJS.ProcessEnv = process.env
 ): KeeperConfig {
   const url = rpcUrl(env.DEPTH_RPC_URL, "DEPTH_RPC_URL");
-  if (!env.DEPTH_KEEPER_KEYPAIR) {
-    throw new Error("DEPTH_KEEPER_KEYPAIR is required");
+  if (env.DEPTH_KEEPER_KEYPAIR && env.DEPTH_KEEPER_KEYPAIR_PATH) {
+    throw new Error("Configure one keeper signer source");
   }
-  const bytes: unknown = JSON.parse(env.DEPTH_KEEPER_KEYPAIR);
+  const source = env.DEPTH_KEEPER_KEYPAIR_PATH
+    ? readFileSync(env.DEPTH_KEEPER_KEYPAIR_PATH, "utf8")
+    : env.DEPTH_KEEPER_KEYPAIR;
+  if (!source) {
+    throw new Error(
+      "DEPTH_KEEPER_KEYPAIR or DEPTH_KEEPER_KEYPAIR_PATH is required"
+    );
+  }
+  const bytes: unknown = JSON.parse(source);
   if (
     !Array.isArray(bytes) ||
     bytes.length !== 64 ||
