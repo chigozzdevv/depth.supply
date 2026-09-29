@@ -47,9 +47,11 @@ economically safe market.
    real external hedge crash/partial-fill rehearsal remain.
 4. **Oracle liveness.** The Hermes/Pyth receiver publisher is implemented and
    tested locally but has not been run against a public cluster. It requires a
-   Hermes API key, a funded publisher signer, a compatible feed account, a
-   process supervisor, and external alerting. Its health endpoint measures feed
-   freshness; a live transaction and sustained liveness record remain required.
+   Hermes API key, a funded publisher signer, a process supervisor, and external
+   alerting. The configured sponsored SOL/USD feed existed on devnet and was
+   32 seconds old at the 2026-09-29 21:43 UTC check; that one observation is
+   not sustained publisher liveness. Its health endpoint measures feed
+   freshness; a live publisher transaction and sustained record remain required.
 5. **Independent committee operation.** Code creates envelopes for five
    distinct recipient keys and reconstructs only from three shares. Real
    committee identities, separate key custody, distribution attestations,
@@ -58,9 +60,11 @@ economically safe market.
    keys still run within one fixture process, so it does not prove independent
    custody.
 6. **Economic and privacy proofs.** The live fixture exercises one trader and
-   maker. Fee conservation, a four-quote order's serialized size, and pro rata
-   payout arithmetic have tests. Dedicated multi-maker closes, maker default
-   combinations, maximum four-quote callback execution and cost, sustained
+   two maker wallets competing across four active quotes, and its emergency
+   winddown recovers all three market accounts. Fee conservation, a four-quote
+   match callback, a four-quote order's serialized size, and pro rata payout
+   arithmetic including an insolvent maker have tests. A close by a different
+   maker, live maker-default combinations, measured callback cost and sustained
    throughput, protocol revenue against Arcium fees, and measured
    wallet/amount/timing inference remain acceptance gates in `depth.md`.
 7. **Deployment.** The signed manifest capture and verifier exist, but the
@@ -68,22 +72,23 @@ economically safe market.
    Arcium CLI listed no devnet cluster with available capacity at that check.
    The configured Solana signer path does not exist, and the local test wallet
    has 0 SOL on devnet. This workspace has no funded release signer or Hermes
-   key. There is no verified deployed MXE, live market, published SDK, keeper fleet,
-   publisher, funded insurance, or external security review to cite. The
+   key. There is no verified deployed MXE, live market, published SDK, keeper
+   fleet, publisher, funded insurance, or external security review to cite. The
    deferred hosted client is outside this implementation pass.
 
 ## Verification
 
 - `pnpm build`, `pnpm typecheck`, and `pnpm test` pass locally: 28 trader SDK,
-  11 maker SDK, and 18 server tests at this revision.
+  11 maker SDK, and 19 server tests at this revision.
 - `cargo test --manifest-path contracts/Cargo.toml -p depth --lib --offline`
-  passed 15 Rust unit tests. `pnpm --dir contracts typecheck` passed. Live
+  passed 16 Rust unit tests. `pnpm --dir contracts typecheck` passed. Live
   Arcium runs compile the contract and encrypted circuits.
 - Docker-backed Solana and Arcium base tests passed all four cases on
-  2026-09-29. The separate confidential trade case passed end to end on
-  2026-09-29 in 13 minutes, including settlement, margin operations, risk
-  checks, and committee winddown. Oracle fixture timing and a malformed
-  recovery RPC filter found in earlier runs were corrected before this pass.
+  2026-09-29. The separate confidential trade case passed end to end with four
+  active quotes from two makers on 2026-09-29 in 13 minutes, including
+  settlement, margin operations, risk checks, and three-account committee
+  winddown. Oracle fixture timing and a malformed recovery RPC filter found in
+  earlier runs were corrected before this pass.
 
 The source and local tests support further integration work. They do not yet
 support the complete SDK flow or a real-collateral launch claim.
