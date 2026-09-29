@@ -839,6 +839,12 @@ published loss waterfall. A single account's sealed witness cannot
 prove that the whole vault remains solvent.
 
 The market pins five distinct recovery signers and a recovery public key.
+Each signer and encrypted key share must be controlled by a different
+organization. Depth may control one seat; at least four seats must be held
+outside Depth, and no custody vendor or shared administrator may control more
+than one seat. Each operator publishes its signer and X25519 public keys,
+attests receipt of one envelope, and keeps the decryption key separate from
+its Solana signing key. Backups remain under that operator's control.
 Each market account and clearing update stores an encrypted recovery copy
 and a hash commitment; each matched trade stores a separate encrypted fee
 receipt and commitment. The committee declares the emergency; the contract does not independently
