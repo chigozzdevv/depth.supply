@@ -76,19 +76,24 @@ economically safe market.
    Arcium's cluster listing showed no open node membership slots on devnet or
    mainnet; that does not establish whether either network can admit another
    MXE. The local signer at `contracts/target/test-wallet.json` held 10 devnet
-   SOL at the latest check. A test build with the offchain source enabled was
-   3,674,504 bytes, implying about 18.67 SOL of ProgramData rent and a
-   similar temporary buffer allocation, before transaction fees and MXE
-   setup. The 26
-   compiled circuits total 83,328,718 bytes, implying about 423.33 SOL of
-   onchain raw-account rent at the observed devnet rent rate. The contract now
-   supports hash-verified
-   offchain sources, and the Pinata folder uploader verifies every circuit
-   through the public gateway. A Pinata JWT, gateway hostname, uploaded CID,
-   funded signer, and confirmed Arcium MXE admission are still needed before
-   public deployment. There is no verified deployed MXE, live market,
-   published SDK, keeper fleet, funded insurance, or external security review
-   to cite. The deferred hosted client is outside this implementation pass.
+   SOL at the latest check. The offchain-source build was 3,674,576 bytes,
+   implying about 18.67 SOL of ProgramData rent and a similar temporary
+   buffer allocation, before transaction fees and MXE
+   setup. The 26 compiled circuits total 83,328,718 bytes, implying about
+   423.33 SOL of onchain raw-account rent at the observed devnet rent rate.
+   The contract supports hash-verified offchain sources. Pinata folder CID
+   `QmQHjVHJUhr69P3s15fjcdKhc49GwENbXBjLjo46qbiSQT` was pinned on
+   2026-09-30, and all 26 circuits were fetched and SHA-256 verified through
+   the dedicated HTTPS gateway. An offchain-source `arcium build` completed
+   with that URL embedded. The 10-SOL wallet remains below the estimated
+   program upload and rent requirement before MXE setup. Additional funding,
+   confirmed Arcium MXE admission, program deployment, and live market
+   initialization remain. The SBF build emitted stack-frame diagnostics in
+   fee account validation despite exiting successfully; those paths need
+   targeted runtime verification before launch. There is no verified deployed
+   MXE, live market, published SDK, keeper fleet, funded insurance, or external
+   security review to cite. The deferred hosted client is outside this
+   implementation pass.
 
 ## Verification
 
