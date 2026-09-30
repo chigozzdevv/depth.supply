@@ -50,12 +50,14 @@ pnpm test
 pnpm --dir contracts test
 ```
 
-The contract tests use Docker-backed local Solana and Arcium nodes. The trader
-and maker SDKs are private workspace packages; their entry points are
-`create_depth` from `@depth/sdk` and `create_depth_maker` from
-`@depth/maker-sdk`. Both require a wallet, RPC connection, and deployment
-policy. Public deployments use a signed manifest; local validators use
-`deployment: { localnet: true }`.
+The contract tests use Docker-backed local Solana and Arcium nodes and cover
+fee claims and maker default winddown in separate validator runs. Apps use
+`create_depth` from `@depth/sdk`; makers use `create_depth_maker` from
+`@depth/maker-sdk`. Each client accepts `environment: "devnet"` and a wallet.
+The maker owner defaults to the connected wallet; a delegated bot sets
+`makerOwner` to the owner's public key. A local validator uses
+`environment: "localnet"`. RPC, service URL, and signed manifest overrides
+remain available for custom deployments.
 
 ## Configuration and services
 
@@ -101,3 +103,17 @@ capture and sign the deployed configuration with:
 ```sh
 bun packages/sdk/scripts/manifest.ts RPC_URL SIGNER_FILE VERSION EXPIRY_UNIX OUTPUT_FILE
 ```
+
+The manifest signer must be the deployed program's upgrade authority. Set
+`DEPTH_DEVNET_MANIFEST_PATH` or `DEPTH_MAINNET_MANIFEST_PATH` to the signed
+JSON file on the public service. The service publishes it at
+`/.well-known/depth/<environment>.json`; SDKs verify the signature, network,
+program, MXE, and market configuration against Solana. The Node-only committee
+tools are available from `@depth/sdk/operator`.
+
+An interrupted trade can be recovered with `depth.trade.flow(clientNonce)`;
+its order and margin allocation are linked by that nonce. A restarted maker
+can inspect `maker.quote.list()` and recover a replacement with
+`maker.quote.replacement(priorQuoteId, replacementNonce)`. The prior quote
+records the successor nonce onchain before it stops. If a successor quote was
+never submitted, the maker supplies fresh quote terms to resume publication.

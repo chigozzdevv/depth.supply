@@ -953,8 +953,10 @@ back to another app.
 Both SDKs resolve the RPC endpoint, public service URL, and signed deployment
 manifest from `environment`. The manifest pins the network, Depth program, MXE,
 cluster, computation definitions, settlement mint, and market configuration.
-The SDK verifies the manifest against its trusted signing keys and the onchain
-registry. An unavailable or mismatched deployment produces a typed error.
+The SDK verifies the manifest signer against the deployed upgrade authority,
+then checks its signature, genesis, executable, MXE, computation definitions,
+settlement mint, and market configuration. An unavailable or mismatched
+deployment produces a typed error.
 
 An RPC connection, service URL, deployment manifest, and persistence adapter are
 advanced overrides. The normal integration does not construct a Solana
@@ -1433,6 +1435,13 @@ A pending item can be resumed, cancelled, or refunded only as its canonical
 state permits. The SDK uses a durable root-to-child operation relationship
 and reconciles signatures and nonces before any retry. It reports when a
 signature or funding is needed rather than claiming background completion.
+Trade margin allocations and orders share a client nonce, so
+`depth.trade.flow(nonce)` can recover either child from the chain. A quote
+replacement records its successor nonce on the prior quote before stopping it;
+`maker.quote.list()` exposes that link, and
+`maker.quote.replacement(priorId, nonce)` resumes it after a restart. If a
+replacement was never published, its private prices are not recoverable from
+public chain state, so the maker provides new terms before continuing.
 
 Eligible continuation work should be executable by a keeper after the original
 authorization. That authorization must bind the owner, amount, market,
