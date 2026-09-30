@@ -2,6 +2,9 @@
   "name": "@depth/contracts",
   "private": true,
   "scripts": {
+    "deploy:devnet": "node --env-file-if-exists=../.env.local scripts/deploy.mjs",
+    "init:defs": "node --env-file-if-exists=../.env.local scripts/defs.mjs",
+    "init:protocol": "node --env-file-if-exists=../.env.local scripts/protocol.mjs",
     "test": "node --test scripts/circuits.test.mjs && node scripts/test.mjs",
     "typecheck": "tsc --noEmit",
     "verify:circuits": "node --env-file-if-exists=../.env.local scripts/verify-circuits.mjs",

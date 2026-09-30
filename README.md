@@ -97,7 +97,20 @@ pnpm --dir contracts upload:circuits
 ```
 
 Use the verified `DEPTH_CIRCUIT_BASE_URL` printed by the uploader when running
-`arcium build` for a public deployment. After deployment, release operators can
+`arcium build` for a public deployment. Set that URL in the root `.env.local`.
+The devnet deployment command checks the signer, program identity, hosted
+circuits, cluster, and rent before creating the program and MXE:
+
+```sh
+pnpm --dir contracts deploy:devnet --check
+pnpm --dir contracts deploy:devnet
+pnpm --dir contracts init:defs
+pnpm --dir contracts init:protocol
+```
+
+The protocol setup uses Circle's devnet USDC mint and verifies its vault.
+
+After initializing the market, release operators can
 capture and sign the deployed configuration with:
 
 ```sh
