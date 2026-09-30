@@ -2,8 +2,10 @@
   "name": "@depth/contracts",
   "private": true,
   "scripts": {
-    "test": "node scripts/test.mjs",
+    "test": "node --test scripts/circuits.test.mjs && node scripts/test.mjs",
     "typecheck": "tsc --noEmit",
+    "verify:circuits": "node scripts/verify-circuits.mjs",
+    "upload:circuits": "node --env-file-if-exists=.env.local scripts/upload-circuits.mjs",
     "format": "prettier \"tests/**/*.ts\" --write",
     "format:check": "prettier \"tests/**/*.ts\" --check"
   },
