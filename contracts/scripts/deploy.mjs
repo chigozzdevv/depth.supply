@@ -19,8 +19,9 @@ import { readCircuits, verifyRemote } from "./circuits.mjs";
 
 const genesisHash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const clusterOffset = 456;
-const maxLength = 4_000_000;
 const programPath = "target/deploy/depth.so";
+const programSize = statSync(programPath).size;
+const maxLength = programSize;
 const programKeypairPath = "target/deploy/depth-keypair.json";
 const signerPath = "target/test-wallet.json";
 const programId = new PublicKey(
@@ -56,10 +57,6 @@ const programKeypair = Keypair.fromSecretKey(
 if (!programKeypair.publicKey.equals(programId)) {
   throw new Error("The program keypair does not match the Depth IDL");
 }
-const programSize = statSync(programPath).size;
-if (programSize > maxLength) {
-  throw new Error("The program exceeds the configured account size");
-}
 if (!readFileSync(programPath).includes(Buffer.from(circuitBase))) {
   throw new Error(
     "The program binary does not contain the configured circuit URL"
@@ -72,19 +69,27 @@ const provider = new anchor.AnchorProvider(
   { commitment: "confirmed" }
 );
 const arcium = getArciumProgram(provider);
-const [balance, bufferRent, programRent, existing, cluster] = await Promise.all(
-  [
-    connection.getBalance(signer.publicKey),
-    connection.getMinimumBalanceForRentExemption(programSize + 37),
-    connection.getMinimumBalanceForRentExemption(maxLength + 45),
-    connection.getAccountInfo(programId),
-    connection.getAccountInfo(getClusterAccAddress(clusterOffset)),
-  ]
-);
+const [
+  balance,
+  bufferRent,
+  programRent,
+  programAccountRent,
+  existing,
+  cluster,
+] = await Promise.all([
+  connection.getBalance(signer.publicKey),
+  connection.getMinimumBalanceForRentExemption(programSize + 37),
+  connection.getMinimumBalanceForRentExemption(maxLength + 45),
+  connection.getMinimumBalanceForRentExemption(36),
+  connection.getAccountInfo(programId),
+  connection.getAccountInfo(getClusterAccAddress(clusterOffset)),
+]);
 if (!cluster?.owner.equals(arcium.programId)) {
   throw new Error("Arcium devnet cluster 456 is unavailable");
 }
-const required = bufferRent + programRent + 1_000_000_000;
+// The loader returns the buffer balance to the payer before funding ProgramData.
+const required =
+  Math.max(bufferRent, programRent) + programAccountRent + 1_000_000_000;
 console.log(`Network: devnet, Arcium cluster: ${clusterOffset}`);
 console.log(`Program: ${programId.toBase58()} (${programSize} bytes)`);
 console.log(`Signer: ${signer.publicKey.toBase58()}`);
