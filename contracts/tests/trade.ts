@@ -1,12 +1,11 @@
+import { createDepth, DepthProvider } from "@/sdk";
 import {
   combineRecoveryShares,
-  createDepth,
   createRecoveryShares,
-  DepthProvider,
   openRecoveryShare,
   RecoveryCoordinator,
   RecoveryWitnessReader,
-} from "@/sdk";
+} from "@/operator";
 import { createDepthMaker } from "@/maker";
 import { circuits } from "@/circuits";
 import * as anchor from "@anchor-lang/core";
@@ -50,6 +49,9 @@ const crashOracle = new PublicKey(
 );
 const followupOracle = new PublicKey(
   "GXJhaqHTaeQfpy1Qa91j863Avb43Bzs28vnFDH6aAdnF"
+);
+const defaultOracle = new PublicKey(
+  "4pQdLtQAtdJPQpivr46PJLfLFPewSmB5U1mDgYoohyP5"
 );
 const clearingPacker = createPacker<
   {
@@ -168,7 +170,11 @@ describe("confidential trade settlement", () => {
     program.programId
   );
 
-  it("matches privately and atomically settles opposite positions without a public position ledger", async () => {
+  const testName =
+    process.env.DEPTH_TEST_SCENARIO === "maker-default"
+      ? "uses insurance and pro rata claims after a maker default"
+      : "matches privately and atomically settles opposite positions without a public position ledger";
+  it(testName, async () => {
     const loader = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
     const [programData] = PublicKey.findProgramAddressSync(
       [program.programId.toBuffer()],
@@ -1150,7 +1156,11 @@ describe("confidential trade settlement", () => {
           { pubkey: backstopOffer, isSigner: false, isWritable: false },
           { pubkey: quote, isSigner: false, isWritable: false },
           { pubkey: recoveryConfig, isSigner: false, isWritable: false },
-          { pubkey: feeRecoveryFor(order), isSigner: false, isWritable: true },
+          {
+            pubkey: feeRecoveryFor(order),
+            isSigner: false,
+            isWritable: true,
+          },
         ])
         .signers([trader])
         .rpc(options);
@@ -1164,10 +1174,9 @@ describe("confidential trade settlement", () => {
     const quoteBeforeFill = await program.account.quoteRecord.fetch(quote);
     const filledSize = (1_000_000n * 100_000_000_000n) / 20_100_000_000n;
     const sdk = await createDepth({
-      connection: provider.connection,
+      environment: "localnet",
       wallet: new anchor.Wallet(trader),
       appId: trader.publicKey,
-      deployment: { localnet: true },
     });
     const catalog = await sdk.catalog.market("SOL-USD");
     expect(catalog.policy.tradeFeeBps).to.equal(5);
@@ -1349,10 +1358,8 @@ describe("confidential trade settlement", () => {
       quoteBeforeFill.balanceCiphertext
     );
     const makerSdk = await createDepthMaker({
-      connection: provider.connection,
+      environment: "localnet",
       wallet: new anchor.Wallet(payer),
-      maker: authority,
-      deployment: { localnet: true },
     });
     expect(await makerSdk.quote.get(quote).capacity()).to.equal(
       1_100_000n - (filledSize * 20_100_000_000n) / 100_000_000_000n
@@ -1496,6 +1503,161 @@ describe("confidential trade settlement", () => {
     expect(
       (await program.account.protocol.fetch(protocol)).creditedTotal.toNumber()
     ).to.equal(214_000_000);
+
+    if (process.env.DEPTH_TEST_SCENARIO === "maker-default") {
+      const oracleAccount = await provider.connection.getAccountInfo(
+        defaultOracle
+      );
+      if (!oracleAccount)
+        throw new Error("Maker default oracle is unavailable");
+      const publishTime = Number(oracleAccount.data.readBigInt64LE(93));
+      while (Date.now() < (publishTime + 1) * 1000) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      await program.methods
+        .pauseMarket()
+        .accountsPartial({ actor: authority, protocol, market })
+        .rpc();
+      await program.methods
+        .setOracleAccount()
+        .accountsPartial({
+          authority,
+          protocol,
+          market,
+          priceUpdate: defaultOracle,
+        })
+        .rpc();
+      const [winddown] = PublicKey.findProgramAddressSync(
+        [Buffer.from("winddown"), market.toBuffer()],
+        program.programId
+      );
+      await program.methods
+        .startWinddown(
+          new anchor.BN(clearingValues.insurance.toString()),
+          new anchor.BN(clearingValues.open_interest.toString()),
+          new anchor.BN(claimedValues.protocol_fees.toString()),
+          new anchor.BN(claimedValues.app_fees.toString()),
+          new anchor.BN(claimedValues.salt.toString())
+        )
+        .accountsPartial({
+          payer: authority,
+          protocol,
+          market,
+          clearing,
+          vault,
+          winddown,
+        })
+        .remainingAccounts(
+          recoverySigners.slice(0, 3).map((signer) => ({
+            pubkey: signer.publicKey,
+            isSigner: true,
+            isWritable: false,
+          }))
+        )
+        .signers(recoverySigners.slice(0, 3))
+        .rpc();
+      const reader = await RecoveryWitnessReader.create(
+        program,
+        recoveryPrivateKey
+      );
+      const recovered = await new RecoveryCoordinator(
+        program,
+        reader
+      ).revealAll();
+      reader.destroy();
+      expect(recovered.accounts).to.equal(3);
+      expect(recovered.fees).to.equal(0);
+      const state = await program.account.winddown.fetch(winddown);
+      expect(state.finalized).to.equal(true);
+      const price = BigInt(state.priceE8.toString());
+      const fundingIndex = BigInt(state.fundingIndex.toString());
+      const equity = (values: Awaited<ReturnType<typeof unpackMarket>>) => {
+        const pnl =
+          (values.position * (price - values.entry_price)) / 100_000_000_000n;
+        const funding =
+          (values.position * (fundingIndex - values.funding_checkpoint)) /
+          100_000_000_000n;
+        const total = values.collateral + pnl - funding;
+        return total > 0n ? total : 0n;
+      };
+      const traderEquity = equity(traderValues);
+      const makerEquity = equity(makerValues);
+      const otherEquity = equity(otherMakerValues);
+      const gross = traderEquity + makerEquity + otherEquity;
+      const pool = BigInt(state.payoutPool.toString());
+      expect(makerEquity).to.equal(0n);
+      expect(gross > pool).to.equal(true);
+      expect(BigInt(state.grossPositive.toString())).to.equal(gross);
+      expect(pool).to.equal(
+        traderValues.collateral +
+          makerValues.collateral +
+          otherMakerValues.collateral +
+          clearingValues.insurance
+      );
+      const claimant = [
+        {
+          signer: trader,
+          account: traderState.marketAccount,
+          source: traderState.source,
+          equity: traderEquity,
+        },
+        {
+          signer: payer,
+          account: makerState.marketAccount,
+          source: makerState.source,
+          equity: makerEquity,
+        },
+        {
+          signer: otherMaker,
+          account: otherMakerState.marketAccount,
+          source: otherMakerState.source,
+          equity: otherEquity,
+        },
+      ];
+      const vaultBefore = (await getAccount(provider.connection, vault)).amount;
+      let totalPaid = 0n;
+      for (const { signer, account, source, equity: positive } of claimant) {
+        const [claim] = PublicKey.findProgramAddressSync(
+          [Buffer.from("winddown-claim"), account.toBuffer()],
+          program.programId
+        );
+        const expectedPayout = (positive * pool) / gross;
+        const before = (await getAccount(provider.connection, source)).amount;
+        await program.methods
+          .claimWinddown()
+          .accountsPartial({
+            owner: signer.publicKey,
+            protocol,
+            settlementMint: mint,
+            vault,
+            market,
+            winddown,
+            marketAccount: account,
+            claim,
+            destination: source,
+          })
+          .signers(signer === payer ? [] : [signer])
+          .rpc();
+        expect(
+          (await getAccount(provider.connection, source)).amount - before
+        ).to.equal(expectedPayout);
+        totalPaid += expectedPayout;
+      }
+      expect(
+        (await program.account.winddown.fetch(winddown)).paidAccounts
+      ).to.equal(3);
+      expect((await getAccount(provider.connection, vault)).amount).to.equal(
+        vaultBefore - totalPaid
+      );
+      expect(
+        BigInt(
+          (
+            await program.account.winddown.fetch(winddown)
+          ).remainingPool.toString()
+        )
+      ).to.equal(pool - totalPaid);
+      return;
+    }
 
     const viewPrivate = new Uint8Array(32).fill(13);
     const viewKey = Array.from(x25519.getPublicKey(viewPrivate));
@@ -1726,6 +1888,26 @@ describe("confidential trade settlement", () => {
       (await program.account.protocol.fetch(protocol)).escrowTotal.toNumber()
     ).to.equal(0);
 
+    const exitQuoteNonce = new anchor.BN(78);
+    await program.methods
+      .beginQuoteReplacement(exitQuoteNonce)
+      .accountsPartial({ actor: authority, grant: null, quote })
+      .rpc();
+    await program.methods
+      .beginQuoteReplacement(exitQuoteNonce)
+      .accountsPartial({ actor: authority, grant: null, quote })
+      .rpc();
+    await expectRejected(
+      program.methods
+        .beginQuoteReplacement(new anchor.BN(80))
+        .accountsPartial({ actor: authority, grant: null, quote })
+        .rpc()
+    );
+    expect(
+      (
+        await program.account.quoteRecord.fetch(quote)
+      ).replacementNonce?.toString()
+    ).to.equal(exitQuoteNonce.toString());
     await program.methods
       .stopQuote()
       .accountsPartial({
@@ -1756,11 +1938,6 @@ describe("confidential trade settlement", () => {
     expect(
       (await program.account.quoteRecord.fetch(quote)).status
     ).to.deep.equal({ cancelled: {} });
-    await program.methods
-      .closeQuote()
-      .accountsPartial({ maker: authority, quote })
-      .rpc();
-
     const exitUpdate = await provider.connection.getAccountInfo(exitOracle);
     if (!exitUpdate) throw new Error("Exit oracle fixture is unavailable");
     const exitPublishMs = Number(exitUpdate.data.readBigInt64LE(93)) * 1_000;
@@ -1770,7 +1947,6 @@ describe("confidential trade settlement", () => {
       );
     await selectOracle(exitOracle);
 
-    const exitQuoteNonce = new anchor.BN(78);
     let [exitQuote] = PublicKey.findProgramAddressSync(
       [
         Buffer.from("quote"),

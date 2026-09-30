@@ -11,7 +11,8 @@
       "@/*": ["./*"],
       "@/circuits": ["../packages/bindings/src/circuits.ts"],
       "@/sdk": ["../packages/sdk/dist/index.js"],
-      "@/maker": ["../packages/maker-sdk/dist/index.js"]
+      "@/maker": ["../packages/maker-sdk/dist/index.js"],
+      "@/operator": ["../packages/sdk/dist/operator.js"]
     }
   },
   "exclude": ["build", "target", "node_modules"]

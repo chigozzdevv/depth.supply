@@ -53,3 +53,7 @@ filename = "artifacts/localnet/price-crash.json"
 [[test.validator.account]]
 address = "GXJhaqHTaeQfpy1Qa91j863Avb43Bzs28vnFDH6aAdnF"
 filename = "artifacts/localnet/price-followup.json"
+
+[[test.validator.account]]
+address = "4pQdLtQAtdJPQpivr46PJLfLFPewSmB5U1mDgYoohyP5"
+filename = "artifacts/localnet/price-default.json"

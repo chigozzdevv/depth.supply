@@ -104,6 +104,16 @@ function writeOracleFixture() {
     now + 751n,
     "price-followup"
   );
+  const defaultAddress = Keypair.fromSeed(
+    createHash("sha256").update("depth.oracle.default.v1").digest()
+  ).publicKey.toBase58();
+  writePriceUpdate(
+    defaultAddress,
+    10_000_000_000_000n,
+    1_000_000_000n,
+    now + 300n,
+    "price-default"
+  );
 }
 
 function writePriceUpdate(address, price, confidence, publishTime, filename) {
@@ -138,11 +148,16 @@ function writePriceUpdate(address, price, confidence, publishTime, filename) {
   );
 }
 
-function run(args, testFile) {
+function run(args, testFile, scenario) {
   return new Promise((resolve) => {
     const child = spawn("arcium", ["test", ...args], {
       stdio: "inherit",
-      env: { ...process.env, PATH: anchorPath, DEPTH_TEST_FILE: testFile },
+      env: {
+        ...process.env,
+        PATH: anchorPath,
+        DEPTH_TEST_FILE: testFile,
+        DEPTH_TEST_SCENARIO: scenario ?? "",
+      },
     });
     child.on("error", (error) => {
       process.stderr.write(`${error.message}\n`);
@@ -167,14 +182,15 @@ for (const option of ["--skip-build", "--skip-keygen"]) {
   if (!tradeArgs.includes(option)) tradeArgs.push(option);
 }
 const suites = testFile
-  ? [[testFile, arciumArgs]]
+  ? [[testFile, arciumArgs, process.env.DEPTH_TEST_SCENARIO]]
   : [
       ["base", arciumArgs],
       ["trade", tradeArgs],
+      ["trade", tradeArgs, "maker-default"],
     ];
-for (const [suite, suiteArgs] of suites) {
+for (const [suite, suiteArgs, scenario] of suites) {
   writeOracleFixture();
-  const code = await run(suiteArgs, suite);
+  const code = await run(suiteArgs, suite, scenario);
   if (code !== 0) {
     process.exitCode = code;
     break;
