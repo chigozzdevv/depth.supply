@@ -1,6 +1,9 @@
+import { Buffer as BufferPolyfill } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 import idl from "@/depth.json";
 import type { Depth } from "@/depth";
+
+const Buffer = globalThis.Buffer ?? BufferPolyfill;
 
 export type { Depth };
 export const DEPTH_IDL = idl as unknown as Depth;

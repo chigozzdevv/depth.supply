@@ -1,12 +1,20 @@
 {
   "name": "@depth/maker-sdk",
   "version": "0.1.0",
-  "private": true,
+  "publishConfig": { "access": "public" },
+  "files": ["dist"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./node": {
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    }
   },
   "scripts": {
     "build": "node ../../scripts/build-package.mjs maker-sdk",
@@ -18,6 +26,7 @@
     "@arcium-hq/client": "0.13.2",
     "@depth/bindings": "workspace:*",
     "@depth/sdk": "workspace:*",
-    "@solana/web3.js": "1.99.0"
+    "@solana/web3.js": "1.99.0",
+    "buffer": "6.0.3"
   }
 }

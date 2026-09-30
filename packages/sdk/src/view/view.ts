@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
 import { createPacker, RescueCipher, x25519 } from "@arcium-hq/client";
 import { circuits, DEPTH_PROGRAM_ID } from "@depth/bindings";
@@ -124,7 +125,7 @@ export class DepthView {
     private readonly publicKey: Uint8Array,
     private readonly mxePublicKey: Uint8Array,
     private readonly program: anchor.Program,
-    private readonly connection: Connection
+    private readonly connection: Connection,
   ) {}
 
   async status(): Promise<
@@ -132,7 +133,7 @@ export class DepthView {
   > {
     const response = await this.connection.getAccountInfoAndContext(
       this.id,
-      "confirmed"
+      "confirmed",
     );
     if (!response.value || !response.value.owner.equals(DEPTH_PROGRAM_ID)) {
       throw new Error("Private view account is unavailable");
@@ -145,7 +146,7 @@ export class DepthView {
         : this.kind === "fill"
         ? "fillView"
         : "quoteView",
-      response.value.data
+      response.value.data,
     );
     if (
       !state.owner.equals(this.owner) ||
@@ -166,7 +167,7 @@ export class DepthView {
     };
     if (status !== "ready") return base;
     const cipher = new RescueCipher(
-      x25519.getSharedSecret(this.secret, this.mxePublicKey)
+      x25519.getSharedSecret(this.secret, this.mxePublicKey),
     );
     const nonce = Uint8Array.from(state.outputNonce);
     if (this.kind === "balance") {
@@ -193,8 +194,8 @@ export class DepthView {
         ...decodeFill(
           cipher.decrypt(
             state.ciphertexts.map((word) => Array.from(word)),
-            nonce
-          )
+            nonce,
+          ),
         ),
       };
     }
@@ -203,8 +204,8 @@ export class DepthView {
       ...decodeMarket(
         cipher.decrypt(
           state.ciphertexts.map((word) => Array.from(word)),
-          nonce
-        )
+          nonce,
+        ),
       ),
     };
   }
@@ -229,7 +230,7 @@ export class DepthView {
         return snapshot;
       }
       await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(pollMs, deadline - Date.now()))
+        setTimeout(resolve, Math.min(pollMs, deadline - Date.now())),
       );
     }
   }

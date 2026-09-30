@@ -1,14 +1,11 @@
+import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
 import { DEPTH_PROGRAM_ID, SOL_USD_MARKET_ID } from "@depth/bindings";
 import { DepthError } from "@depth/sdk";
 import { PublicKey } from "@solana/web3.js";
-import { randomBytes } from "node:crypto";
+import { randomBytes } from "@/chain/random";
 import type { MakerClient } from "@/client/client";
-import type {
-  BackstopInput,
-  BackstopState,
-  MarketState,
-} from "@/client/types";
+import type { BackstopInput, BackstopState, MarketState } from "@/client/types";
 
 export type BackstopSnapshot = {
   offerId: PublicKey;
@@ -26,7 +23,10 @@ function u64(value: bigint, name: string): anchor.BN {
   return new anchor.BN(value.toString());
 }
 
-function timing(options: ConfirmOptions): { timeoutMs: number; pollMs: number } {
+function timing(options: ConfirmOptions): {
+  timeoutMs: number;
+  pollMs: number;
+} {
   const timeoutMs = options.timeoutMs ?? 60_000;
   const pollMs = options.pollMs ?? 1_000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0)
@@ -36,7 +36,11 @@ function timing(options: ConfirmOptions): { timeoutMs: number; pollMs: number } 
   return { timeoutMs, pollMs };
 }
 
-function address(market: PublicKey, maker: PublicKey, nonce: bigint): PublicKey {
+function address(
+  market: PublicKey,
+  maker: PublicKey,
+  nonce: bigint,
+): PublicKey {
   const bytes = u64(nonce, "clientNonce").toArrayLike(Buffer, "le", 8);
   return PublicKey.findProgramAddressSync(
     [Buffer.from("backstop"), market.toBuffer(), maker.toBuffer(), bytes],
@@ -84,10 +88,14 @@ export class BackstopHandle {
     const capacity = u64(input.maxCapacity, "maxCapacity");
     if (input.maxCapacity === 0n)
       throw new RangeError("Backstop capacity must be positive");
-    const nonce = input.clientNonce ?? BigInt(new anchor.BN(randomBytes(8), "le").toString());
+    const nonce =
+      input.clientNonce ??
+      BigInt(new anchor.BN(randomBytes(8), "le").toString());
     const offerId = address(client.marketAddress, client.options.maker, nonce);
     if (await client.options.connection.getAccountInfo(offerId, "confirmed"))
-      throw new Error("Backstop nonce is already used; restore its offer by ID");
+      throw new Error(
+        "Backstop nonce is already used; restore its offer by ID",
+      );
     const [market, account] = await Promise.all([
       client.read<MarketState>("Market", client.marketAddress),
       client.read<{
@@ -120,7 +128,12 @@ export class BackstopHandle {
     const offset = new anchor.BN(randomBytes(8), "le");
     const expiry = now + input.validForSeconds;
     const signature = await client.program.methods
-      .offerBackstop(offset, u64(nonce, "clientNonce"), capacity, new anchor.BN(expiry))
+      .offerBackstop(
+        offset,
+        u64(nonce, "clientNonce"),
+        capacity,
+        new anchor.BN(expiry),
+      )
       .accountsPartial({
         ...(await client.queue("offer_backstop", offset)),
         maker: client.options.maker,
@@ -144,14 +157,19 @@ export class BackstopHandle {
   }
 
   async status(): Promise<BackstopSnapshot> {
-    const state = await this.client.read<BackstopState>("BackstopOffer", this.id);
+    const state = await this.client.read<BackstopState>(
+      "BackstopOffer",
+      this.id,
+    );
     const nonce = BigInt(state.nonce.toString());
     if (
       !state.maker.equals(this.client.options.maker) ||
       !state.market.equals(this.client.marketAddress) ||
       !address(state.market, state.maker, nonce).equals(this.id)
     )
-      throw new Error("Backstop offer does not belong to this maker and market");
+      throw new Error(
+        "Backstop offer does not belong to this maker and market",
+      );
     return {
       offerId: this.id,
       status: Object.keys(state.status)[0] ?? "unknown",
@@ -175,7 +193,9 @@ export class BackstopHandle {
     if (["active", "locked", "consumed"].includes(snapshot.status))
       return { offerId: this.id, snapshot };
     throw new DepthError(
-      snapshot.status === "reserving" ? "BACKSTOP_PENDING" : "BACKSTOP_REJECTED",
+      snapshot.status === "reserving"
+        ? "BACKSTOP_PENDING"
+        : "BACKSTOP_REJECTED",
       "confirmation",
       `Backstop offer is ${snapshot.status}`,
       snapshot.status === "reserving",

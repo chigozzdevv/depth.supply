@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
 import {
   accountOffsets,
@@ -28,7 +29,7 @@ export class RecoveryCoordinator {
 
   constructor(
     private readonly program: anchor.Program,
-    private readonly reader: RecoveryWitnessReader
+    private readonly reader: RecoveryWitnessReader,
   ) {
     this.operator = new WinddownOperator(program);
     this.market = marketAddress(program.programId);
@@ -38,7 +39,7 @@ export class RecoveryCoordinator {
     name: string,
     offset: number,
     length: number,
-    filters: GetProgramAccountsFilter[] = []
+    filters: GetProgramAccountsFilter[] = [],
   ): Promise<
     {
       id: PublicKey;
@@ -54,7 +55,7 @@ export class RecoveryCoordinator {
           { memcmp: this.program.coder.accounts.memcmp(name) },
           ...filters,
         ],
-      }
+      },
     );
     return accounts.map(({ pubkey, account }) => {
       if (!account.owner.equals(this.program.programId))
@@ -74,7 +75,7 @@ export class RecoveryCoordinator {
     ]);
     if (accounts.length !== expected)
       throw new Error(
-        `Recovery scan found ${accounts.length} of ${expected} market accounts`
+        `Recovery scan found ${accounts.length} of ${expected} market accounts`,
       );
     const owners = accounts.map(({ id, data }) => {
       if (data.length !== 64)
@@ -86,7 +87,7 @@ export class RecoveryCoordinator {
         !marketAccountAddress(owner, this.program.programId).equals(id)
       )
         throw new Error(
-          `Market account ${id.toBase58()} belongs to another market`
+          `Market account ${id.toBase58()} belongs to another market`,
         );
       return owner;
     });
@@ -103,7 +104,7 @@ export class RecoveryCoordinator {
       const order = new PublicKey(data);
       const canonical = PublicKey.findProgramAddressSync(
         [Buffer.from("fee-recovery"), order.toBuffer()],
-        this.program.programId
+        this.program.programId,
       )[0];
       if (!id.equals(canonical))
         throw new Error("Fee recovery address is not canonical");
@@ -116,16 +117,16 @@ export class RecoveryCoordinator {
       const infos =
         await this.program.provider.connection.getMultipleAccountsInfo(
           batch,
-          "confirmed"
+          "confirmed",
         );
       infos.forEach((info, index) => {
         if (!info?.owner.equals(this.program.programId))
           throw new Error(
-            `Fee order ${batch[index].toBase58()} is unavailable`
+            `Fee order ${batch[index].toBase58()} is unavailable`,
           );
         const order = this.program.coder.accounts.decode<Order>(
           "orderRecord",
-          info.data
+          info.data,
         );
         if (
           order.market.equals(this.market) &&
@@ -147,13 +148,13 @@ export class RecoveryCoordinator {
     const address = this.operator.winddown;
     const info = await this.program.provider.connection.getAccountInfo(
       address,
-      "confirmed"
+      "confirmed",
     );
     if (!info?.owner.equals(this.program.programId))
       throw new Error("Committee winddown has not started");
     const winddown = this.program.coder.accounts.decode<Winddown>(
       "winddown",
-      info.data
+      info.data,
     );
     if (!winddown.market.equals(this.market) || winddown.finalized)
       throw new Error("Winddown is not accepting market-wide recovery");

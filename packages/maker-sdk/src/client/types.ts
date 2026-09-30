@@ -1,16 +1,18 @@
-import type { DeploymentPolicy } from "@depth/sdk";
+import type { ConnectionOptions, ResolvedConnection } from "@depth/sdk";
 import type * as anchor from "@anchor-lang/core";
-import type { Connection, PublicKey } from "@solana/web3.js";
+import type { PublicKey } from "@solana/web3.js";
 import { SOL_USD_MARKET_ID } from "@depth/bindings";
 
-export type MakerOptions = {
-  deployment: DeploymentPolicy;
+export type MakerOptions = ConnectionOptions & {
   wallet: anchor.Wallet;
-  maker: PublicKey;
+  maker?: PublicKey;
+  makerOwner?: PublicKey;
   appId?: PublicKey;
-  connection: Connection;
   cursorDirectory?: string;
 };
+
+export type ResolvedMakerOptions = ResolvedConnection &
+  Omit<MakerOptions, keyof ConnectionOptions | "maker"> & { maker: PublicKey };
 
 export type QuoteTier = { size: bigint; bidE8: bigint; askE8: bigint };
 
@@ -42,6 +44,7 @@ export type QuoteState = {
   capacity: anchor.BN;
   expiry: anchor.BN;
   attachedOrders: number;
+  replacementNonce: anchor.BN | null;
 };
 
 export type MarketState = {

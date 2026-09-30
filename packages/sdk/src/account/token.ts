@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
 import {
   Connection,
@@ -8,26 +9,26 @@ import {
 } from "@solana/web3.js";
 
 const tokenProgram = new PublicKey(
-  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
 );
 const associatedProgram = new PublicKey(
-  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
 );
 
 export function associatedTokenAddress(
   owner: PublicKey,
-  mint: PublicKey
+  mint: PublicKey,
 ): PublicKey {
   return PublicKey.findProgramAddressSync(
     [owner.toBuffer(), tokenProgram.toBuffer(), mint.toBuffer()],
-    associatedProgram
+    associatedProgram,
   )[0];
 }
 
 function tokenBalance(
   info: { owner: PublicKey; data: Buffer },
   owner: PublicKey,
-  mint: PublicKey
+  mint: PublicKey,
 ): bigint {
   if (
     !info.owner.equals(tokenProgram) ||
@@ -44,13 +45,13 @@ export async function sourceTokenAccount(
   connection: Connection,
   owner: PublicKey,
   mint: PublicKey,
-  amount: bigint
+  amount: bigint,
 ): Promise<PublicKey> {
   if (amount <= 0n) throw new RangeError("Deposit amount must be positive");
   const accounts = await connection.getTokenAccountsByOwner(
     owner,
     { mint },
-    "confirmed"
+    "confirmed",
   );
   const preferred = associatedTokenAddress(owner, mint);
   const eligible = accounts.value
@@ -65,7 +66,7 @@ export async function sourceTokenAccount(
     .sort(
       (a, b) =>
         Number(b.equals(preferred)) - Number(a.equals(preferred)) ||
-        a.toBase58().localeCompare(b.toBase58())
+        a.toBase58().localeCompare(b.toBase58()),
     );
   if (!eligible[0])
     throw new Error("No owned settlement token account covers the deposit");
@@ -75,11 +76,11 @@ export async function sourceTokenAccount(
 export async function destinationTokenAccount(
   provider: anchor.AnchorProvider,
   owner: PublicKey,
-  mint: PublicKey
+  mint: PublicKey,
 ): Promise<PublicKey> {
   if (!provider.wallet.publicKey.equals(owner))
     throw new Error(
-      "Only the wallet owner can prepare its settlement token account"
+      "Only the wallet owner can prepare its settlement token account",
     );
   const address = associatedTokenAddress(owner, mint);
   let info = await provider.connection.getAccountInfo(address, "confirmed");

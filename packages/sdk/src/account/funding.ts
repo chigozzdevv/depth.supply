@@ -10,7 +10,7 @@ import {
   withdrawalAddress,
 } from "@depth/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { randomBytes } from "node:crypto";
+import { randomBytes } from "@/chain/random";
 import { submissionError } from "@/operation/error";
 import { DepthError } from "@/operation/error";
 import { confirmReceipt } from "@/account/confirm";
@@ -19,7 +19,7 @@ import { u64 } from "@/trade/input";
 
 type Queue = (
   name: string,
-  offset: anchor.BN
+  offset: anchor.BN,
 ) => Promise<Record<string, PublicKey>>;
 type Variant = Record<string, unknown>;
 type NumberValue = { toString(): string };
@@ -61,7 +61,7 @@ export class FundingClient {
     readonly program: anchor.Program,
     readonly connection: Connection,
     readonly owner: PublicKey,
-    private readonly queue: Queue
+    private readonly queue: Queue,
   ) {
     this.market = marketAddress(program.programId);
     this.protocol = protocolAddress(program.programId);
@@ -84,14 +84,14 @@ export class FundingClient {
     }
     return this.program.coder.accounts.decode<T>(
       name[0].toLowerCase() + name.slice(1),
-      info.data
+      info.data,
     );
   }
 
   private async recoveryKey(): Promise<number[]> {
     const config = await this.read<Recovery>(
       "RecoveryConfig",
-      recoveryConfigAddress(this.program.programId)
+      recoveryConfigAddress(this.program.programId),
     );
     if (
       !config ||
@@ -134,7 +134,7 @@ export class FundingClient {
   async cancelTransfer(
     id: PublicKey,
     toMarket: boolean,
-    phase: "debiting" | "crediting"
+    phase: "debiting" | "crediting",
   ): Promise<string> {
     this.assertOwner();
     const free = phase === "debiting" ? toMarket : !toMarket;
@@ -198,7 +198,7 @@ export class FundingClient {
   async deposit(
     source: PublicKey,
     amount: bigint,
-    clientNonce: bigint
+    clientNonce: bigint,
   ): Promise<DepositHandle> {
     this.assertOwner();
     u64(amount, "amount");
@@ -208,7 +208,7 @@ export class FundingClient {
     const receipt = depositAddress(
       this.owner,
       depositNonce,
-      this.program.programId
+      this.program.programId,
     );
     const existing = await this.read<Receipt>("DepositReceipt", receipt);
     if (existing) {
@@ -245,7 +245,7 @@ export class FundingClient {
   async withdraw(
     destination: PublicKey,
     amount: bigint,
-    clientNonce: bigint
+    clientNonce: bigint,
   ): Promise<WithdrawalHandle> {
     this.assertOwner();
     u64(amount, "amount");
@@ -255,7 +255,7 @@ export class FundingClient {
     const handle = this.withdrawalHandle(clientNonce);
     const existing = await this.read<Withdrawal>(
       "WithdrawalReceipt",
-      handle.id
+      handle.id,
     );
     if (existing) {
       if (
@@ -272,7 +272,7 @@ export class FundingClient {
       .requestWithdrawal(
         computationOffset,
         u64(clientNonce, "clientNonce"),
-        u64(amount, "amount")
+        u64(amount, "amount"),
       )
       .accountsPartial({
         ...(await this.queue("debit_balance", computationOffset)),
@@ -316,7 +316,7 @@ export class FundingClient {
   private async beginTransfer(
     kind: "allocation" | "release",
     amount: bigint,
-    clientNonce: bigint
+    clientNonce: bigint,
   ): Promise<TransferHandle> {
     this.assertOwner();
     u64(amount, "amount");
@@ -326,7 +326,7 @@ export class FundingClient {
     const transfer = transferAddress(
       this.owner,
       transferNonce,
-      this.program.programId
+      this.program.programId,
     );
     const existing = await this.read<Transfer>("MarginTransfer", transfer);
     if (existing) {
@@ -343,7 +343,7 @@ export class FundingClient {
     const computationOffset = offset();
     const queue = await this.queue(
       kind === "allocation" ? "debit_free" : "debit_market",
-      computationOffset
+      computationOffset,
     );
     const accounts = {
       ...queue,
@@ -362,7 +362,7 @@ export class FundingClient {
     const signature = await method(
       computationOffset,
       u64(transferNonce, "nonce"),
-      u64(amount, "amount")
+      u64(amount, "amount"),
     )
       .accountsPartial(accounts)
       .rpc({ commitment: "confirmed" })
@@ -455,7 +455,7 @@ export class DepositHandle {
   constructor(
     readonly client: FundingClient,
     readonly nonce: bigint,
-    readonly signature?: string
+    readonly signature?: string,
   ) {
     this.id = depositAddress(client.owner, nonce, client.program.programId);
   }
@@ -485,7 +485,7 @@ export class DepositHandle {
             "Deposit was refunded",
             false,
             "Read the receipt before funding again",
-            this.id.toBase58()
+            this.id.toBase58(),
           );
         if (state === "pending") {
           try {
@@ -496,7 +496,7 @@ export class DepositHandle {
         }
         return false;
       },
-      options
+      options,
     );
     return "credited";
   }
@@ -528,7 +528,7 @@ export class TransferHandle {
   constructor(
     readonly client: FundingClient,
     readonly nonce: bigint,
-    readonly signature?: string
+    readonly signature?: string,
   ) {
     this.id = transferAddress(client.owner, nonce, client.program.programId);
   }
@@ -540,7 +540,7 @@ export class TransferHandle {
   }> {
     const transfer = await this.client.read<Transfer>(
       "MarginTransfer",
-      this.id
+      this.id,
     );
     if (
       !transfer ||
@@ -557,7 +557,7 @@ export class TransferHandle {
   }
 
   async confirm(
-    options?: ConfirmOptions
+    options?: ConfirmOptions,
   ): Promise<{ state: "settled"; toMarket: boolean; amount: bigint }> {
     const settled = await confirmReceipt(
       this.id.toBase58(),
@@ -575,7 +575,7 @@ export class TransferHandle {
             `Margin transfer ${transfer.state}`,
             false,
             "Read the receipt and private account before retrying",
-            this.id.toBase58()
+            this.id.toBase58(),
           );
         if (transfer.state === "escrow") {
           try {
@@ -586,7 +586,7 @@ export class TransferHandle {
         }
         return false;
       },
-      options
+      options,
     );
     return { ...settled, state: "settled" };
   }
@@ -606,7 +606,7 @@ export class TransferHandle {
     return this.client.cancelTransfer(
       this.id,
       transfer.toMarket,
-      transfer.state
+      transfer.state,
     );
   }
 
@@ -633,7 +633,7 @@ export class WithdrawalHandle {
   constructor(
     readonly client: FundingClient,
     readonly nonce: bigint,
-    readonly signature?: string
+    readonly signature?: string,
   ) {
     this.id = withdrawalAddress(client.owner, nonce, client.program.programId);
   }
@@ -641,7 +641,7 @@ export class WithdrawalHandle {
   async status(): Promise<"queued" | "paid" | "rejected" | "cancelled"> {
     const receipt = await this.client.read<Withdrawal>(
       "WithdrawalReceipt",
-      this.id
+      this.id,
     );
     if (
       !receipt ||
@@ -670,11 +670,11 @@ export class WithdrawalHandle {
             `Withdrawal ${state}`,
             false,
             "Read the receipt and private balance before retrying",
-            this.id.toBase58()
+            this.id.toBase58(),
           );
         return false;
       },
-      options
+      options,
     );
     return "paid";
   }

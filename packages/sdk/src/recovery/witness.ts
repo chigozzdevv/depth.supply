@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
 import { getMXEPublicKey, RescueCipher, x25519 } from "@arcium-hq/client";
 import {
@@ -48,17 +49,17 @@ export class RecoveryWitnessReader {
   private constructor(
     private readonly program: anchor.Program,
     secret: Uint8Array,
-    mxePublicKey: Uint8Array
+    mxePublicKey: Uint8Array,
   ) {
     this.secret = Uint8Array.from(secret);
     this.cipher = new RescueCipher(
-      x25519.getSharedSecret(this.secret, mxePublicKey)
+      x25519.getSharedSecret(this.secret, mxePublicKey),
     );
   }
 
   static async create(
     program: anchor.Program,
-    secret: Uint8Array
+    secret: Uint8Array,
   ): Promise<RecoveryWitnessReader> {
     if (secret.length !== 32 || !program.programId.equals(DEPTH_PROGRAM_ID))
       throw new RangeError("Recovery key or Depth program is invalid");
@@ -66,7 +67,7 @@ export class RecoveryWitnessReader {
     const configAddress = recoveryConfigAddress(program.programId);
     const info = await provider.connection.getAccountInfo(
       configAddress,
-      "confirmed"
+      "confirmed",
     );
     if (!info?.owner.equals(program.programId))
       throw new Error("Recovery configuration is unavailable");
@@ -78,7 +79,7 @@ export class RecoveryWitnessReader {
       !config.market.equals(marketAddress(program.programId)) ||
       !timingSafeEqual(
         Buffer.from(config.recoveryKey),
-        Buffer.from(x25519.getPublicKey(secret))
+        Buffer.from(x25519.getPublicKey(secret)),
       )
     )
       throw new Error("Reconstructed key does not belong to this market");
@@ -94,14 +95,14 @@ export class RecoveryWitnessReader {
       throw new Error(`${name} is unavailable`);
     return this.program.coder.accounts.decode<T>(
       name[0].toLowerCase() + name.slice(1),
-      info.data
+      info.data,
     );
   }
 
   private decrypt(record: RecoveryRecord): bigint[] {
     return this.cipher.decrypt(
       record.recoveryCiphertexts.map((word) => Array.from(word)),
-      Uint8Array.from(record.recoveryNonce)
+      Uint8Array.from(record.recoveryNonce),
     );
   }
 
@@ -109,11 +110,11 @@ export class RecoveryWitnessReader {
     const market = marketAddress(this.program.programId);
     const address = PublicKey.findProgramAddressSync(
       [Buffer.from("clearing"), market.toBuffer()],
-      this.program.programId
+      this.program.programId,
     )[0];
     const record = await this.read<RecoveryRecord & { market: PublicKey }>(
       "ClearingAccount",
-      address
+      address,
     );
     if (!record.market.equals(market)) throw new Error("Wrong clearing market");
     const state = circuits.ClearingState.unpack(this.decrypt(record));
@@ -181,7 +182,7 @@ export class RecoveryWitnessReader {
   async fee(order: PublicKey): Promise<FeeWitness> {
     const address = PublicKey.findProgramAddressSync(
       [Buffer.from("fee-recovery"), order.toBuffer()],
-      this.program.programId
+      this.program.programId,
     )[0];
     const record = await this.read<{
       order: PublicKey;
@@ -195,13 +196,13 @@ export class RecoveryWitnessReader {
     if (
       !timingSafeEqual(
         Buffer.from(record.recoveryKey),
-        Buffer.from(x25519.getPublicKey(this.secret))
+        Buffer.from(x25519.getPublicKey(this.secret)),
       )
     )
       throw new Error("Fee receipt has another recovery key");
     const values = this.cipher.decrypt(
       record.ciphertexts.map((word) => Array.from(word)),
-      Uint8Array.from(record.nonce)
+      Uint8Array.from(record.nonce),
     );
     if (values.length !== 3) throw new Error("Invalid fee recovery ciphertext");
     const [protocolFee, appFee, salt] = values;
@@ -213,7 +214,7 @@ export class RecoveryWitnessReader {
         bytes(appFee, 8),
         bytes(salt, 16),
       ]),
-      record.commitment
+      record.commitment,
     );
     return { protocolFee, appFee, salt };
   }

@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
 import {
   accountOffsets,
@@ -61,14 +62,14 @@ export class FundingDiscovery {
   constructor(
     private readonly program: anchor.Program,
     private readonly connection: Connection,
-    private readonly owner: PublicKey
+    private readonly owner: PublicKey,
   ) {}
 
   async unpairedAllocations(
     options: {
       cursor?: string;
       limit?: number;
-    } = {}
+    } = {},
   ): Promise<{ items: UnpairedAllocation[]; nextCursor: string | null }> {
     const limit = options.limit ?? 20;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
@@ -90,7 +91,7 @@ export class FundingDiscovery {
             },
           },
         ],
-      }
+      },
     );
     const keys = accounts
       .map(({ pubkey }) => pubkey)
@@ -102,7 +103,7 @@ export class FundingDiscovery {
       const chunk = keys.slice(checked, checked + 100);
       const infos = await this.connection.getMultipleAccountsInfo(
         chunk,
-        "confirmed"
+        "confirmed",
       );
       const candidates: UnpairedAllocation[] = [];
       infos.forEach((info, index) => {
@@ -111,7 +112,7 @@ export class FundingDiscovery {
           throw new Error("Allocation changed during discovery");
         const state = this.program.coder.accounts.decode<AccountState>(
           "marginTransfer",
-          info.data
+          info.data,
         );
         const nonce = BigInt(state.nonce.toString());
         if (
@@ -129,7 +130,7 @@ export class FundingDiscovery {
             this.owner.toBuffer(),
             state.nonce.toArrayLike(Buffer, "le", 8),
           ],
-          this.program.programId
+          this.program.programId,
         )[0];
         if (!state.amount) throw new Error("Allocation amount is unavailable");
         candidates.push({
@@ -143,7 +144,7 @@ export class FundingDiscovery {
       const orders = candidates.length
         ? await this.connection.getMultipleAccountsInfo(
             candidates.map((item) => item.orderId),
-            "confirmed"
+            "confirmed",
           )
         : [];
       const available = candidates.filter((item, index) => {
@@ -171,7 +172,7 @@ export class FundingDiscovery {
     options: {
       cursor?: string;
       limit?: number;
-    } = {}
+    } = {},
   ): Promise<PendingPage> {
     const limit = options.limit ?? 20;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
@@ -214,13 +215,13 @@ export class FundingDiscovery {
                 },
               },
             ],
-          }
+          },
         ),
-      }))
+      })),
     );
     const keys = scans
       .flatMap(({ name, accounts }) =>
-        accounts.map(({ pubkey }) => ({ name, id: pubkey }))
+        accounts.map(({ pubkey }) => ({ name, id: pubkey })),
       )
       .filter(({ id }) => !cursor || id.toBase58() > cursor)
       .sort((a, b) => a.id.toBase58().localeCompare(b.id.toBase58()));
@@ -230,7 +231,7 @@ export class FundingDiscovery {
       const chunk = keys.slice(checked, checked + 100);
       const accounts = await this.connection.getMultipleAccountsInfo(
         chunk.map(({ id }) => id),
-        "confirmed"
+        "confirmed",
       );
       for (let index = 0; index < chunk.length; index += 1) {
         const entry = chunk[index];
@@ -240,7 +241,7 @@ export class FundingDiscovery {
           throw new Error("Pending account changed during discovery");
         const state = this.program.coder.accounts.decode<AccountState>(
           entry.name,
-          account.data
+          account.data,
         );
         const item = this.project(entry.name, entry.id, state);
         if (item) items.push(item);
@@ -258,7 +259,7 @@ export class FundingDiscovery {
   private project(
     name: AccountName,
     id: PublicKey,
-    state: AccountState
+    state: AccountState,
   ): PendingItem | undefined {
     const nonce = BigInt(state.nonce.toString());
     const current = status(state);
@@ -301,7 +302,7 @@ export class FundingDiscovery {
           this.owner.toBuffer(),
           bytes,
         ],
-        this.program.programId
+        this.program.programId,
       )[0];
       kind =
         Object.keys(state.kind ?? {})[0] === "liquidation" ? "risk" : "trade";

@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
 import { PublicKey } from "@solana/web3.js";
 import type { MakerClient } from "@/client/client";

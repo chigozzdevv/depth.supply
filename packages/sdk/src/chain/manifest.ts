@@ -13,7 +13,9 @@ import {
   computations,
 } from "@depth/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { createHash, createPublicKey, verify } from "node:crypto";
+import { verify } from "@noble/ed25519";
+import { sha256 } from "@noble/hashes/sha256";
+import { Buffer } from "buffer";
 
 export type DeploymentManifest = {
   version: number;
@@ -56,35 +58,26 @@ export function manifestBytes(value: unknown): Buffer {
 }
 
 function hash(value: Buffer): string {
-  return createHash("sha256").update(value).digest("hex");
+  return Buffer.from(sha256(value)).toString("hex");
 }
 
-export function authenticateManifest(
+export async function authenticateManifest(
   signed: SignedManifest,
   trusted: PublicKey,
-): void {
+): Promise<void> {
   if (signed.signer !== trusted.toBase58())
     throw new Error("Manifest signer is not trusted");
-  const publicKey = createPublicKey({
-    key: Buffer.concat([
-      Buffer.from("302a300506032b6570032100", "hex"),
-      trusted.toBuffer(),
-    ]),
-    format: "der",
-    type: "spki",
-  });
   const payload = signed.payload;
   if (
     !Number.isSafeInteger(payload.version) ||
     payload.version < 1 ||
     !Number.isSafeInteger(payload.expiresAt) ||
     payload.expiresAt <= Math.floor(Date.now() / 1000) ||
-    !verify(
-      null,
-      manifestBytes(payload),
-      publicKey,
+    !(await verify(
       Buffer.from(signed.signature, "base64"),
-    )
+      manifestBytes(payload),
+      trusted.toBytes(),
+    ))
   ) {
     throw new Error("Manifest signature, version, or expiry is invalid");
   }
@@ -185,7 +178,7 @@ export async function verifyDeployment(
       throw new Error("Unsigned deployment is restricted to a local RPC");
     return;
   }
-  authenticateManifest(policy.manifest, policy.trustedSigner);
+  await authenticateManifest(policy.manifest, policy.trustedSigner);
   const expected = policy.manifest.payload;
   const actual = await captureDeployment(
     provider,

@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import { x25519 } from "@arcium-hq/client";
 import { PublicKey } from "@solana/web3.js";
 import {
@@ -52,11 +53,11 @@ function power(value: number, exponent: number): number {
 function split(
   secret: Uint8Array,
   threshold: number,
-  count: number
+  count: number,
 ): Uint8Array[] {
   const shares = Array.from(
     { length: count },
-    () => new Uint8Array(secret.length)
+    () => new Uint8Array(secret.length),
   );
   for (let byte = 0; byte < secret.length; byte++) {
     const coefficients = randomBytes(threshold - 1);
@@ -76,7 +77,7 @@ function split(
 
 function associatedData(
   share: Omit<RecoveryShare, "data">,
-  recipient: string
+  recipient: string,
 ): Buffer {
   return Buffer.from(
     JSON.stringify({
@@ -85,19 +86,19 @@ function associatedData(
       recipient,
       index: share.index,
       threshold: share.threshold,
-    })
+    }),
   );
 }
 
 function key(shared: Uint8Array, salt: Buffer): Buffer {
   return Buffer.from(
-    hkdfSync("sha256", shared, salt, "depth.recovery.share.v1", 32)
+    hkdfSync("sha256", shared, salt, "depth.recovery.share.v1", 32),
   );
 }
 
 function seal(
   share: RecoveryShare,
-  recipientKey: Uint8Array
+  recipientKey: Uint8Array,
 ): RecoveryEnvelope {
   if (recipientKey.length !== 32)
     throw new RangeError("Recipient key must be 32 bytes");
@@ -108,7 +109,7 @@ function seal(
   const nonce = randomBytes(12);
   const encryptionKey = key(
     x25519.getSharedSecret(ephemeralSecret, recipientKey),
-    salt
+    salt,
   );
   const cipher = createCipheriv("aes-256-gcm", encryptionKey, nonce);
   cipher.setAAD(associatedData(share, recipient));
@@ -132,7 +133,7 @@ function seal(
 
 export function createRecoveryShares(
   market: PublicKey,
-  recipients: Uint8Array[]
+  recipients: Uint8Array[],
 ): { recoveryKey: Uint8Array; envelopes: RecoveryEnvelope[] } {
   if (
     recipients.length !== 5 ||
@@ -153,8 +154,8 @@ export function createRecoveryShares(
           threshold: 3,
           data,
         },
-        recipients[index]
-      )
+        recipients[index],
+      ),
     );
     return { recoveryKey, envelopes };
   } finally {
@@ -165,7 +166,7 @@ export function createRecoveryShares(
 
 export function openRecoveryShare(
   envelope: RecoveryEnvelope,
-  recipientSecret: Uint8Array
+  recipientSecret: Uint8Array,
 ): RecoveryShare {
   if (
     recipientSecret.length !== 32 ||
@@ -196,7 +197,7 @@ export function openRecoveryShare(
   };
   const encryptionKey = key(
     x25519.getSharedSecret(recipientSecret, ephemeral),
-    salt
+    salt,
   );
   const decipher = createDecipheriv("aes-256-gcm", encryptionKey, nonce);
   decipher.setAAD(associatedData(share, envelope.recipient));
@@ -217,7 +218,7 @@ export function openRecoveryShare(
 export function combineRecoveryShares(
   market: PublicKey,
   recoveryKey: Uint8Array,
-  shares: RecoveryShare[]
+  shares: RecoveryShare[],
 ): Uint8Array {
   if (
     recoveryKey.length !== 32 ||
@@ -230,7 +231,7 @@ export function combineRecoveryShares(
         share.threshold !== 3 ||
         share.index < 1 ||
         share.index > 5 ||
-        share.data.length !== 32
+        share.data.length !== 32,
     )
   )
     throw new RangeError("Recovery shares do not match this market and key");
@@ -244,7 +245,7 @@ export function combineRecoveryShares(
         if (share.index === other.index) continue;
         weight = multiply(
           weight,
-          multiply(other.index, power(other.index ^ share.index, 254))
+          multiply(other.index, power(other.index ^ share.index, 254)),
         );
       }
       value ^= multiply(share.data[byte], weight);

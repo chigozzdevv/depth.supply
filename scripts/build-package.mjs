@@ -15,8 +15,8 @@ const require = createRequire(import.meta.url);
 const entries = {
   bindings: ["index"],
   schema: ["index"],
-  sdk: ["index", "view/view", "recovery/recovery", "account/funding"],
-  "maker-sdk": ["index"],
+  sdk: ["index", "view/view", "recovery/recovery", "account/funding", "operator"],
+  "maker-sdk": ["index", "node"],
 };
 
 function rewriteDeclarations(folder, output) {
@@ -53,6 +53,11 @@ for (const name of requested) {
   for (const entry of entries[name]) {
     const file = join(output, `${entry}.js`);
     mkdirSync(dirname(file), { recursive: true });
+    const target =
+      (name === "sdk" && entry === "operator") ||
+      (name === "maker-sdk" && entry === "node")
+        ? "node"
+        : "browser";
     execFileSync(
       "bun",
       [
@@ -62,7 +67,7 @@ for (const name of requested) {
         "--external=@arcium-hq/*",
         "--external=@depth/*",
         "--external=@solana/*",
-        "--target=node",
+        `--target=${target}`,
         "--format=esm",
         `--outfile=${file}`,
       ],

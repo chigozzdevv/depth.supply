@@ -1,16 +1,22 @@
-import type { DeploymentPolicy } from "@/chain/manifest";
 import * as anchor from "@anchor-lang/core";
 import { SOL_USD_MARKET_ID } from "@depth/bindings";
-import { Connection, PublicKey } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import type { AmountSelector } from "@/trade/amount";
+import type {
+  ConnectionOptions,
+  ResolvedConnection,
+} from "@/chain/environment";
 
 export type DepthWallet = anchor.Wallet;
 
-export type DepthOptions = {
-  deployment: DeploymentPolicy;
+export type DepthOptions = ConnectionOptions & {
   appId?: PublicKey;
   wallet: DepthWallet;
-  connection: Connection;
+};
+
+export type ResolvedDepthOptions = ResolvedConnection & {
+  appId?: PublicKey;
+  wallet: DepthWallet;
 };
 
 export type TradeTerms = {

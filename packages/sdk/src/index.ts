@@ -4,6 +4,8 @@ export {
   createDepth as create_depth,
 } from "@/client/client";
 export { DepthOperation } from "@/operation/operation";
+export { TradeFlow } from "@/trade/flow";
+export type { TradeFlowSnapshot } from "@/trade/flow";
 export { MarketCatalog } from "@/catalog/catalog";
 export type { MarketPolicy, MarketSummary } from "@/catalog/catalog";
 export { AppAdmin, AppRegistration, AppUpdate } from "@/app/app";
@@ -41,6 +43,12 @@ export type {
   ReverseInput,
   TradeIntent,
 } from "@/client/types";
+export { resolveConnection } from "@/chain/environment";
+export type {
+  ConnectionOptions,
+  ResolvedConnection,
+  DepthEnvironment,
+} from "@/chain/environment";
 
 export { DepthError } from "@/operation/error";
 export { DepthProvider } from "@/chain/provider";
@@ -56,17 +64,3 @@ export type {
   SignedManifest,
   DeploymentPolicy,
 } from "@/chain/manifest";
-export { WinddownOperator } from "@/recovery/winddown";
-export {
-  createRecoveryShares,
-  openRecoveryShare,
-  combineRecoveryShares,
-} from "@/recovery/shares";
-export type { RecoveryEnvelope, RecoveryShare } from "@/recovery/shares";
-export { RecoveryWitnessReader } from "@/recovery/witness";
-export { RecoveryCoordinator } from "@/recovery/coordinator";
-export type {
-  ClearingWitness,
-  MarketWitness,
-  FeeWitness,
-} from "@/recovery/winddown";

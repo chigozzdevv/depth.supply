@@ -8,7 +8,7 @@ import {
   type DeploymentManifest,
 } from "@/chain/manifest";
 
-test("deployment manifests reject changed payloads, untrusted signers, and expired releases", () => {
+test("deployment manifests reject changed payloads, untrusted signers, and expired releases", async () => {
   const keypair = Keypair.generate();
   const key = createPrivateKey({
     key: Buffer.concat([
@@ -28,20 +28,20 @@ test("deployment manifests reject changed payloads, untrusted signers, and expir
     signer: keypair.publicKey.toBase58(),
     signature: sign(null, manifestBytes(payload), key).toString("base64"),
   };
-  authenticateManifest(signed, keypair.publicKey);
-  assert.throws(
-    () => authenticateManifest(signed, Keypair.generate().publicKey),
+  await authenticateManifest(signed, keypair.publicKey);
+  await assert.rejects(
+    authenticateManifest(signed, Keypair.generate().publicKey),
     /not trusted/,
   );
   payload.version = 2;
-  assert.throws(
-    () => authenticateManifest(signed, keypair.publicKey),
+  await assert.rejects(
+    authenticateManifest(signed, keypair.publicKey),
     /invalid/,
   );
   payload.version = 1;
   payload.expiresAt = 1;
-  assert.throws(
-    () => authenticateManifest(signed, keypair.publicKey),
+  await assert.rejects(
+    authenticateManifest(signed, keypair.publicKey),
     /invalid/,
   );
 });

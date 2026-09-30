@@ -1,3 +1,4 @@
+import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
 import {
   getMXEAccAddress,
@@ -19,12 +20,13 @@ import { DepthView } from "@depth/sdk/views";
 import { DepthRecovery } from "@depth/sdk/recovery";
 import type { FillSnapshot, PositionSnapshot } from "@depth/sdk/views";
 import { PublicKey } from "@solana/web3.js";
-import { randomBytes } from "node:crypto";
+import { randomBytes } from "@/chain/random";
 import {
   DepthClient,
   DepthProvider,
   FundingClient,
   verifyDeployment,
+  resolveConnection,
 } from "@depth/sdk";
 import type {
   AmountSelector,
@@ -36,12 +38,14 @@ import type {
 import { mxeAccount, queueAccounts } from "@/chain/arcium";
 import { BackstopHandle } from "@/backstop/backstop";
 import { FillHistory } from "@/fill/history";
-import { FillCursorStore } from "@/fill/cursor";
+import { BrowserCursorStore } from "@/fill/browser";
 import { QuoteHandle } from "@/quote/quote";
+import { QuoteReplacement } from "@/quote/replacement";
 import type {
   GrantState,
   BackstopInput,
   MakerOptions,
+  ResolvedMakerOptions,
   MarketState,
   QuoteInput,
   QuoteRequest,
@@ -82,7 +86,7 @@ export class MakerClient {
   private owned(): Promise<DepthClient> {
     if (!this.options.wallet.publicKey.equals(this.options.maker))
       throw new Error(
-        "Operator wallet cannot move or trade the maker's collateral"
+        "Operator wallet cannot move or trade the maker's collateral",
       );
     this.ownerClient ??= DepthClient.create({
       deployment: this.options.deployment,
@@ -98,7 +102,7 @@ export class MakerClient {
       this.program,
       this.options.connection,
       this.options.maker,
-      (name, offset) => this.queue(name, offset)
+      (name, offset) => this.queue(name, offset),
     );
   }
 
@@ -106,11 +110,11 @@ export class MakerClient {
     return new DepthRecovery(
       this.program,
       this.options.connection,
-      this.options.maker
+      this.options.maker,
     );
   }
 
-  private constructor(readonly options: MakerOptions) {
+  private constructor(readonly options: ResolvedMakerOptions) {
     this.provider = new DepthProvider(options.connection, options.wallet, {
       commitment: "confirmed",
       preflightCommitment: "confirmed",
@@ -119,20 +123,32 @@ export class MakerClient {
     this.position = this.positionActions();
     this.backstop = Object.assign(
       (id: PublicKey) => new BackstopHandle(id, this),
-      { offer: (input: BackstopInput) => BackstopHandle.offer(this, input) }
+      { offer: (input: BackstopInput) => BackstopHandle.offer(this, input) },
     );
   }
 
   static async create(options: MakerOptions): Promise<MakerClient> {
-    const client = new MakerClient(options);
-    await verifyDeployment(client.provider, options.deployment);
+    if (
+      options.maker &&
+      options.makerOwner &&
+      !options.maker.equals(options.makerOwner)
+    ) {
+      throw new Error("maker and makerOwner identify different accounts");
+    }
+    const resolved = {
+      ...options,
+      ...(await resolveConnection(options)),
+      maker: options.makerOwner ?? options.maker ?? options.wallet.publicKey,
+    };
+    const client = new MakerClient(resolved);
+    await verifyDeployment(client.provider, resolved.deployment);
     const [programInfo, mxe, market, protocol] = await Promise.all([
-      options.connection.getAccountInfo(DEPTH_PROGRAM_ID, "confirmed"),
+      resolved.connection.getAccountInfo(DEPTH_PROGRAM_ID, "confirmed"),
       mxeAccount(client.provider).fetch(getMXEAccAddress(DEPTH_PROGRAM_ID)),
       client.read<MarketState>("Market", client.marketAddress),
       client.read<{ settlementMint: PublicKey; vault: PublicKey }>(
         "Protocol",
-        client.protocolAddress
+        client.protocolAddress,
       ),
     ]);
     if (
@@ -147,9 +163,9 @@ export class MakerClient {
     ) {
       throw new Error("Depth market and protocol vault disagree");
     }
-    const accountInfo = await options.connection.getAccountInfo(
+    const accountInfo = await resolved.connection.getAccountInfo(
       client.marketAccount(),
-      "confirmed"
+      "confirmed",
     );
     if (!accountInfo) return client;
     if (!accountInfo.owner.equals(DEPTH_PROGRAM_ID)) {
@@ -160,7 +176,7 @@ export class MakerClient {
       market: PublicKey;
     }>("marketAccount", accountInfo.data);
     if (
-      !account.owner.equals(options.maker) ||
+      !account.owner.equals(resolved.maker) ||
       !account.market.equals(client.marketAddress)
     ) {
       throw new Error("Maker market account does not match this market");
@@ -178,7 +194,7 @@ export class MakerClient {
       deposit: async (
         sourceOrAmount: PublicKey | bigint,
         amount?: bigint,
-        clientNonce?: bigint
+        clientNonce?: bigint,
       ) => {
         if (sourceOrAmount instanceof PublicKey) {
           if (amount === undefined || clientNonce === undefined)
@@ -193,17 +209,17 @@ export class MakerClient {
       withdraw: async (
         destinationOrAmount: PublicKey | AmountSelector,
         amount?: bigint,
-        clientNonce?: bigint
+        clientNonce?: bigint,
       ) => {
         if (destinationOrAmount instanceof PublicKey) {
           if (amount === undefined || clientNonce === undefined)
             throw new RangeError(
-              "Destination withdrawals require amount and nonce"
+              "Destination withdrawals require amount and nonce",
             );
           return this.funding.withdraw(
             destinationOrAmount,
             amount,
-            clientNonce
+            clientNonce,
           );
         }
         return (await this.owned()).account.withdraw(destinationOrAmount);
@@ -212,13 +228,13 @@ export class MakerClient {
         input:
           | bigint
           | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
-        clientNonce?: bigint
+        clientNonce?: bigint,
       ) => (await this.owned()).account.allocate(input, clientNonce),
       release: async (
         input:
           | bigint
           | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
-        clientNonce?: bigint
+        clientNonce?: bigint,
       ) => (await this.owned()).account.release(input, clientNonce),
       transferHandle: (nonce: bigint) => this.funding.transferHandle(nonce),
     };
@@ -261,14 +277,14 @@ export class MakerClient {
   async read<T>(name: string, address: PublicKey): Promise<T> {
     const info = await this.options.connection.getAccountInfo(
       address,
-      "confirmed"
+      "confirmed",
     );
     if (!info || !info.owner.equals(DEPTH_PROGRAM_ID)) {
       throw new Error(`${name} account is unavailable`);
     }
     return this.program.coder.accounts.decode<T>(
       name[0].toLowerCase() + name.slice(1),
-      info.data
+      info.data,
     );
   }
 
@@ -288,13 +304,13 @@ export class MakerClient {
       this.provider,
       this.options.connection,
       name,
-      computationOffset
+      computationOffset,
     );
   }
 
   private async grantFor(
     capacity: bigint,
-    expiry: number
+    expiry: number,
   ): Promise<PublicKey | undefined> {
     if (this.options.wallet.publicKey.equals(this.options.maker))
       return undefined;
@@ -338,23 +354,25 @@ export class MakerClient {
               },
             },
           ],
-        }
+        },
       );
       return grants
         .map(({ pubkey, account }) => ({
           id: pubkey,
           state: this.program.coder.accounts.decode<GrantState>(
             "operatorGrant",
-            account.data
+            account.data,
           ),
         }))
         .filter(
           ({ state }) =>
             state.maker.equals(this.options.maker) &&
-            state.market.equals(this.marketAddress)
+            state.market.equals(this.marketAddress),
         )
         .sort((a, b) =>
-          a.state.operator.toBase58().localeCompare(b.state.operator.toBase58())
+          a.state.operator
+            .toBase58()
+            .localeCompare(b.state.operator.toBase58()),
         );
     },
     authorize: async (input: {
@@ -373,7 +391,7 @@ export class MakerClient {
         .grantOperator(
           u64(input.maxCapacity, "maxCapacity"),
           new anchor.BN(input.expiresAt),
-          input.canView
+          input.canView,
         )
         .accountsPartial({
           maker: this.options.maker,
@@ -399,6 +417,8 @@ export class MakerClient {
   };
 
   readonly quote = {
+    replacement: (prior: PublicKey, clientNonce: bigint) =>
+      new QuoteReplacement(this, prior, clientNonce),
     publish: async (request: QuoteRequest): Promise<QuoteHandle> => {
       const clientNonce =
         request.clientNonce ??
@@ -411,7 +431,16 @@ export class MakerClient {
         quoteNonce.toArrayLike(Buffer, "le", 8),
       ]);
       if (await this.options.connection.getAccountInfo(id, "confirmed")) {
-        await this.quoteState(id);
+        const existing = await this.quoteState(id);
+        if (
+          BigInt(existing.capacity.toString()) !== request.maxCapacity ||
+          ("expiresAt" in request &&
+            existing.expiry.toNumber() !== request.expiresAt)
+        ) {
+          throw new Error(
+            "Quote nonce is already bound to different public terms",
+          );
+        }
         return this.quote.get(id);
       }
       const market = await this.read<MarketState>("Market", this.marketAddress);
@@ -423,29 +452,29 @@ export class MakerClient {
       const grant = await this.grantFor(input.maxCapacity, input.expiresAt);
       const account = await this.read<{ status: Record<string, unknown> }>(
         "MarketAccount",
-        this.marketAccount()
+        this.marketAccount(),
       );
       if (stateName(account.status) !== "ready") {
         throw new Error("Maker account is processing another operation");
       }
       const mxePublicKey = await getMXEPublicKey(
         this.provider,
-        DEPTH_PROGRAM_ID
+        DEPTH_PROGRAM_ID,
       );
       if (!mxePublicKey) throw new Error("MXE public key is unavailable");
       const secret = x25519.utils.randomSecretKey();
       const inputKey = x25519.getPublicKey(secret);
       const inputNonce = randomBytes(16);
       const cipher = new RescueCipher(
-        x25519.getSharedSecret(secret, mxePublicKey)
+        x25519.getSharedSecret(secret, mxePublicKey),
       );
       const bid = Array.from(
         { length: 4 },
-        (_, i) => input.tiers[i]?.bidE8 ?? 0n
+        (_, i) => input.tiers[i]?.bidE8 ?? 0n,
       );
       const ask = Array.from(
         { length: 4 },
-        (_, i) => input.tiers[i]?.askE8 ?? 0n
+        (_, i) => input.tiers[i]?.askE8 ?? 0n,
       );
       const reciprocal = (price: bigint) => {
         if (price === 0n) return 0n;
@@ -460,7 +489,7 @@ export class MakerClient {
           bidReciprocal: bid.map(reciprocal),
           askReciprocal: ask.map(reciprocal),
         }),
-        inputNonce
+        inputNonce,
       );
       const computationOffset = offset();
       const queue = await this.queue("prepare_quote", computationOffset);
@@ -475,7 +504,7 @@ export class MakerClient {
           market.oracleTimestamp,
           ciphertexts,
           Array.from(inputKey),
-          new anchor.BN(inputNonce, "le")
+          new anchor.BN(inputNonce, "le"),
         )
         .accountsPartial({
           ...queue,
@@ -516,7 +545,7 @@ export class MakerClient {
               },
             },
           ],
-        }
+        },
       );
       const ids = accounts
         .map(({ pubkey }) => pubkey)
@@ -526,7 +555,7 @@ export class MakerClient {
       if (selected.length === 0) return { items: [], nextCursor: null };
       const infos = await this.options.connection.getMultipleAccountsInfo(
         selected,
-        "confirmed"
+        "confirmed",
       );
       const items = selected.map((id, index) => {
         const info = infos[index];
@@ -534,7 +563,7 @@ export class MakerClient {
           throw new Error("Quote changed during discovery");
         const quote = this.program.coder.accounts.decode<QuoteState>(
           "quoteRecord",
-          info.data
+          info.data,
         );
         const canonical = pda([
           Buffer.from("quote"),
@@ -552,6 +581,10 @@ export class MakerClient {
           id,
           nonce: BigInt(quote.nonce.toString()),
           status: stateName(quote.status),
+          replacementNonce:
+            quote.replacementNonce == null
+              ? undefined
+              : BigInt(quote.replacementNonce.toString()),
           handle: this.quote.get(id),
         };
       });
@@ -573,33 +606,19 @@ export class MakerClient {
     replace: async (
       prior: PublicKey,
       input: QuoteRequest,
-      options: { timeoutMs: number }
+      options: { timeoutMs?: number; pollMs?: number } = {},
     ): Promise<QuoteHandle> => {
-      const previous = this.quote.get(prior);
-      const snapshot = await previous.status();
-      if (
-        !["active", "closing", "releasing", "cancelled", "filled"].includes(
-          snapshot.status
-        )
-      ) {
-        throw new Error("Prior quote cannot be replaced in its current state");
-      }
-      if (snapshot.status === "active" || snapshot.status === "closing")
-        await previous.cancel();
-      const final = await previous.wait(options);
-      if (final.status !== "cancelled" && final.status !== "filled") {
-        throw new Error(
-          "Prior quote still has reserved capital or attached orders; resume replacement with the same IDs"
-        );
-      }
-      return this.quote.publish(input);
+      const nonce =
+        input.clientNonce ??
+        BigInt(new anchor.BN(randomBytes(8), "le").toString());
+      return this.quote.replacement(prior, nonce).resume(input, options);
     },
   };
 
   private flatQuote(
     input: Exclude<QuoteRequest, QuoteInput>,
     market: MarketState,
-    clientNonce: bigint
+    clientNonce: bigint,
   ): QuoteInput {
     if (input.marketId !== SOL_USD_MARKET_ID)
       throw new Error("Only SOL-USD is supported");
@@ -649,7 +668,7 @@ export class MakerClient {
   async requestMarketView(): Promise<DepthView> {
     const account = await this.read<{ status: Record<string, unknown> }>(
       "MarketAccount",
-      this.marketAccount()
+      this.marketAccount(),
     );
     if (stateName(account.status) !== "ready") {
       throw new Error("Maker account is processing another operation");
@@ -723,7 +742,7 @@ export class MakerClient {
     kind: "market" | "fill" | "quote",
     view: PublicKey,
     viewNonce: anchor.BN,
-    accounts: Record<string, PublicKey | null>
+    accounts: Record<string, PublicKey | null>,
   ): Promise<DepthView> {
     const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
     if (!mxePublicKey) throw new Error("MXE public key is unavailable");
@@ -736,25 +755,25 @@ export class MakerClient {
         : kind === "fill"
         ? "view_fill"
         : "view_quote",
-      computationOffset
+      computationOffset,
     );
     const builder =
       kind === "market"
         ? this.program.methods.requestMarketView(
             computationOffset,
             viewNonce,
-            Array.from(publicKey)
+            Array.from(publicKey),
           )
         : kind === "fill"
         ? this.program.methods.requestFillView(
             computationOffset,
             viewNonce,
-            Array.from(publicKey)
+            Array.from(publicKey),
           )
         : this.program.methods.requestQuoteView(
             computationOffset,
             viewNonce,
-            Array.from(publicKey)
+            Array.from(publicKey),
           );
     const signature = await builder
       .accountsPartial({
@@ -773,7 +792,7 @@ export class MakerClient {
       publicKey,
       mxePublicKey,
       this.program,
-      this.options.connection
+      this.options.connection,
     );
   }
 
@@ -792,7 +811,7 @@ export class MakerClient {
       removeMargin: async (amount: AmountSelector, clientNonce?: bigint) =>
         (await this.owned()).position.removeMargin(amount, clientNonce),
       summary: async (
-        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
+        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
       ): Promise<PositionSnapshot> => {
         const view = await this.requestMarketView();
         const result = (await view.wait(options)) as PositionSnapshot;
@@ -802,7 +821,7 @@ export class MakerClient {
     };
     return Object.assign(
       (positionId?: PublicKey | string) => this.positionActions(positionId),
-      actions
+      actions,
     );
   }
 
@@ -823,18 +842,21 @@ export class MakerClient {
       if (options.marketId !== SOL_USD_MARKET_ID)
         throw new Error("Only SOL-USD is supported");
       const genesis = await this.options.connection.getGenesisHash();
-      const store = new FillCursorStore(
-        genesis,
-        this.options.maker.toBase58(),
-        this.options.cursorDirectory
-      );
+      const store =
+        typeof indexedDB === "undefined"
+          ? new (await import("@depth/maker-sdk/node")).FillCursorStore(
+              genesis,
+              this.options.maker.toBase58(),
+              this.options.cursorDirectory,
+            )
+          : new BrowserCursorStore(genesis, this.options.maker.toBase58());
       const cursor = await store.load();
       return new FillHistory(this).subscribe(
         async (fill) => {
           const execution = await this.fills.get(new PublicKey(fill.id));
           if (execution.status !== "ready")
             throw new Error(
-              `Private maker fill ${fill.id} is ${execution.status}`
+              `Private maker fill ${fill.id} is ${execution.status}`,
             );
           await options.onFill({ ...fill, execution });
         },
@@ -843,12 +865,12 @@ export class MakerClient {
           pollMs: options.pollMs,
           saveCursor: (head) => store.save(head),
           onError: options.onError,
-        }
+        },
       );
     },
     get: async (
       order: PublicKey,
-      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 }
+      options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
     ): Promise<FillSnapshot> => {
       const view = await this.requestFillView(order);
       const result = (await view.wait(options)) as FillSnapshot;
@@ -898,7 +920,7 @@ export class MakerClient {
 }
 
 export async function createDepthMaker(
-  options: MakerOptions
+  options: MakerOptions,
 ): Promise<MakerClient> {
   return MakerClient.create(options);
 }

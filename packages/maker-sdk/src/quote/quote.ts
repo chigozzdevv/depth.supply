@@ -1,6 +1,6 @@
 import * as anchor from "@anchor-lang/core";
 import { PublicKey } from "@solana/web3.js";
-import { randomBytes } from "node:crypto";
+import { randomBytes } from "@/chain/random";
 import type { MakerClient } from "@/client/client";
 import type { MarketState, QuoteQueueState } from "@/client/types";
 import { DepthError } from "@depth/sdk";
@@ -10,6 +10,7 @@ export type QuoteSnapshot = {
   status: string;
   maxCapacity: bigint;
   attachedOrders: number;
+  replacementNonce?: bigint;
 };
 
 function name(value: Record<string, unknown>): string {
@@ -24,7 +25,7 @@ export class QuoteHandle {
   constructor(
     readonly id: PublicKey,
     readonly prepareSignature: string | undefined,
-    private readonly client: MakerClient
+    private readonly client: MakerClient,
   ) {}
 
   async status(): Promise<QuoteSnapshot> {
@@ -34,6 +35,9 @@ export class QuoteHandle {
       status: name(state.status),
       maxCapacity: BigInt(state.capacity.toString()),
       attachedOrders: state.attachedOrders,
+      ...(state.replacementNonce == null
+        ? {}
+        : { replacementNonce: BigInt(state.replacementNonce.toString()) }),
     };
   }
 
@@ -45,7 +49,7 @@ export class QuoteHandle {
       const snapshot = await view.wait({ timeoutMs: 60_000 });
       if (snapshot.status === "pending")
         throw new Error(
-          `Quote balance view ${view.id.toBase58()} is still pending`
+          `Quote balance view ${view.id.toBase58()} is still pending`,
         );
       await view.close();
       this.balanceView = undefined;
@@ -60,7 +64,7 @@ export class QuoteHandle {
   }
 
   async confirm(
-    options: { timeoutMs?: number; pollMs?: number } = {}
+    options: { timeoutMs?: number; pollMs?: number } = {},
   ): Promise<{ quoteId: PublicKey; snapshot: QuoteSnapshot }> {
     const timeoutMs = options.timeoutMs ?? 60_000;
     const started = Date.now();
@@ -88,7 +92,7 @@ export class QuoteHandle {
         : "Quote is not active yet",
       snapshot.status !== "rejected" && snapshot.status !== "cancelled",
       "Read the quote status and resume activation if it remains pending",
-      this.id.toBase58()
+      this.id.toBase58(),
     );
   }
 
@@ -111,14 +115,14 @@ export class QuoteHandle {
       }
       if (
         ["active", "filled", "cancelled", "rejected"].includes(
-          snapshot.status
+          snapshot.status,
         ) ||
         Date.now() >= deadline
       ) {
         return snapshot;
       }
       await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(pollMs, deadline - Date.now()))
+        setTimeout(resolve, Math.min(pollMs, deadline - Date.now())),
       );
     }
   }
@@ -143,17 +147,17 @@ export class QuoteHandle {
       if (snapshot.status === "validated" || snapshot.status === "waiting") {
         const market = await this.client.read<MarketState>(
           "Market",
-          this.client.marketAddress
+          this.client.marketAddress,
         );
         const queueState = await this.client.read<QuoteQueueState>(
           "QuoteQueue",
-          this.client.quoteQueueAddress
+          this.client.quoteQueueAddress,
         );
         if (!queueState.market.equals(this.client.marketAddress)) {
           throw new Error("Quote queue belongs to another market");
         }
         const grant = this.client.options.wallet.publicKey.equals(
-          this.client.options.maker
+          this.client.options.maker,
         )
           ? undefined
           : this.client.grantAddress();
@@ -212,7 +216,7 @@ export class QuoteHandle {
         return snapshot;
       }
       await new Promise((resolve) =>
-        setTimeout(resolve, Math.min(pollMs, deadline - Date.now()))
+        setTimeout(resolve, Math.min(pollMs, deadline - Date.now())),
       );
     }
   }

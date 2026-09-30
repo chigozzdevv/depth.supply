@@ -1,7 +1,8 @@
 {
   "name": "@depth/bindings",
   "version": "0.1.0",
-  "private": true,
+  "publishConfig": { "access": "public" },
+  "files": ["dist"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -16,7 +17,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@arcium-hq/client": "0.13.2",
     "@solana/web3.js": "1.99.0",
-    "@arcium-hq/client": "0.13.2"
+    "buffer": "6.0.3"
   }
 }

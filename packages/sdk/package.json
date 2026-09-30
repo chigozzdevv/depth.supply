@@ -1,15 +1,32 @@
 {
   "name": "@depth/sdk",
   "version": "0.1.0",
-  "private": true,
+  "publishConfig": { "access": "public" },
+  "files": ["dist"],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" },
-    "./views": { "types": "./dist/view/view.d.ts", "default": "./dist/view/view.js" },
-    "./recovery": { "types": "./dist/recovery/recovery.d.ts", "default": "./dist/recovery/recovery.js" },
-    "./funding": { "types": "./dist/account/funding.d.ts", "default": "./dist/account/funding.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./views": {
+      "types": "./dist/view/view.d.ts",
+      "default": "./dist/view/view.js"
+    },
+    "./recovery": {
+      "types": "./dist/recovery/recovery.d.ts",
+      "default": "./dist/recovery/recovery.js"
+    },
+    "./funding": {
+      "types": "./dist/account/funding.d.ts",
+      "default": "./dist/account/funding.js"
+    },
+    "./operator": {
+      "types": "./dist/operator.d.ts",
+      "default": "./dist/operator.js"
+    }
   },
   "scripts": {
     "build": "node ../../scripts/build-package.mjs sdk",
@@ -21,6 +38,9 @@
     "@arcium-hq/client": "0.13.2",
     "@depth/bindings": "workspace:*",
     "@depth/schema": "workspace:*",
-    "@solana/web3.js": "1.99.0"
+    "@noble/ed25519": "1.7.5",
+    "@noble/hashes": "1.8.0",
+    "@solana/web3.js": "1.99.0",
+    "buffer": "6.0.3"
   }
 }
