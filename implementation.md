@@ -1,7 +1,7 @@
 # Depth implementation status
 
-Reviewed on 2026-09-29 against [depth.md](depth.md), the repository source,
-and local tests; public devnet accounts were checked on 2026-09-29. The SDK examples in `depth.md`
+Reviewed on 2026-09-30 against [depth.md](depth.md), the repository source,
+and local tests; public devnet accounts were checked on 2026-09-30. The SDK examples in `depth.md`
 remain the target API. A passing local suite does not establish a deployed or
 economically safe market.
 
@@ -72,15 +72,23 @@ economically safe market.
    throughput, protocol revenue against Arcium fees, and measured
    wallet/amount/timing inference remain acceptance gates in `depth.md`.
 7. **Deployment.** The signed manifest capture and verifier exist, but the
-   Depth program was not found on public devnet in the 2026-09-29 check. The
-   Arcium's cluster listing showed no open node membership slots on devnet,
-   and the 2026-09-30 mainnet listing showed the same. Those results do not
-   establish whether either network can admit another MXE.
-   The configured Solana signer path does not exist, and the local test wallet
-   has 0 SOL on devnet. This workspace has no funded release signer or Hermes
-   key. There is no verified deployed MXE, live market, published SDK, keeper
-   fleet, publisher, funded insurance, or external security review to cite. The
-   deferred hosted client is outside this implementation pass.
+   Depth program was not found on public devnet in the 2026-09-30 check.
+   Arcium's cluster listing showed no open node membership slots on devnet or
+   mainnet; that does not establish whether either network can admit another
+   MXE. The local signer at `contracts/target/test-wallet.json` held 10 devnet
+   SOL at the latest check. A test build with the offchain source enabled was
+   3,674,504 bytes, implying about 18.67 SOL of ProgramData rent and a
+   similar temporary buffer allocation, before transaction fees and MXE
+   setup. The 26
+   compiled circuits total 83,328,718 bytes, implying about 423.33 SOL of
+   onchain raw-account rent at the observed devnet rent rate. The contract now
+   supports hash-verified
+   offchain sources, and the Pinata folder uploader verifies every circuit
+   through the public gateway. A Pinata JWT, gateway hostname, uploaded CID,
+   funded signer, and confirmed Arcium MXE admission are still needed before
+   public deployment. There is no verified deployed MXE, live market,
+   published SDK, keeper fleet, funded insurance, or external security review
+   to cite. The deferred hosted client is outside this implementation pass.
 
 ## Verification
 
