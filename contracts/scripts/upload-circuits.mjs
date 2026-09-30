@@ -28,7 +28,7 @@ if (!/^Qm[1-9A-HJ-NP-Za-km-z]{44}$|^bafy[a-z2-7]+$/i.test(result.IpfsHash)) {
   throw new Error("Pinata did not return a valid folder CID");
 }
 
-const base = `https://${gateway}/ipfs/${result.IpfsHash}/depth`;
+const base = `https://${gateway}/ipfs/${result.IpfsHash}`;
 process.stdout.write(`Pinata folder CID: ${result.IpfsHash}\n`);
 await verifyRemote(base, circuits);
 process.stdout.write(`DEPTH_CIRCUIT_BASE_URL=${base}\n`);
