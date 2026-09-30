@@ -216,6 +216,7 @@ pub fn submit_quote_handler(
     quote.market_revision = market.revision;
     quote.oracle_timestamp = market.oracle_timestamp;
     quote.pending_computation = ctx.accounts.computation_account.key();
+    quote.replacement_nonce = None;
     quote.status = QuoteStatus::Validating;
     quote.bump = ctx.bumps.quote;
     ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;

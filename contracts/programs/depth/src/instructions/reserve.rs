@@ -218,6 +218,14 @@ pub struct StopQuote<'info> {
 }
 
 #[derive(Accounts)]
+pub struct BeginQuoteReplacement<'info> {
+    pub actor: Signer<'info>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
+    #[account(mut, seeds = [b"quote", quote.market.as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
+    pub quote: Box<Account<'info, QuoteRecord>>,
+}
+
+#[derive(Accounts)]
 pub struct EnqueueQuote<'info> {
     pub actor: Signer<'info>,
     #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
@@ -587,6 +595,36 @@ pub fn stop_quote_handler(ctx: Context<StopQuote>) -> Result<()> {
     market.active_quotes[count - 1] = Pubkey::default();
     market.active_quote_count -= 1;
     quote.status = QuoteStatus::Closing;
+    Ok(())
+}
+
+pub fn begin_quote_replacement_handler(
+    ctx: Context<BeginQuoteReplacement>,
+    successor_nonce: u64,
+) -> Result<()> {
+    let quote = &mut ctx.accounts.quote;
+    require!(
+        matches!(
+            quote.status,
+            QuoteStatus::Active
+                | QuoteStatus::Closing
+                | QuoteStatus::Releasing
+                | QuoteStatus::Cancelled
+                | QuoteStatus::Filled
+        ),
+        ErrorCode::WrongQuoteStatus
+    );
+    require!(successor_nonce != quote.nonce, ErrorCode::InvalidQuote);
+    authorize_quote_actor(
+        ctx.accounts.actor.key(),
+        quote,
+        ctx.accounts.grant.as_deref(),
+    )?;
+    if let Some(existing) = quote.replacement_nonce {
+        require!(existing == successor_nonce, ErrorCode::InvalidQuote);
+    } else {
+        quote.replacement_nonce = Some(successor_nonce);
+    }
     Ok(())
 }
 

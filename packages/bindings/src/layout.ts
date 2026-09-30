@@ -82,7 +82,8 @@ export const accountOffsets = {
     "pending_computation": 481,
     "attached_orders": 513,
     "status": 515,
-    "bump": 516
+    "bump": 516,
+    "replacement_nonce": 517
   },
   "WithdrawalReceipt": {
     "owner": 8,

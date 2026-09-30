@@ -397,6 +397,68 @@ export type Depth = {
       ]
     },
     {
+      "name": "beginQuoteReplacement",
+      "discriminator": [
+        88,
+        157,
+        7,
+        153,
+        161,
+        129,
+        0,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "actor",
+          "signer": true
+        },
+        {
+          "name": "grant",
+          "optional": true
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quote.market",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "successorNonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "beginRelease",
       "discriminator": [
         133,
@@ -22367,6 +22429,12 @@ export type Depth = {
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "replacementNonce",
+            "type": {
+              "option": "u64"
+            }
           }
         ]
       }

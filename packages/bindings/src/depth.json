@@ -391,6 +391,68 @@
       ]
     },
     {
+      "name": "begin_quote_replacement",
+      "discriminator": [
+        88,
+        157,
+        7,
+        153,
+        161,
+        129,
+        0,
+        212
+      ],
+      "accounts": [
+        {
+          "name": "actor",
+          "signer": true
+        },
+        {
+          "name": "grant",
+          "optional": true
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quote.market",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "QuoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "successor_nonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "begin_release",
       "discriminator": [
         133,
@@ -22361,6 +22423,12 @@
           {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "replacement_nonce",
+            "type": {
+              "option": "u64"
+            }
           }
         ]
       }

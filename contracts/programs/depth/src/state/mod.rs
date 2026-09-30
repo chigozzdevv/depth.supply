@@ -415,6 +415,7 @@ pub struct QuoteRecord {
     pub attached_orders: u16,
     pub status: QuoteStatus,
     pub bump: u8,
+    pub replacement_nonce: Option<u64>,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]

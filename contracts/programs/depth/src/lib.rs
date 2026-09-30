@@ -555,6 +555,13 @@ pub mod depth {
         reserve::stop_quote_handler(ctx)
     }
 
+    pub fn begin_quote_replacement(
+        ctx: Context<BeginQuoteReplacement>,
+        successor_nonce: u64,
+    ) -> Result<()> {
+        reserve::begin_quote_replacement_handler(ctx, successor_nonce)
+    }
+
     pub fn release_quote(ctx: Context<ReleaseQuote>, computation_offset: u64) -> Result<()> {
         reserve::release_quote_handler(ctx, computation_offset)
     }

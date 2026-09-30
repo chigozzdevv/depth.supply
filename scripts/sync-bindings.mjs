@@ -60,6 +60,7 @@ const widths = {
 function span(type) {
   if (typeof type === "string" && type in widths) return widths[type];
   if (type.array) return span(type.array[0]) * type.array[1];
+  if (type.option) return 1 + span(type.option);
   if (type.defined) {
     const definition = typeByName.get(type.defined.name);
     if (
