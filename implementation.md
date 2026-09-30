@@ -52,8 +52,10 @@ economically safe market.
    implemented and tested locally but has not been run against a public
    cluster. The Hermes mode requires an API key, a funded publisher signer,
    a process supervisor, and external alerting before production use. The
-   contract still accepts any fully verified SOL/USD price-update account
-   within its age limit, so pinning the selected account remains open.
+   market now pins its approved price-update account onchain; a replacement
+   requires the protocol authority, a draft or paused market, no pending order, and
+   a newer verified SOL/USD update. The keeper rejects a configured account
+   that differs from the market's approved account.
 5. **Independent committee operation.** Code creates envelopes for five
    distinct recipient keys and reconstructs only from three shares. Real
    committee identities, separate key custody, distribution attestations,
@@ -71,7 +73,9 @@ economically safe market.
    wallet/amount/timing inference remain acceptance gates in `depth.md`.
 7. **Deployment.** The signed manifest capture and verifier exist, but the
    Depth program was not found on public devnet in the 2026-09-29 check. The
-   Arcium CLI listed no devnet cluster with available capacity at that check.
+   Arcium's cluster listing showed no open node membership slots on devnet,
+   and the 2026-09-30 mainnet listing showed the same. Those results do not
+   establish whether either network can admit another MXE.
    The configured Solana signer path does not exist, and the local test wallet
    has 0 SOL on devnet. This workspace has no funded release signer or Hermes
    key. There is no verified deployed MXE, live market, published SDK, keeper

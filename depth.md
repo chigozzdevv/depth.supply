@@ -758,10 +758,13 @@ versioned transition.
 
 The oracle marks equity and drives liquidation. It does not automatically
 become the execution price. Entry and normal close prices come from maker
-quotes. The program verifies the exact oracle feed ID, owning program,
-publish time, exponent, positive price, and confidence threshold. It rejects
-a stale or missing update. The match circuit also enforces a maximum
-deviation of the chosen quote from the reference price.
+quotes. The market records its approved Pyth price-update account onchain.
+Oracle refreshes must use that account and verify the exact feed ID, owning
+program, publish time, exponent, positive price, and confidence threshold.
+The protocol authority may change the account only while the market is draft
+or paused, with no pending order and a newer verified update from the replacement.
+The program rejects a stale or missing update. The match circuit also enforces
+a maximum deviation of the chosen quote from the reference price.
 
 Orders and liquidations are asynchronous. A price that was fresh when the
 operation queued may be unsafe at its callback. The callback either uses a
