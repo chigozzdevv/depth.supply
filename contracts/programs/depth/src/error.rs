@@ -122,4 +122,6 @@ pub enum ErrorCode {
     InvalidRecoveryState,
     #[msg("The signed market revision or oracle update has changed")]
     StaleMarketSnapshot,
+    #[msg("The oracle account can change only while the market is draft or paused")]
+    OracleSourceLocked,
 }

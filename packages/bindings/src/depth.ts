@@ -4006,6 +4006,10 @@ export type Depth = {
           }
         },
         {
+          "name": "oracleAccount",
+          "type": "pubkey"
+        },
+        {
           "name": "recoveryKey",
           "type": {
             "array": [
@@ -15404,6 +15408,108 @@ export type Depth = {
       ]
     },
     {
+      "name": "setOracleAccount",
+      "discriminator": [
+        48,
+        150,
+        176,
+        195,
+        1,
+        223,
+        81,
+        18
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "protocol",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "priceUpdate"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "settleAllocation",
       "discriminator": [
         144,
@@ -18568,6 +18674,11 @@ export type Depth = {
       "code": 6059,
       "name": "staleMarketSnapshot",
       "msg": "The signed market revision or oracle update has changed"
+    },
+    {
+      "code": 6060,
+      "name": "oracleSourceLocked",
+      "msg": "The oracle account can change only while the market is draft or paused"
     }
   ],
   "types": [
@@ -20557,6 +20668,10 @@ export type Depth = {
           },
           {
             "name": "vault",
+            "type": "pubkey"
+          },
+          {
+            "name": "oracleAccount",
             "type": "pubkey"
           },
           {

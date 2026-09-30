@@ -8,6 +8,7 @@ pub struct Market {
     pub market_id: [u8; 32],
     pub settlement_mint: Pubkey,
     pub vault: Pubkey,
+    pub oracle_account: Pubkey,
     pub config: MarketConfig,
     pub revision: u64,
     pub funding_index: i128,
@@ -624,6 +625,7 @@ mod tests {
             market_id: [0; 32],
             settlement_mint: Pubkey::default(),
             vault: Pubkey::default(),
+            oracle_account: Pubkey::default(),
             config: MarketConfig {
                 initial_margin_bps: 0,
                 maintenance_margin_bps: 0,

@@ -83,10 +83,11 @@ pub mod depth {
     pub fn create_market(
         ctx: Context<CreateMarket>,
         config: MarketConfig,
+        oracle_account: Pubkey,
         recovery_key: [u8; 32],
         recovery_signers: [Pubkey; 5],
     ) -> Result<()> {
-        market::create_market_handler(ctx, config, recovery_key, recovery_signers)
+        market::create_market_handler(ctx, config, oracle_account, recovery_key, recovery_signers)
     }
 
     pub fn revise_market(ctx: Context<ReviseMarket>, config: MarketConfig) -> Result<()> {
@@ -95,6 +96,10 @@ pub mod depth {
 
     pub fn refresh_oracle(ctx: Context<RefreshOracle>) -> Result<()> {
         market::refresh_oracle_handler(ctx)
+    }
+
+    pub fn set_oracle_account(ctx: Context<SetOracleAccount>) -> Result<()> {
+        market::set_oracle_account_handler(ctx)
     }
 
     pub fn activate_market(ctx: Context<ActivateMarket>, insurance: u64, salt: u128) -> Result<()> {

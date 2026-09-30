@@ -5,7 +5,7 @@ use sha3::{Digest, Sha3_256};
 use crate::{
     constants::SOL_USD_FEED_ID,
     error::ErrorCode,
-    oracle::read_price,
+    oracle::{read_price, OraclePrice},
     state::{
         BackstopOffer, BackstopStatus, ClearingAccount, ClearingStatus, Market, MarketConfig,
         MarketIncident, MarketStatus, Protocol, QuoteQueue, RecoveryConfig,
@@ -64,7 +64,19 @@ pub struct RefreshOracle<'info> {
         bump = market.bump,
     )]
     pub market: Box<Account<'info, Market>>,
-    /// CHECK: The oracle reader verifies this account's owner, discriminator, and price fields.
+    /// CHECK: The key is pinned by the market and the oracle reader verifies the account data.
+    #[account(address = market.oracle_account @ ErrorCode::InvalidOracleAccount)]
+    pub price_update: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SetOracleAccount<'info> {
+    pub authority: Signer<'info>,
+    #[account(seeds = [b"protocol"], bump = protocol.bump, has_one = authority)]
+    pub protocol: Box<Account<'info, Protocol>>,
+    #[account(mut, seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    /// CHECK: The oracle reader verifies the account owner, discriminator, and price fields.
     pub price_update: UncheckedAccount<'info>,
 }
 
@@ -121,10 +133,16 @@ pub struct ResumeMarket<'info> {
 pub fn create_market_handler(
     ctx: Context<CreateMarket>,
     config: MarketConfig,
+    oracle_account: Pubkey,
     recovery_key: [u8; 32],
     recovery_signers: [Pubkey; 5],
 ) -> Result<()> {
     validate_config(&config)?;
+    require_keys_neq!(
+        oracle_account,
+        Pubkey::default(),
+        ErrorCode::InvalidOracleAccount
+    );
     require!(recovery_key != [0; 32], ErrorCode::InvalidRecoveryKey);
     for (index, signer) in recovery_signers.iter().enumerate() {
         require!(
@@ -140,6 +158,7 @@ pub fn create_market_handler(
     market.market_id = SOL_USD_FEED_ID;
     market.settlement_mint = ctx.accounts.protocol.settlement_mint;
     market.vault = ctx.accounts.protocol.vault;
+    market.oracle_account = oracle_account;
     market.config = config;
     market.revision = 1;
     market.funding_index = 0;
@@ -237,12 +256,42 @@ pub fn refresh_oracle_handler(ctx: Context<RefreshOracle>) -> Result<()> {
             }
         }
     }
+    record_oracle(market, price);
+    Ok(())
+}
+
+pub fn set_oracle_account_handler(ctx: Context<SetOracleAccount>) -> Result<()> {
+    let market = &mut ctx.accounts.market;
+    require!(
+        matches!(market.status, MarketStatus::Draft | MarketStatus::Paused),
+        ErrorCode::OracleSourceLocked
+    );
+    require!(market.pending_orders == 0, ErrorCode::WrongOrderStatus);
+    require_keys_neq!(
+        ctx.accounts.price_update.key(),
+        market.oracle_account,
+        ErrorCode::InvalidOracleAccount
+    );
+    let price = read_price(
+        &ctx.accounts.price_update.to_account_info(),
+        &market.config,
+        &Clock::get()?,
+    )?;
+    require!(
+        price.publish_time > market.oracle_timestamp && price.posted_slot >= market.oracle_slot,
+        ErrorCode::StaleOracle
+    );
+    market.oracle_account = ctx.accounts.price_update.key();
+    record_oracle(market, price);
+    Ok(())
+}
+
+fn record_oracle(market: &mut Market, price: OraclePrice) {
     market.oracle_price_e8 = price.price_e8;
     market.oracle_ema_e8 = price.ema_price_e8;
     market.oracle_confidence_e8 = price.confidence_e8;
     market.oracle_timestamp = price.publish_time;
     market.oracle_slot = price.posted_slot;
-    Ok(())
 }
 
 pub fn activate_market_handler(
