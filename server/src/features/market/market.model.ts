@@ -6,6 +6,7 @@ export type MarketAccount = {
   incident: Variant;
   revision: IntegerValue;
   settlementMint: PublicKey;
+  oracleAccount: PublicKey;
   oraclePriceE8: IntegerValue;
   oracleEmaE8: IntegerValue;
   oracleConfidenceE8: IntegerValue;

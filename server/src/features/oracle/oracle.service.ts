@@ -5,6 +5,7 @@ import type { ChainSigner } from "@/shared/chain/chain.signer";
 export type OracleMarket = {
   pendingOrders: number;
   status: Record<string, unknown>;
+  oracleAccount: PublicKey;
   oracleTimestamp: { toString(): string };
 };
 
@@ -19,6 +20,9 @@ export class OracleService {
       "Market",
       this.chain.market,
     );
+    if (!market.oracleAccount.equals(this.address)) {
+      throw new Error("Configured Pyth account does not match the market oracle");
+    }
     if (market.pendingOrders !== 0 || "settling" in market.status) return;
     const info = await this.chain.connection.getAccountInfo(
       this.address,

@@ -15,6 +15,7 @@ export type PublicMarket = {
     | "backstopUnavailable";
   revision: string;
   settlement_mint: string;
+  oracle_account: string;
   oracle_price_e8: string;
   oracle_ema_e8: string;
   oracle_confidence_e8: string;
@@ -53,6 +54,7 @@ export const publicMarketSchema = {
     "incident",
     "revision",
     "settlement_mint",
+    "oracle_account",
     "oracle_price_e8",
     "oracle_ema_e8",
     "oracle_confidence_e8",
@@ -100,6 +102,7 @@ export const publicMarketSchema = {
     },
     revision: integerString,
     settlement_mint: keyString,
+    oracle_account: keyString,
     oracle_price_e8: integerString,
     oracle_ema_e8: integerString,
     oracle_confidence_e8: integerString,

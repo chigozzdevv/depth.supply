@@ -23,10 +23,13 @@ test("oracle updates respect the settlement lock and reject unverified feeds", a
   let pendingOrders = 1;
   let timestamp = 99;
   let calls = 0;
+  const priceAccount = PublicKey.unique();
+  let marketOracle = priceAccount;
   const chain = {
     read: async () => ({
       pendingOrders,
       status: { active: {} },
+      oracleAccount: marketOracle,
       oracleTimestamp: integer(timestamp),
     }),
     connection: {
@@ -48,9 +51,12 @@ test("oracle updates respect the settlement lock and reject unverified feeds", a
       },
     },
   } as unknown as ChainSigner;
-  const service = new OracleService(chain, PublicKey.unique());
+  const service = new OracleService(chain, priceAccount);
   assert.equal(await service.advance(), undefined);
   pendingOrders = 0;
+  marketOracle = PublicKey.unique();
+  await assert.rejects(service.advance(), /does not match the market oracle/);
+  marketOracle = priceAccount;
   assert.equal(await service.advance(), "oracle-signature");
   timestamp = 100;
   assert.equal(await service.advance(), undefined);

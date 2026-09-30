@@ -61,6 +61,7 @@ test("market and recovery projections expose only public state", async () => {
             incident: { none: {} },
             revision: 3n,
             settlementMint: PublicKey.unique(),
+            oracleAccount: PublicKey.unique(),
             oraclePriceE8: 20_000_000_000n,
             oracleEmaE8: 19_900_000_000n,
             oracleConfidenceE8: 100_000_000n,

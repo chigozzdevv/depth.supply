@@ -36,6 +36,7 @@ export class MarketService {
       incident: variant(value.incident) as PublicMarket["incident"],
       revision: integer(value.revision),
       settlement_mint: value.settlementMint.toBase58(),
+      oracle_account: value.oracleAccount.toBase58(),
       oracle_price_e8: integer(value.oraclePriceE8),
       oracle_ema_e8: integer(value.oracleEmaE8),
       oracle_confidence_e8: integer(value.oracleConfidenceE8),
