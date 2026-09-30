@@ -221,7 +221,7 @@ describe("confidential trade settlement", () => {
       memberSecrets.map((secret) => x25519.getPublicKey(secret))
     );
     await program.methods
-      .createMarket(config, Array.from(recoveryKey), [
+      .createMarket(config, oracle, Array.from(recoveryKey), [
         authority,
         ...recoverySigners.map((signer) => signer.publicKey),
       ])
@@ -956,6 +956,38 @@ describe("confidential trade settlement", () => {
       active: {},
     });
 
+    const selectOracle = async (priceUpdate: PublicKey) => {
+      const current = await program.account.market.fetch(market);
+      const wasActive = "active" in current.status;
+      if (wasActive) {
+        await program.methods
+          .pauseMarket()
+          .accountsPartial({ actor: authority, protocol, market })
+          .rpc();
+      } else if (!("paused" in current.status)) {
+        throw new Error("Oracle source can only change for a paused market");
+      }
+      await program.methods
+        .setOracleAccount()
+        .accountsPartial({ authority, protocol, market, priceUpdate })
+        .rpc();
+      if (wasActive) {
+        await program.methods
+          .resumeMarket()
+          .accountsPartial({
+            authority,
+            protocol,
+            market,
+            clearing,
+            backstopOffer: (
+              await program.account.market.fetch(market)
+            ).backstopOffer,
+            vault,
+          })
+          .rpc();
+      }
+    };
+
     const extraQuotes: Array<{
       id: PublicKey;
       maker: Keypair;
@@ -1639,10 +1671,23 @@ describe("confidential trade settlement", () => {
     }
     expect(revokedViewRejected).to.equal(true);
 
-    await program.methods
-      .refreshOracle()
-      .accountsPartial({ protocol, market, priceUpdate: secondOracle })
-      .rpc();
+    const priorOracle = await program.account.market.fetch(market);
+    let wrongAccountError = "";
+    try {
+      await program.methods
+        .refreshOracle()
+        .accountsPartial({ protocol, market, priceUpdate: secondOracle })
+        .rpc();
+    } catch (error) {
+      wrongAccountError = String(error);
+    }
+    expect(wrongAccountError).to.include("InvalidOracleAccount");
+    expect(
+      (await program.account.market.fetch(market)).oracleTimestamp.eq(
+        priorOracle.oracleTimestamp
+      )
+    ).to.equal(true);
+    await selectOracle(secondOracle);
     const awaitTransfer = async (
       handle: { status(): Promise<{ state: string }> },
       wanted: string
@@ -1723,10 +1768,7 @@ describe("confidential trade settlement", () => {
       await new Promise((resolve) =>
         setTimeout(resolve, exitPublishMs - Date.now() + 5_000)
       );
-    await program.methods
-      .refreshOracle()
-      .accountsPartial({ protocol, market, priceUpdate: exitOracle })
-      .rpc();
+    await selectOracle(exitOracle);
 
     const exitQuoteNonce = new anchor.BN(78);
     let [exitQuote] = PublicKey.findProgramAddressSync(
@@ -2019,10 +2061,7 @@ describe("confidential trade settlement", () => {
       await new Promise((resolve) =>
         setTimeout(resolve, renewalPublishMs - Date.now() + 5_000)
       );
-    await program.methods
-      .refreshOracle()
-      .accountsPartial({ protocol, market, priceUpdate: renewalOracle })
-      .rpc();
+    await selectOracle(renewalOracle);
 
     const renewedNonce = new anchor.BN(80);
     [exitQuote] = PublicKey.findProgramAddressSync(
@@ -2489,10 +2528,7 @@ describe("confidential trade settlement", () => {
       await new Promise((resolve) =>
         setTimeout(resolve, riskPublishMs - Date.now() + 2_000)
       );
-    await program.methods
-      .refreshOracle()
-      .accountsPartial({ protocol, market, priceUpdate: riskOracle })
-      .rpc();
+    await selectOracle(riskOracle);
 
     const riskQuoteNonce = new anchor.BN(79);
     const [riskQuote] = PublicKey.findProgramAddressSync(
@@ -2718,10 +2754,7 @@ describe("confidential trade settlement", () => {
       await new Promise((resolve) =>
         setTimeout(resolve, crashPublishMs - Date.now() + 2_000)
       );
-    await program.methods
-      .refreshOracle()
-      .accountsPartial({ protocol, market, priceUpdate: crashOracle })
-      .rpc();
+    await selectOracle(crashOracle);
     const liquidationNonce = new anchor.BN(505);
     const [liquidation] = PublicKey.findProgramAddressSync(
       [
@@ -2927,10 +2960,7 @@ describe("confidential trade settlement", () => {
       (await program.account.backstopOffer.fetch(replacementOffer)).status
     ).to.deep.equal({ active: {} });
 
-    await program.methods
-      .refreshOracle()
-      .accountsPartial({ protocol, market, priceUpdate: followupOracle })
-      .rpc();
+    await selectOracle(followupOracle);
     const healthyNonce = new anchor.BN(506);
     const [healthyCheck] = PublicKey.findProgramAddressSync(
       [

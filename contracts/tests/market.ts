@@ -8,6 +8,12 @@ const SOL_USD_FEED_ID = Buffer.from(
   "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
   "hex"
 );
+const oracle = new anchor.web3.PublicKey(
+  "3RW84c8AwWtLCVyETK2Xtruo9YsgFnMMt6uW2cDN4mzV"
+);
+const alternateOracle = new anchor.web3.PublicKey(
+  "Br7uuwx4Fpota9gQjs21GmY9bGXbxEgvcgMtPFVkTXKY"
+);
 
 describe("SOL perpetual market", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
@@ -49,7 +55,7 @@ describe("SOL perpetual market", () => {
 
   it("stores bounded market economics and permits draft revisions by the authority", async () => {
     await program.methods
-      .createMarket(config, Array.from(recoveryKey), [
+      .createMarket(config, oracle, Array.from(recoveryKey), [
         authority,
         anchor.web3.PublicKey.unique(),
         anchor.web3.PublicKey.unique(),
@@ -66,9 +72,21 @@ describe("SOL perpetual market", () => {
       true
     );
     expect(stored.vault.equals(protocolState.vault)).to.equal(true);
+    expect(stored.oracleAccount.equals(oracle)).to.equal(true);
     expect(stored.status).to.deep.equal({ draft: {} });
     expect(stored.revision.toNumber()).to.equal(1);
     expect(stored.config.initialMarginBps).to.equal(1_000);
+
+    let wrongAccountError = "";
+    try {
+      await program.methods
+        .refreshOracle()
+        .accountsPartial({ protocol, market, priceUpdate: alternateOracle })
+        .rpc();
+    } catch (error) {
+      wrongAccountError = String(error);
+    }
+    expect(wrongAccountError).to.include("InvalidOracleAccount");
 
     const stranger = anchor.web3.Keypair.generate();
     await expectRejected(
