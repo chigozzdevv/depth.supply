@@ -43,8 +43,8 @@ pub struct ClaimTradeFees<'info> {
         bump = order.bump,
     )]
     pub order: Box<Account<'info, OrderRecord>>,
-    #[account(init_if_needed, space = 9, payer = payer, seeds = [&SIGN_PDA_SEED], bump, address = derive_sign_pda!())]
-    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump, address = derive_sign_pda!())]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(mut, address = derive_mempool_pda!(mxe_account))]
@@ -146,8 +146,8 @@ pub struct SealTradeFees<'info> {
         bump = order.bump,
     )]
     pub order: Box<Account<'info, OrderRecord>>,
-    #[account(init_if_needed, space = 9, payer = payer, seeds = [&SIGN_PDA_SEED], bump, address = derive_sign_pda!())]
-    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump, address = derive_sign_pda!())]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
     #[account(mut, address = derive_mempool_pda!(mxe_account))]
@@ -331,7 +331,6 @@ pub fn claim_trade_fees_handler<'info>(
     ctx.accounts.protocol_balance.pending_computation = computation;
     ctx.accounts.app_balance.status = BalanceStatus::Claiming;
     ctx.accounts.app_balance.pending_computation = computation;
-    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
     queue_computation(
         ctx.accounts,
         computation_offset,
@@ -532,7 +531,6 @@ pub fn seal_trade_fees_handler<'info>(
     ctx.accounts.clearing.pending_computation = computation;
     ctx.accounts.protocol_balance.pending_computation = computation;
     ctx.accounts.app_balance.pending_computation = computation;
-    ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
     queue_computation(
         ctx.accounts,
         computation_offset,
