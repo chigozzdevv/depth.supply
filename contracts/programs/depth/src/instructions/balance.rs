@@ -117,7 +117,7 @@ pub struct CancelOpenBalance<'info> {
 }
 
 pub fn init_open_balance_comp_def_handler(ctx: Context<InitOpenBalanceCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "open_balance")?;
     Ok(())
 }
 

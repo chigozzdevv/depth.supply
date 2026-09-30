@@ -98,7 +98,7 @@ pub struct CloseQuoteView<'info> {
 }
 
 pub fn init_view_quote_comp_def_handler(ctx: Context<InitViewQuoteCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "view_quote")?;
     Ok(())
 }
 

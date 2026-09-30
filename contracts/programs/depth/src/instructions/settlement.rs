@@ -125,7 +125,7 @@ pub struct CancelTrade<'info> {
 }
 
 pub fn init_settle_trade_comp_def_handler(ctx: Context<InitSettleTradeCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "settle_trade")?;
     Ok(())
 }
 

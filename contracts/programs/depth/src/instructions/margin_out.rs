@@ -266,12 +266,12 @@ pub struct CancelMarketDebit<'info> {
 }
 
 pub fn init_debit_free_comp_def_handler(ctx: Context<InitDebitFreeCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "debit_free")?;
     Ok(())
 }
 
 pub fn init_debit_market_comp_def_handler(ctx: Context<InitDebitMarketCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "debit_market")?;
     Ok(())
 }
 

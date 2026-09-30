@@ -245,12 +245,12 @@ pub struct CancelFeeClaim<'info> {
 pub fn init_claim_trade_fees_comp_def_handler(
     ctx: Context<InitClaimTradeFeesCompDef>,
 ) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "claim_trade_fees")?;
     Ok(())
 }
 
 pub fn init_seal_trade_fees_comp_def_handler(ctx: Context<InitSealTradeFeesCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "seal_trade_fees")?;
     Ok(())
 }
 

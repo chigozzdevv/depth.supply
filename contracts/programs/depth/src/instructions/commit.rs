@@ -195,12 +195,12 @@ pub struct InitSealClearingCompDef<'info> {
 }
 
 pub fn init_seal_market_comp_def_handler(ctx: Context<InitSealMarketCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "seal_market")?;
     Ok(())
 }
 
 pub fn init_seal_clearing_comp_def_handler(ctx: Context<InitSealClearingCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "seal_clearing")?;
     Ok(())
 }
 

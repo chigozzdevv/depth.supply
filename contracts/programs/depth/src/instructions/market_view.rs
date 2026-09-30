@@ -98,7 +98,7 @@ pub struct CloseMarketView<'info> {
 }
 
 pub fn init_view_market_comp_def_handler(ctx: Context<InitViewMarketCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "view_market")?;
     Ok(())
 }
 

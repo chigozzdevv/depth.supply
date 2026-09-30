@@ -124,7 +124,7 @@ pub struct CloseBalanceView<'info> {
 }
 
 pub fn init_view_balance_comp_def_handler(ctx: Context<InitViewBalanceCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "view_balance")?;
     Ok(())
 }
 

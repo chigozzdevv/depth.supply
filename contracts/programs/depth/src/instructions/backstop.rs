@@ -516,13 +516,13 @@ pub fn close_backstop_handler(ctx: Context<CloseBackstop>) -> Result<()> {
 }
 
 pub fn init_offer_backstop_comp_def_handler(ctx: Context<InitOfferBackstopCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "offer_backstop")?;
     Ok(())
 }
 
 pub fn init_release_backstop_comp_def_handler(
     ctx: Context<InitReleaseBackstopCompDef>,
 ) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "release_backstop")?;
     Ok(())
 }

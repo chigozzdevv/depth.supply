@@ -96,7 +96,7 @@ pub struct CloseFillView<'info> {
 }
 
 pub fn init_view_fill_comp_def_handler(ctx: Context<InitViewFillCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "view_fill")?;
     Ok(())
 }
 

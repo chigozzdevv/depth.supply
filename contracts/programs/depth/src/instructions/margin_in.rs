@@ -288,12 +288,12 @@ pub struct RefundEscrow<'info> {
 }
 
 pub fn init_credit_market_comp_def_handler(ctx: Context<InitCreditMarketCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "credit_market")?;
     Ok(())
 }
 
 pub fn init_credit_free_comp_def_handler(ctx: Context<InitCreditFreeCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "credit_free")?;
     Ok(())
 }
 

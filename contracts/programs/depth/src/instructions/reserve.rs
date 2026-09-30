@@ -250,12 +250,12 @@ pub struct CancelQuoteRelease<'info> {
 }
 
 pub fn init_reserve_quote_comp_def_handler(ctx: Context<InitReserveQuoteCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "reserve_quote")?;
     Ok(())
 }
 
 pub fn init_release_quote_comp_def_handler(ctx: Context<InitReleaseQuoteCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "release_quote")?;
     Ok(())
 }
 

@@ -133,7 +133,7 @@ pub struct CancelLiquidation<'info> {
 }
 
 pub fn init_liquidate_comp_def_handler(ctx: Context<InitLiquidateCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "liquidate")?;
     Ok(())
 }
 

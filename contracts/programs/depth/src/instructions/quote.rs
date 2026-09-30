@@ -136,7 +136,7 @@ pub struct CloseQuote<'info> {
 }
 
 pub fn init_prepare_quote_comp_def_handler(ctx: Context<InitPrepareQuoteCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "prepare_quote")?;
     Ok(())
 }
 

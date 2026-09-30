@@ -218,14 +218,14 @@ pub struct RecoverClearing<'info> {
 }
 
 pub fn init_open_clearing_comp_def_handler(ctx: Context<InitOpenClearingCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "open_clearing")?;
     Ok(())
 }
 
 pub fn init_credit_insurance_comp_def_handler(
     ctx: Context<InitCreditInsuranceCompDef>,
 ) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "credit_insurance")?;
     Ok(())
 }
 

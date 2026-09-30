@@ -130,7 +130,7 @@ pub struct CancelOrder<'info> {
 }
 
 pub fn init_match_order_comp_def_handler(ctx: Context<InitMatchOrderCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "match_order")?;
     Ok(())
 }
 

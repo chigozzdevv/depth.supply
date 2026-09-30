@@ -1,3 +1,23 @@
+use arcium_client::idl::arcium::types::{CircuitSource, OffChainCircuitSource};
+
+pub(crate) fn circuit_source(name: &str, hash: [u8; 32]) -> Option<CircuitSource> {
+    option_env!("DEPTH_CIRCUIT_BASE_URL").map(|base| {
+        CircuitSource::OffChain(OffChainCircuitSource {
+            source: format!("{}/{name}.arcis", base.trim_end_matches('/')),
+            hash,
+        })
+    })
+}
+
+macro_rules! init_depth_comp_def {
+    ($accounts:expr, $name:literal) => {
+        arcium_anchor::init_computation_def(
+            $accounts,
+            crate::instructions::circuit_source($name, arcium_macros::circuit_hash!($name)),
+        )
+    };
+}
+
 pub mod app;
 pub mod backstop;
 pub mod balance;

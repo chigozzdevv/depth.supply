@@ -133,7 +133,7 @@ pub struct CancelCredit<'info> {
 }
 
 pub fn init_credit_balance_comp_def_handler(ctx: Context<InitCreditBalanceCompDef>) -> Result<()> {
-    init_computation_def(ctx.accounts, None)?;
+    init_depth_comp_def!(ctx.accounts, "credit_balance")?;
     Ok(())
 }
 
