@@ -3,8 +3,10 @@
 The Fastify service reads confirmed public state directly from the Depth Solana program.
 It never accepts orders, private keys, or plaintext quote prices.
 
-Run `pnpm install` from the repository root, then set `SOLANA_RPC_URL` and run
-`pnpm --dir server start`. `HOST` defaults to `127.0.0.1` and `PORT` to `8787`.
+Run `pnpm install` from the repository root, copy `.env.example` to `.env.local`
+at the root, then set `SOLANA_RPC_URL` and run `pnpm --dir server start`.
+The server commands load that root env file. `HOST` defaults to `127.0.0.1`
+and `PORT` to `8787`.
 The server uses Bun to run TypeScript with the repository's `@/` imports.
 `src/features/` holds the app, market, quote, operation, recovery, settlement, oracle, risk, and fee
 features. HTTP routes, controllers, schemas, services, and decoded account models

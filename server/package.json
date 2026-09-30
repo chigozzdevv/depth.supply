@@ -4,9 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "bun src/server.ts",
-    "keeper": "bun src/features/settlement/settlement.worker.ts",
-    "publisher": "bun src/features/oracle/oracle.worker.ts",
+    "start": "bun --env-file=../.env.local src/server.ts",
+    "keeper": "bun --env-file=../.env.local src/features/settlement/settlement.worker.ts",
+    "publisher": "bun --env-file=../.env.local src/features/oracle/oracle.worker.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
