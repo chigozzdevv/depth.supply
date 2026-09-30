@@ -51,7 +51,7 @@ export function serverConfig(
 export function keeperConfig(
   env: NodeJS.ProcessEnv = process.env
 ): KeeperConfig {
-  const url = rpcUrl(env.DEPTH_RPC_URL, "DEPTH_RPC_URL");
+  const url = rpcUrl(env.SOLANA_RPC_URL, "SOLANA_RPC_URL");
   const mode = oracleMode(env);
   if (env.DEPTH_KEEPER_KEYPAIR && env.DEPTH_KEEPER_KEYPAIR_PATH) {
     throw new Error("Configure one keeper signer source");

@@ -45,7 +45,7 @@ test("publisher leaves a recently updated verified feed alone", async () => {
   account.data.writeBigInt64LE(BigInt(Math.floor(Date.now() / 1_000)), 93);
   const signer = Keypair.generate();
   const config = publisherConfig({
-    DEPTH_RPC_URL: "https://rpc.example.test",
+    SOLANA_RPC_URL: "https://rpc.example.test",
     DEPTH_KEEPER_KEYPAIR: JSON.stringify(Array.from(signer.secretKey)),
     PYTH_ORACLE_MODE: "hermes",
     PYTH_API_KEY: "test-key",

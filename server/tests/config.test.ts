@@ -15,7 +15,7 @@ import {
 test("shared configuration validates RPC URLs and the keeper signer", () => {
   const keypair = Keypair.generate();
   const config = keeperConfig({
-    DEPTH_RPC_URL: "https://rpc.example.test",
+    SOLANA_RPC_URL: "https://rpc.example.test",
     DEPTH_PRICE_ACCOUNT: keypair.publicKey.toBase58(),
     DEPTH_KEEPER_KEYPAIR: JSON.stringify(Array.from(keypair.secretKey)),
   });
@@ -28,7 +28,7 @@ test("shared configuration validates RPC URLs and the keeper signer", () => {
   );
   assert.ok(
     keeperConfig({
-      DEPTH_RPC_URL: "https://rpc.example.test",
+      SOLANA_RPC_URL: "https://rpc.example.test",
       DEPTH_KEEPER_KEYPAIR: JSON.stringify(Array.from(keypair.secretKey)),
     }).priceAccount.equals(SOL_USD_PUSH_ACCOUNT)
   );
@@ -38,13 +38,13 @@ test("shared configuration validates RPC URLs and the keeper signer", () => {
   );
 
   assert.throws(
-    () => keeperConfig({ DEPTH_RPC_URL: "file:///tmp/rpc" }),
+    () => keeperConfig({ SOLANA_RPC_URL: "file:///tmp/rpc" }),
     /HTTP or HTTPS/
   );
   assert.throws(
     () =>
       keeperConfig({
-        DEPTH_RPC_URL: "https://rpc.example.test",
+        SOLANA_RPC_URL: "https://rpc.example.test",
         DEPTH_KEEPER_KEYPAIR: "[]",
       }),
     /64-byte JSON array/
@@ -65,7 +65,7 @@ test("keeper and publisher can load one signer from a local file", () => {
       mode: 0o600,
     });
     const env = {
-      DEPTH_RPC_URL: "https://rpc.example.test",
+      SOLANA_RPC_URL: "https://rpc.example.test",
       DEPTH_KEEPER_KEYPAIR_PATH: path,
     };
     assert.ok(keeperConfig(env).keypair.publicKey.equals(signer.publicKey));
@@ -92,7 +92,7 @@ test("keeper and publisher can load one signer from a local file", () => {
 test("publisher configuration requires a Pyth key and a valid shard", () => {
   const keypair = Keypair.generate();
   const env = {
-    DEPTH_RPC_URL: "https://rpc.example.test",
+    SOLANA_RPC_URL: "https://rpc.example.test",
     DEPTH_KEEPER_KEYPAIR: JSON.stringify(Array.from(keypair.secretKey)),
     PYTH_ORACLE_MODE: "hermes",
     PYTH_API_KEY: "test-key",

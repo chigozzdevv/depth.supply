@@ -68,7 +68,7 @@ already exist. Keep `.env.local` private. The public API uses `SOLANA_RPC_URL`:
 pnpm --dir server start
 ```
 
-After deploying a market, the keeper needs `DEPTH_RPC_URL` and
+After deploying a market, the keeper uses `SOLANA_RPC_URL` and needs
 `DEPTH_KEEPER_KEYPAIR_PATH` pointing to its Solana signer. The default
 `PYTH_ORACLE_MODE=sponsored` reads the configured Pyth SOL/USD feed without a
 Hermes API key:
