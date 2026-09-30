@@ -87,6 +87,12 @@ const [
 if (!cluster?.owner.equals(arcium.programId)) {
   throw new Error("Arcium devnet cluster 456 is unavailable");
 }
+const clusterState = await arcium.account.cluster.fetch(
+  getClusterAccAddress(clusterOffset)
+);
+if (BigInt(clusterState.maxCapacity.toString()) === 0n) {
+  throw new Error("Arcium devnet cluster 456 reports zero capacity");
+}
 // The loader returns the buffer balance to the payer before funding ProgramData.
 const required =
   Math.max(bufferRent, programRent) + programAccountRent + 1_000_000_000;
