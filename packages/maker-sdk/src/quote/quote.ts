@@ -189,27 +189,50 @@ export class QuoteHandle {
               BigInt(market.config.maxMarketNotional.toString()))
         )
           return snapshot;
+        const makerAccount = await this.client.read<{
+          status: Record<string, unknown>;
+        }>("MarketAccount", this.client.marketAccount());
+        if (name(makerAccount.status) !== "ready" || market.pendingOrders > 0) {
+          if (Date.now() >= deadline) return snapshot;
+          await new Promise((resolve) => setTimeout(resolve, pollMs));
+          continue;
+        }
         const offset = new anchor.BN(randomBytes(8), "le");
         const queue = await this.client.queue("reserve_quote", offset);
-        this.reserveSignature = await this.client.program.methods
-          .reserveQuote(offset)
-          .accountsPartial({
-            ...queue,
-            payer: this.client.options.wallet.publicKey,
-            protocol: this.client.protocolAddress,
-            market: this.client.marketAddress,
-            marketAccount: this.client.marketAccount(),
-            grant: grant ?? this.client.program.programId,
-            quote: this.id,
-          })
-          .remainingAccounts([
-            {
-              pubkey: this.client.quoteQueueAddress,
-              isSigner: false,
-              isWritable: true,
-            },
-          ])
-          .rpc({ commitment: "confirmed" });
+        try {
+          this.reserveSignature = await this.client.program.methods
+            .reserveQuote(offset)
+            .accountsPartial({
+              ...queue,
+              payer: this.client.options.wallet.publicKey,
+              protocol: this.client.protocolAddress,
+              market: this.client.marketAddress,
+              marketAccount: this.client.marketAccount(),
+              grant: grant ?? this.client.program.programId,
+              quote: this.id,
+            })
+            .remainingAccounts([
+              {
+                pubkey: this.client.quoteQueueAddress,
+                isSigner: false,
+                isWritable: true,
+              },
+            ])
+            .rpc({ commitment: "confirmed" });
+        } catch (error) {
+          const code = (error as {
+            error?: { errorCode?: { code?: string } };
+          }).error?.errorCode?.code;
+          if (
+            (code !== "WrongMarketAccountStatus" &&
+              code !== "WrongOrderStatus") ||
+            Date.now() >= deadline
+          ) {
+            throw error;
+          }
+          await new Promise((resolve) => setTimeout(resolve, pollMs));
+          continue;
+        }
         return this.status();
       }
       if (snapshot.status !== "validating" || Date.now() >= deadline) {

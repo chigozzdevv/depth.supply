@@ -94,6 +94,7 @@ test("quote activation waits for private validation and stays pending until rese
   const id = PublicKey.unique();
   const marketAddress = PublicKey.unique();
   let status = "validating";
+  let makerReady = false;
   let submitted = 0;
   const client = {
     options: { maker, wallet: { publicKey: maker } },
@@ -111,7 +112,9 @@ test("quote activation waits for private validation and stays pending until rese
       close: async () => "close-signature",
     }),
     read: async (name: string) =>
-      name === "Market"
+      name === "MarketAccount"
+        ? { status: { [makerReady ? "ready" : "trading"]: {} } }
+        : name === "Market"
         ? {
             activeQuoteCount: 0,
             pendingOrders: 0,
@@ -141,6 +144,9 @@ test("quote activation waits for private validation and stays pending until rese
   assert.equal(pending.status, "validating");
   assert.equal(submitted, 0);
   status = "validated";
+  assert.equal((await handle.activate({ timeoutMs: 0 })).status, "validated");
+  assert.equal(submitted, 0);
+  makerReady = true;
   const reserved = await handle.activate({ timeoutMs: 0 });
   assert.equal(reserved.status, "reserving");
   assert.equal(handle.reserveSignature, "reserve-signature");

@@ -443,6 +443,18 @@ export class MakerClient {
         }
         return this.quote.get(id);
       }
+      const readyDeadline = Date.now() + 60_000;
+      for (;;) {
+        const account = await this.read<{ status: Record<string, unknown> }>(
+          "MarketAccount",
+          this.marketAccount(),
+        );
+        if (stateName(account.status) === "ready") break;
+        if (Date.now() >= readyDeadline) {
+          throw new Error("Maker account is processing another operation");
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+      }
       const market = await this.read<MarketState>("Market", this.marketAddress);
       const input: QuoteInput =
         "tiers" in request
@@ -450,13 +462,6 @@ export class MakerClient {
           : this.flatQuote(request, market, clientNonce);
       this.validateQuote(input, market);
       const grant = await this.grantFor(input.maxCapacity, input.expiresAt);
-      const account = await this.read<{ status: Record<string, unknown> }>(
-        "MarketAccount",
-        this.marketAccount(),
-      );
-      if (stateName(account.status) !== "ready") {
-        throw new Error("Maker account is processing another operation");
-      }
       const mxePublicKey = await getMXEPublicKey(
         this.provider,
         DEPTH_PROGRAM_ID,
