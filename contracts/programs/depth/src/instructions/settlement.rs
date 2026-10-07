@@ -12,7 +12,7 @@ use crate::{
     ArciumSignerAccount, ID, ID_CONST,
 };
 
-#[queue_computation_accounts("settle_trade", payer)]
+#[queue_computation_accounts("settle_trade_v2", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
 pub struct SettleTrade<'info> {
@@ -58,9 +58,9 @@ pub struct TradeSettlement<'info> {
     pub order: Box<Account<'info, OrderRecord>>,
 }
 
-#[callback_accounts("settle_trade")]
+#[callback_accounts("settle_trade_v2")]
 #[derive(Accounts)]
-pub struct SettleTradeCallback<'info> {
+pub struct SettleTradeV2Callback<'info> {
     pub arcium_program: Program<'info, Arcium>,
     #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_SETTLE_TRADE))]
     pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
@@ -87,7 +87,7 @@ pub struct SettleTradeCallback<'info> {
     pub order: Box<Account<'info, OrderRecord>>,
 }
 
-#[init_computation_definition_accounts("settle_trade", payer)]
+#[init_computation_definition_accounts("settle_trade_v2", payer)]
 #[derive(Accounts)]
 pub struct InitSettleTradeCompDef<'info> {
     #[account(mut)]
@@ -125,7 +125,7 @@ pub struct CancelTrade<'info> {
 }
 
 pub fn init_settle_trade_comp_def_handler(ctx: Context<InitSettleTradeCompDef>) -> Result<()> {
-    init_depth_comp_def!(ctx.accounts, "settle_trade")?;
+    init_depth_comp_def!(ctx.accounts, "settle_trade_v2")?;
     Ok(())
 }
 
@@ -251,7 +251,7 @@ pub fn settle_trade_handler<'info>(
         ctx.accounts,
         computation_offset,
         args,
-        vec![SettleTradeCallback::callback_ix(
+        vec![SettleTradeV2Callback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[
@@ -288,11 +288,11 @@ pub fn settle_trade_handler<'info>(
     Ok(())
 }
 
-pub fn settle_trade_callback_handler(
-    ctx: Context<SettleTradeCallback>,
-    output: SignedComputationOutputs<SettleTradeOutput>,
+pub fn settle_trade_v2_callback_handler(
+    ctx: Context<SettleTradeV2Callback>,
+    output: SignedComputationOutputs<SettleTradeV2Output>,
 ) -> Result<()> {
-    let SettleTradeOutput { field_0: result } = output
+    let SettleTradeV2Output { field_0: result } = output
         .verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,

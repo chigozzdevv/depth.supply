@@ -15,6 +15,7 @@ import {
 import {
   appAddress,
   circuits,
+  computationName,
   DEPTH_IDL,
   DEPTH_PROGRAM_ID,
   marketAddress,
@@ -168,7 +169,7 @@ export class DepthClient {
     const cluster = mxe.cluster;
     const definition = getCompDefAccAddress(
       DEPTH_PROGRAM_ID,
-      Buffer.from(getCompDefAccOffset(name)).readUInt32LE(),
+      Buffer.from(getCompDefAccOffset(computationName(name))).readUInt32LE(),
     );
     const definitionInfo = await this.options.connection.getAccountInfo(
       definition,

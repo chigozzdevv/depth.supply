@@ -12,6 +12,7 @@ import {
 import {
   DEPTH_IDL,
   DEPTH_PROGRAM_ID,
+  computationName,
   marketAddress,
   protocolAddress,
 } from "@depth/bindings";
@@ -62,7 +63,7 @@ export class ChainSigner {
     }
     const definition = getCompDefAccAddress(
       DEPTH_PROGRAM_ID,
-      Buffer.from(getCompDefAccOffset(name)).readUInt32LE(),
+      Buffer.from(getCompDefAccOffset(computationName(name))).readUInt32LE(),
     );
     if (!(await this.connection.getAccountInfo(definition, "confirmed"))) {
       throw new Error(`${name} computation is not deployed`);

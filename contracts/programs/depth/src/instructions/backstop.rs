@@ -14,7 +14,7 @@ use crate::{
     ArciumSignerAccount, ID, ID_CONST,
 };
 
-#[init_computation_definition_accounts("offer_backstop", payer)]
+#[init_computation_definition_accounts("offer_backstop_v2", payer)]
 #[derive(Accounts)]
 pub struct InitOfferBackstopCompDef<'info> {
     #[account(mut)]
@@ -54,7 +54,7 @@ pub struct InitReleaseBackstopCompDef<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[queue_computation_accounts("offer_backstop", maker)]
+#[queue_computation_accounts("offer_backstop_v2", maker)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64, nonce: u64)]
 pub struct OfferBackstop<'info> {
@@ -91,9 +91,9 @@ pub struct OfferBackstop<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
-#[callback_accounts("offer_backstop")]
+#[callback_accounts("offer_backstop_v2")]
 #[derive(Accounts)]
-pub struct OfferBackstopCallback<'info> {
+pub struct OfferBackstopV2Callback<'info> {
     pub arcium_program: Program<'info, Arcium>,
     #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_OFFER_BACKSTOP))]
     pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
@@ -266,7 +266,7 @@ pub fn offer_backstop_handler(
         ctx.accounts,
         computation_offset,
         args,
-        vec![OfferBackstopCallback::callback_ix(
+        vec![OfferBackstopV2Callback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[
@@ -291,11 +291,11 @@ pub fn offer_backstop_handler(
     Ok(())
 }
 
-pub fn offer_backstop_callback_handler(
-    ctx: Context<OfferBackstopCallback>,
-    output: SignedComputationOutputs<OfferBackstopOutput>,
+pub fn offer_backstop_v2_callback_handler(
+    ctx: Context<OfferBackstopV2Callback>,
+    output: SignedComputationOutputs<OfferBackstopV2Output>,
 ) -> Result<()> {
-    let OfferBackstopOutput { field_0: result } = output
+    let OfferBackstopV2Output { field_0: result } = output
         .verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,
@@ -516,7 +516,7 @@ pub fn close_backstop_handler(ctx: Context<CloseBackstop>) -> Result<()> {
 }
 
 pub fn init_offer_backstop_comp_def_handler(ctx: Context<InitOfferBackstopCompDef>) -> Result<()> {
-    init_depth_comp_def!(ctx.accounts, "offer_backstop")?;
+    init_depth_comp_def!(ctx.accounts, "offer_backstop_v2")?;
     Ok(())
 }
 

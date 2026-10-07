@@ -167,6 +167,11 @@ mod circuits {
         SHA3_256::new().digest(&bytes)
     }
 
+    // Normalize signed public inputs from their two's complement representation.
+    fn normalize_funding(value: i128) -> i128 {
+        (value as u128) as i128
+    }
+
     #[instruction]
     pub fn open_balance(
         owner: [u8; 32],
@@ -418,7 +423,7 @@ mod circuits {
     }
 
     #[instruction]
-    pub fn debit_market(
+    pub fn debit_market_v2(
         encrypted: Enc<Mxe, Pack<MarketState>>,
         amount: u64,
         oracle_price: u64,
@@ -433,6 +438,7 @@ mod circuits {
         [u8; 32],
         bool,
     ) {
+        let funding_index = normalize_funding(funding_index);
         let current = encrypted.to_arcis().unpack();
         let position = current.position as i128;
         let absolute = if position < 0 { -position } else { position } as u128;
@@ -845,7 +851,7 @@ mod circuits {
     }
 
     #[instruction]
-    pub fn settle_trade(
+    pub fn settle_trade_v2(
         plan_cipher: Enc<Mxe, Pack<TradePlan>>,
         trader_cipher: Enc<Mxe, Pack<MarketState>>,
         maker_cipher: Enc<Mxe, Pack<MarketState>>,
@@ -865,6 +871,7 @@ mod circuits {
         Enc<Mxe, Pack<QuoteBalance>>,
         bool,
     ) {
+        let funding_index = normalize_funding(funding_index);
         let plan = plan_cipher.to_arcis().unpack();
         let trader = trader_cipher.to_arcis().unpack();
         let maker = maker_cipher.to_arcis().unpack();
@@ -1069,7 +1076,7 @@ mod circuits {
     }
 
     #[instruction]
-    pub fn liquidate(
+    pub fn liquidate_v2(
         target_cipher: Enc<Mxe, Pack<MarketState>>,
         backstop_cipher: Enc<Mxe, Pack<MarketState>>,
         clearing_cipher: Enc<Mxe, Pack<ClearingState>>,
@@ -1088,6 +1095,7 @@ mod circuits {
         bool,
         bool,
     ) {
+        let funding_index = normalize_funding(funding_index);
         let target = target_cipher.to_arcis().unpack();
         let backstop = backstop_cipher.to_arcis().unpack();
         let clearing = clearing_cipher.to_arcis().unpack();
@@ -1242,7 +1250,7 @@ mod circuits {
     }
 
     #[instruction]
-    pub fn reserve_quote(
+    pub fn reserve_quote_v2(
         encrypted: Enc<Mxe, Pack<MarketState>>,
         required: u64,
         oracle_price: u64,
@@ -1257,6 +1265,7 @@ mod circuits {
         [u8; 32],
         bool,
     ) {
+        let funding_index = normalize_funding(funding_index);
         let current = encrypted.to_arcis().unpack();
         let signed = current.position as i128;
         let absolute = if signed < 0 { -signed } else { signed } as u128;
@@ -1325,7 +1334,7 @@ mod circuits {
         )
     }
     #[instruction]
-    pub fn offer_backstop(
+    pub fn offer_backstop_v2(
         encrypted: Enc<Mxe, Pack<MarketState>>,
         required: u64,
         oracle_price: u64,
@@ -1340,6 +1349,7 @@ mod circuits {
         [u8; 32],
         bool,
     ) {
+        let funding_index = normalize_funding(funding_index);
         let current = encrypted.to_arcis().unpack();
         let signed = current.position as i128;
         let absolute = if signed < 0 { -signed } else { signed } as u128;
@@ -1405,3 +1415,6 @@ mod circuits {
         )
     }
 }
+
+#[cfg(test)]
+mod tests;

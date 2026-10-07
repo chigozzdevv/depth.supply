@@ -13,7 +13,7 @@ use crate::{
     ArciumSignerAccount, ID, ID_CONST,
 };
 
-#[queue_computation_accounts("reserve_quote", payer)]
+#[queue_computation_accounts("reserve_quote_v2", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64)]
 pub struct ReserveQuote<'info> {
@@ -64,9 +64,9 @@ pub struct ReserveQuote<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
-#[callback_accounts("reserve_quote")]
+#[callback_accounts("reserve_quote_v2")]
 #[derive(Accounts)]
-pub struct ReserveQuoteCallback<'info> {
+pub struct ReserveQuoteV2Callback<'info> {
     pub arcium_program: Program<'info, Arcium>,
     #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_RESERVE_QUOTE))]
     pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
@@ -89,7 +89,7 @@ pub struct ReserveQuoteCallback<'info> {
     pub quote: Box<Account<'info, QuoteRecord>>,
 }
 
-#[init_computation_definition_accounts("reserve_quote", payer)]
+#[init_computation_definition_accounts("reserve_quote_v2", payer)]
 #[derive(Accounts)]
 pub struct InitReserveQuoteCompDef<'info> {
     #[account(mut)]
@@ -258,7 +258,7 @@ pub struct CancelQuoteRelease<'info> {
 }
 
 pub fn init_reserve_quote_comp_def_handler(ctx: Context<InitReserveQuoteCompDef>) -> Result<()> {
-    init_depth_comp_def!(ctx.accounts, "reserve_quote")?;
+    init_depth_comp_def!(ctx.accounts, "reserve_quote_v2")?;
     Ok(())
 }
 
@@ -400,7 +400,7 @@ pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64
         ctx.accounts,
         computation_offset,
         args,
-        vec![ReserveQuoteCallback::callback_ix(
+        vec![ReserveQuoteV2Callback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[
@@ -429,11 +429,11 @@ pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64
     Ok(())
 }
 
-pub fn reserve_quote_callback_handler(
-    ctx: Context<ReserveQuoteCallback>,
-    output: SignedComputationOutputs<ReserveQuoteOutput>,
+pub fn reserve_quote_v2_callback_handler(
+    ctx: Context<ReserveQuoteV2Callback>,
+    output: SignedComputationOutputs<ReserveQuoteV2Output>,
 ) -> Result<()> {
-    let ReserveQuoteOutput { field_0: result } = output
+    let ReserveQuoteV2Output { field_0: result } = output
         .verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,

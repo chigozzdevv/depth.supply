@@ -116,7 +116,7 @@ pub struct InitDebitFreeCompDef<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[queue_computation_accounts("debit_market", payer)]
+#[queue_computation_accounts("debit_market_v2", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64, nonce: u64)]
 pub struct BeginRelease<'info> {
@@ -174,9 +174,9 @@ pub struct BeginRelease<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
-#[callback_accounts("debit_market")]
+#[callback_accounts("debit_market_v2")]
 #[derive(Accounts)]
-pub struct DebitMarketCallback<'info> {
+pub struct DebitMarketV2Callback<'info> {
     pub arcium_program: Program<'info, Arcium>,
     #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_DEBIT_MARKET))]
     pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
@@ -207,7 +207,7 @@ pub struct DebitMarketCallback<'info> {
     pub transfer: Box<Account<'info, MarginTransfer>>,
 }
 
-#[init_computation_definition_accounts("debit_market", payer)]
+#[init_computation_definition_accounts("debit_market_v2", payer)]
 #[derive(Accounts)]
 pub struct InitDebitMarketCompDef<'info> {
     #[account(mut)]
@@ -271,7 +271,7 @@ pub fn init_debit_free_comp_def_handler(ctx: Context<InitDebitFreeCompDef>) -> R
 }
 
 pub fn init_debit_market_comp_def_handler(ctx: Context<InitDebitMarketCompDef>) -> Result<()> {
-    init_depth_comp_def!(ctx.accounts, "debit_market")?;
+    init_depth_comp_def!(ctx.accounts, "debit_market_v2")?;
     Ok(())
 }
 
@@ -414,7 +414,7 @@ pub fn begin_release_handler(
         ctx.accounts,
         computation_offset,
         args,
-        vec![DebitMarketCallback::callback_ix(
+        vec![DebitMarketV2Callback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[
@@ -508,11 +508,11 @@ pub fn debit_free_callback_handler(
     Ok(())
 }
 
-pub fn debit_market_callback_handler(
-    ctx: Context<DebitMarketCallback>,
-    output: SignedComputationOutputs<DebitMarketOutput>,
+pub fn debit_market_v2_callback_handler(
+    ctx: Context<DebitMarketV2Callback>,
+    output: SignedComputationOutputs<DebitMarketV2Output>,
 ) -> Result<()> {
-    let DebitMarketOutput { field_0: result } = output
+    let DebitMarketV2Output { field_0: result } = output
         .verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,

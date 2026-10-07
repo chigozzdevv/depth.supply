@@ -49,7 +49,7 @@ export async function exerciseQuote(
       init: () => program.methods.initPrepareQuoteCompDef(),
     },
     {
-      name: "reserve_quote",
+      name: "reserve_quote_v2",
       init: () => program.methods.initReserveQuoteCompDef(),
     },
     {
@@ -175,7 +175,7 @@ export async function exerciseQuote(
   await program.methods
     .reserveQuote(reserveOffset)
     .accountsPartial({
-      ...queueAccounts(reserveOffset, "reserve_quote"),
+      ...queueAccounts(reserveOffset, "reserve_quote_v2"),
       payer: owner,
       protocol,
       market,

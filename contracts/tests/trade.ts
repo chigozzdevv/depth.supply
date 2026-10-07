@@ -298,7 +298,7 @@ describe("confidential trade settlement", () => {
             .rpc(options),
       ],
       [
-        "debit_market",
+        "debit_market_v2",
         (a) =>
           program.methods
             .initDebitMarketCompDef()
@@ -338,7 +338,7 @@ describe("confidential trade settlement", () => {
             .rpc(options),
       ],
       [
-        "reserve_quote",
+        "reserve_quote_v2",
         (a) =>
           program.methods
             .initReserveQuoteCompDef()
@@ -354,7 +354,7 @@ describe("confidential trade settlement", () => {
             .rpc(options),
       ],
       [
-        "offer_backstop",
+        "offer_backstop_v2",
         (a) =>
           program.methods
             .initOfferBackstopCompDef()
@@ -378,7 +378,7 @@ describe("confidential trade settlement", () => {
             .rpc({ ...options, skipPreflight: false }),
       ],
       [
-        "settle_trade",
+        "settle_trade_v2",
         (a) =>
           program.methods
             .initSettleTradeCompDef()
@@ -402,7 +402,7 @@ describe("confidential trade settlement", () => {
             .rpc(options),
       ],
       [
-        "liquidate",
+        "liquidate_v2",
         (a) =>
           program.methods
             .initLiquidateCompDef()
@@ -816,7 +816,7 @@ describe("confidential trade settlement", () => {
         new anchor.BN(Math.floor(Date.now() / 1000) + 3_600)
       )
       .accountsPartial({
-        ...harness.queue(offset, "offer_backstop"),
+        ...harness.queue(offset, "offer_backstop_v2"),
         maker: authority,
         market,
         marketAccount: makerState.marketAccount,
@@ -915,7 +915,7 @@ describe("confidential trade settlement", () => {
     await program.methods
       .reserveQuote(offset)
       .accountsPartial({
-        ...harness.queue(offset, "reserve_quote"),
+        ...harness.queue(offset, "reserve_quote_v2"),
         payer: operator.publicKey,
         protocol,
         market,
@@ -1059,7 +1059,7 @@ describe("confidential trade settlement", () => {
       await program.methods
         .reserveQuote(offset)
         .accountsPartial({
-          ...harness.queue(offset, "reserve_quote"),
+          ...harness.queue(offset, "reserve_quote_v2"),
           payer: extraMaker.publicKey,
           protocol,
           market,
@@ -1239,7 +1239,7 @@ describe("confidential trade settlement", () => {
     await program.methods
       .settleTrade(offset)
       .accountsPartial({
-        ...harness.queue(offset, "settle_trade"),
+        ...harness.queue(offset, "settle_trade_v2"),
         payer: authority,
         trade: {
           market,
@@ -2004,7 +2004,7 @@ describe("confidential trade settlement", () => {
     await program.methods
       .reserveQuote(offset)
       .accountsPartial({
-        ...harness.queue(offset, "reserve_quote"),
+        ...harness.queue(offset, "reserve_quote_v2"),
         payer: authority,
         protocol,
         market,
@@ -2287,7 +2287,7 @@ describe("confidential trade settlement", () => {
     await program.methods
       .reserveQuote(offset)
       .accountsPartial({
-        ...harness.queue(offset, "reserve_quote"),
+        ...harness.queue(offset, "reserve_quote_v2"),
         payer: authority,
         protocol,
         market,
@@ -2556,7 +2556,7 @@ describe("confidential trade settlement", () => {
     await program.methods
       .settleTrade(offset)
       .accountsPartial({
-        ...harness.queue(offset, "settle_trade"),
+        ...harness.queue(offset, "settle_trade_v2"),
         payer: authority,
         trade: {
           market,
@@ -2758,7 +2758,7 @@ describe("confidential trade settlement", () => {
     await program.methods
       .reserveQuote(offset)
       .accountsPartial({
-        ...harness.queue(offset, "reserve_quote"),
+        ...harness.queue(offset, "reserve_quote_v2"),
         payer: authority,
         protocol,
         market,
@@ -2865,7 +2865,7 @@ describe("confidential trade settlement", () => {
     await program.methods
       .settleTrade(offset)
       .accountsPartial({
-        ...harness.queue(offset, "settle_trade"),
+        ...harness.queue(offset, "settle_trade_v2"),
         payer: authority,
         trade: {
           market,
@@ -2950,7 +2950,7 @@ describe("confidential trade settlement", () => {
         new anchor.BN(Math.floor(Date.now() / 1000) + 260)
       )
       .accountsPartial({
-        ...harness.queue(offset, "liquidate"),
+        ...harness.queue(offset, "liquidate_v2"),
         payer: authority,
         order: liquidation,
         trade: {
@@ -3124,7 +3124,7 @@ describe("confidential trade settlement", () => {
         new anchor.BN(Math.floor(Date.now() / 1000) + 3_600)
       )
       .accountsPartial({
-        ...harness.queue(offset, "offer_backstop"),
+        ...harness.queue(offset, "offer_backstop_v2"),
         maker: authority,
         market,
         marketAccount: makerState.marketAccount,
@@ -3156,7 +3156,7 @@ describe("confidential trade settlement", () => {
         new anchor.BN(Math.floor(Date.now() / 1000) + 115)
       )
       .accountsPartial({
-        ...harness.queue(offset, "liquidate"),
+        ...harness.queue(offset, "liquidate_v2"),
         payer: authority,
         order: healthyCheck,
         trade: {

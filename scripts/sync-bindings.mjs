@@ -33,13 +33,19 @@ const constants = readFileSync(
 const computations = [...constants.matchAll(/comp_def_offset\("([^"\n]+)"\)/g)]
   .map((match) => match[1])
   .sort();
+if (
+  new Set(computations.map((name) => name.replace(/_v\d+$/, ""))).size !==
+  computations.length
+) {
+  throw new Error("Computation names have ambiguous versions");
+}
 writeFileSync(
   resolve(destination, "computations.ts"),
   `export const computations = ${JSON.stringify(
     computations,
     null,
     2
-  )} as const;\n`
+  )} as const;\n\nexport function computationName(name: string) {\n  const current = computations.find(\n    (value) => value === name || value.replace(/_v\\d+$/, "") === name,\n  );\n  if (!current) throw new Error(\`Unknown Depth computation: \${name}\`);\n  return current;\n}\n`
 );
 
 const typeByName = new Map(idl.types.map((type) => [type.name, type.type]));

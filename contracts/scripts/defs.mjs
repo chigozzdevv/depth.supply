@@ -57,6 +57,7 @@ for (const { name, hash } of circuits) {
     }
   } else {
     const methodName = `init${name
+      .replace(/_v\d+$/, "")
       .split("_")
       .map((part) => part[0].toUpperCase() + part.slice(1))
       .join("")}CompDef`;
@@ -79,7 +80,10 @@ for (const { name, hash } of circuits) {
   );
   const source = definition.circuitSource.offChain?.[0];
   if (
-    source?.source !== `${circuitBase}/${name}.arcis` ||
+    !source ||
+    new URL(source.source).protocol !== "https:" ||
+    !new URL(source.source).pathname.endsWith(`/${name}.arcis`) ||
+    (!existing && source.source !== `${circuitBase}/${name}.arcis`) ||
     !Buffer.from(source.hash).equals(hash)
   ) {
     throw new Error(`Definition ${name} has the wrong circuit URL or hash`);

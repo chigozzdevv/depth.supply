@@ -5402,16 +5402,16 @@ export type Depth = {
       ]
     },
     {
-      "name": "debitMarketCallback",
+      "name": "debitMarketV2Callback",
       "discriminator": [
-        5,
-        125,
-        161,
-        165,
-        123,
-        75,
-        126,
-        198
+        94,
+        45,
+        158,
+        51,
+        177,
+        223,
+        253,
+        170
       ],
       "accounts": [
         {
@@ -5597,7 +5597,7 @@ export type Depth = {
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "debitMarketOutput"
+                      "name": "debitMarketV2Output"
                     }
                   }
                 }
@@ -7692,16 +7692,16 @@ export type Depth = {
       ]
     },
     {
-      "name": "liquidateCallback",
+      "name": "liquidateV2Callback",
       "discriminator": [
-        156,
-        82,
-        188,
-        61,
-        21,
-        86,
+        174,
+        48,
+        50,
+        243,
+        145,
         148,
-        80
+        105,
+        42
       ],
       "accounts": [
         {
@@ -7946,7 +7946,7 @@ export type Depth = {
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "liquidateOutput"
+                      "name": "liquidateV2Output"
                     }
                   }
                 }
@@ -8421,16 +8421,16 @@ export type Depth = {
       ]
     },
     {
-      "name": "offerBackstopCallback",
+      "name": "offerBackstopV2Callback",
       "discriminator": [
-        61,
-        203,
+        128,
+        88,
+        175,
+        87,
         196,
-        231,
-        25,
-        53,
-        102,
-        196
+        252,
+        138,
+        143
       ],
       "accounts": [
         {
@@ -8592,7 +8592,7 @@ export type Depth = {
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "offerBackstopOutput"
+                      "name": "offerBackstopV2Output"
                     }
                   }
                 }
@@ -12952,16 +12952,16 @@ export type Depth = {
       ]
     },
     {
-      "name": "reserveQuoteCallback",
+      "name": "reserveQuoteV2Callback",
       "discriminator": [
-        198,
-        188,
-        60,
-        148,
-        118,
-        223,
-        130,
-        162
+        57,
+        119,
+        120,
+        17,
+        152,
+        7,
+        244,
+        239
       ],
       "accounts": [
         {
@@ -13142,7 +13142,7 @@ export type Depth = {
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "reserveQuoteOutput"
+                      "name": "reserveQuoteV2Output"
                     }
                   }
                 }
@@ -16288,16 +16288,16 @@ export type Depth = {
       ]
     },
     {
-      "name": "settleTradeCallback",
+      "name": "settleTradeV2Callback",
       "discriminator": [
-        249,
-        104,
-        72,
+        96,
+        52,
+        6,
+        43,
         14,
-        24,
-        165,
-        248,
-        183
+        139,
+        245,
+        225
       ],
       "accounts": [
         {
@@ -16549,7 +16549,7 @@ export type Depth = {
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "settleTradeOutput"
+                      "name": "settleTradeV2Output"
                     }
                   }
                 }
@@ -20028,7 +20028,7 @@ export type Depth = {
       }
     },
     {
-      "name": "debitMarketOutput",
+      "name": "debitMarketV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -20040,7 +20040,7 @@ export type Depth = {
             "name": "field0",
             "type": {
               "defined": {
-                "name": "debitMarketOutputStruct0"
+                "name": "debitMarketV2OutputStruct0"
               }
             }
           }
@@ -20048,7 +20048,7 @@ export type Depth = {
       }
     },
     {
-      "name": "debitMarketOutputStruct0",
+      "name": "debitMarketV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [
@@ -20398,7 +20398,7 @@ export type Depth = {
       }
     },
     {
-      "name": "liquidateOutput",
+      "name": "liquidateV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -20410,7 +20410,7 @@ export type Depth = {
             "name": "field0",
             "type": {
               "defined": {
-                "name": "liquidateOutputStruct0"
+                "name": "liquidateV2OutputStruct0"
               }
             }
           }
@@ -20418,7 +20418,7 @@ export type Depth = {
       }
     },
     {
-      "name": "liquidateOutputStruct0",
+      "name": "liquidateV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [
@@ -21336,7 +21336,7 @@ export type Depth = {
       }
     },
     {
-      "name": "offerBackstopOutput",
+      "name": "offerBackstopV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -21348,7 +21348,7 @@ export type Depth = {
             "name": "field0",
             "type": {
               "defined": {
-                "name": "offerBackstopOutputStruct0"
+                "name": "offerBackstopV2OutputStruct0"
               }
             }
           }
@@ -21356,7 +21356,7 @@ export type Depth = {
       }
     },
     {
-      "name": "offerBackstopOutputStruct0",
+      "name": "offerBackstopV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [
@@ -22726,7 +22726,7 @@ export type Depth = {
       }
     },
     {
-      "name": "reserveQuoteOutput",
+      "name": "reserveQuoteV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -22738,7 +22738,7 @@ export type Depth = {
             "name": "field0",
             "type": {
               "defined": {
-                "name": "reserveQuoteOutputStruct0"
+                "name": "reserveQuoteV2OutputStruct0"
               }
             }
           }
@@ -22746,7 +22746,7 @@ export type Depth = {
       }
     },
     {
-      "name": "reserveQuoteOutputStruct0",
+      "name": "reserveQuoteV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [
@@ -23060,7 +23060,7 @@ export type Depth = {
       }
     },
     {
-      "name": "settleTradeOutput",
+      "name": "settleTradeV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -23072,7 +23072,7 @@ export type Depth = {
             "name": "field0",
             "type": {
               "defined": {
-                "name": "settleTradeOutputStruct0"
+                "name": "settleTradeV2OutputStruct0"
               }
             }
           }
@@ -23080,7 +23080,7 @@ export type Depth = {
       }
     },
     {
-      "name": "settleTradeOutputStruct0",
+      "name": "settleTradeV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [

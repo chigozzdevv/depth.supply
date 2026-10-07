@@ -1,18 +1,21 @@
 import { createHash } from "node:crypto";
-import { readdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const build = fileURLToPath(new URL("../build/", import.meta.url));
 
 export async function readCircuits() {
-  const names = (await readdir(build))
-    .filter((file) => file.endsWith(".arcis"))
-    .map((file) => file.slice(0, -6))
+  const constants = await readFile(
+    new URL("../programs/depth/src/constants.rs", import.meta.url),
+    "utf8"
+  );
+  const names = [...constants.matchAll(/comp_def_offset\("([^"\n]+)"\)/g)]
+    .map((match) => match[1])
     .sort();
 
-  if (names.length !== 26)
-    throw new Error(`Expected 26 compiled circuits, found ${names.length}`);
+  if (names.length !== 26 || new Set(names).size !== names.length)
+    throw new Error("Expected 26 distinct active circuit definitions");
 
   return Promise.all(
     names.map(async (name) => {

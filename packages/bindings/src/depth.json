@@ -5396,16 +5396,16 @@
       ]
     },
     {
-      "name": "debit_market_callback",
+      "name": "debit_market_v2_callback",
       "discriminator": [
-        5,
-        125,
-        161,
-        165,
-        123,
-        75,
-        126,
-        198
+        94,
+        45,
+        158,
+        51,
+        177,
+        223,
+        253,
+        170
       ],
       "accounts": [
         {
@@ -5591,7 +5591,7 @@
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "DebitMarketOutput"
+                      "name": "DebitMarketV2Output"
                     }
                   }
                 }
@@ -7686,16 +7686,16 @@
       ]
     },
     {
-      "name": "liquidate_callback",
+      "name": "liquidate_v2_callback",
       "discriminator": [
-        156,
-        82,
-        188,
-        61,
-        21,
-        86,
+        174,
+        48,
+        50,
+        243,
+        145,
         148,
-        80
+        105,
+        42
       ],
       "accounts": [
         {
@@ -7940,7 +7940,7 @@
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "LiquidateOutput"
+                      "name": "LiquidateV2Output"
                     }
                   }
                 }
@@ -8415,16 +8415,16 @@
       ]
     },
     {
-      "name": "offer_backstop_callback",
+      "name": "offer_backstop_v2_callback",
       "discriminator": [
-        61,
-        203,
+        128,
+        88,
+        175,
+        87,
         196,
-        231,
-        25,
-        53,
-        102,
-        196
+        252,
+        138,
+        143
       ],
       "accounts": [
         {
@@ -8586,7 +8586,7 @@
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "OfferBackstopOutput"
+                      "name": "OfferBackstopV2Output"
                     }
                   }
                 }
@@ -12946,16 +12946,16 @@
       ]
     },
     {
-      "name": "reserve_quote_callback",
+      "name": "reserve_quote_v2_callback",
       "discriminator": [
-        198,
-        188,
-        60,
-        148,
-        118,
-        223,
-        130,
-        162
+        57,
+        119,
+        120,
+        17,
+        152,
+        7,
+        244,
+        239
       ],
       "accounts": [
         {
@@ -13136,7 +13136,7 @@
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "ReserveQuoteOutput"
+                      "name": "ReserveQuoteV2Output"
                     }
                   }
                 }
@@ -16282,16 +16282,16 @@
       ]
     },
     {
-      "name": "settle_trade_callback",
+      "name": "settle_trade_v2_callback",
       "discriminator": [
-        249,
-        104,
-        72,
+        96,
+        52,
+        6,
+        43,
         14,
-        24,
-        165,
-        248,
-        183
+        139,
+        245,
+        225
       ],
       "accounts": [
         {
@@ -16543,7 +16543,7 @@
                   "kind": "type",
                   "type": {
                     "defined": {
-                      "name": "SettleTradeOutput"
+                      "name": "SettleTradeV2Output"
                     }
                   }
                 }
@@ -20022,7 +20022,7 @@
       }
     },
     {
-      "name": "DebitMarketOutput",
+      "name": "DebitMarketV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -20034,7 +20034,7 @@
             "name": "field_0",
             "type": {
               "defined": {
-                "name": "DebitMarketOutputStruct0"
+                "name": "DebitMarketV2OutputStruct0"
               }
             }
           }
@@ -20042,7 +20042,7 @@
       }
     },
     {
-      "name": "DebitMarketOutputStruct0",
+      "name": "DebitMarketV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [
@@ -20392,7 +20392,7 @@
       }
     },
     {
-      "name": "LiquidateOutput",
+      "name": "LiquidateV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -20404,7 +20404,7 @@
             "name": "field_0",
             "type": {
               "defined": {
-                "name": "LiquidateOutputStruct0"
+                "name": "LiquidateV2OutputStruct0"
               }
             }
           }
@@ -20412,7 +20412,7 @@
       }
     },
     {
-      "name": "LiquidateOutputStruct0",
+      "name": "LiquidateV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [
@@ -21330,7 +21330,7 @@
       }
     },
     {
-      "name": "OfferBackstopOutput",
+      "name": "OfferBackstopV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -21342,7 +21342,7 @@
             "name": "field_0",
             "type": {
               "defined": {
-                "name": "OfferBackstopOutputStruct0"
+                "name": "OfferBackstopV2OutputStruct0"
               }
             }
           }
@@ -21350,7 +21350,7 @@
       }
     },
     {
-      "name": "OfferBackstopOutputStruct0",
+      "name": "OfferBackstopV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [
@@ -22720,7 +22720,7 @@
       }
     },
     {
-      "name": "ReserveQuoteOutput",
+      "name": "ReserveQuoteV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -22732,7 +22732,7 @@
             "name": "field_0",
             "type": {
               "defined": {
-                "name": "ReserveQuoteOutputStruct0"
+                "name": "ReserveQuoteV2OutputStruct0"
               }
             }
           }
@@ -22740,7 +22740,7 @@
       }
     },
     {
-      "name": "ReserveQuoteOutputStruct0",
+      "name": "ReserveQuoteV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [
@@ -23054,7 +23054,7 @@
       }
     },
     {
-      "name": "SettleTradeOutput",
+      "name": "SettleTradeV2Output",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
         "as anchor does not support tuples and tuple structs yet."
@@ -23066,7 +23066,7 @@
             "name": "field_0",
             "type": {
               "defined": {
-                "name": "SettleTradeOutputStruct0"
+                "name": "SettleTradeV2OutputStruct0"
               }
             }
           }
@@ -23074,7 +23074,7 @@
       }
     },
     {
-      "name": "SettleTradeOutputStruct0",
+      "name": "SettleTradeV2OutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [

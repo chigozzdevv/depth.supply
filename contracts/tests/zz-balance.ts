@@ -612,7 +612,7 @@ describe("private balances", () => {
             .rpc({ skipPreflight: true, commitment: "confirmed" }),
       },
       {
-        name: "debit_market",
+        name: "debit_market_v2",
         init: (address: PublicKey) =>
           program.methods
             .initDebitMarketCompDef()
@@ -757,7 +757,7 @@ describe("private balances", () => {
     await program.methods
       .beginRelease(releaseOffset, new anchor.BN(102), new anchor.BN(40_000))
       .accountsPartial({
-        ...queueAccounts(releaseOffset, "debit_market"),
+        ...queueAccounts(releaseOffset, "debit_market_v2"),
         payer: owner,
         protocol,
         market,

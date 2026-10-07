@@ -158,5 +158,5 @@ export { circuits } from "@/circuits";
 export { packQuoteCurve } from "@/quote";
 export type { EncryptedQuote } from "@/quote";
 
-export { computations } from "@/computations";
+export { computations, computationName } from "@/computations";
 export { accountOffsets, enumValues } from "@/layout";

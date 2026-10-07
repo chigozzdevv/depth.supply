@@ -140,12 +140,12 @@ pub mod depth {
         backstop::init_release_backstop_comp_def_handler(ctx)
     }
 
-    #[arcium_callback(encrypted_ix = "offer_backstop")]
-    pub fn offer_backstop_callback(
-        ctx: Context<OfferBackstopCallback>,
-        output: SignedComputationOutputs<OfferBackstopOutput>,
+    #[arcium_callback(encrypted_ix = "offer_backstop_v2")]
+    pub fn offer_backstop_v2_callback(
+        ctx: Context<OfferBackstopV2Callback>,
+        output: SignedComputationOutputs<OfferBackstopV2Output>,
     ) -> Result<()> {
-        backstop::offer_backstop_callback_handler(ctx, output)
+        backstop::offer_backstop_v2_callback_handler(ctx, output)
     }
 
     pub fn release_backstop(ctx: Context<ReleaseBackstop>, computation_offset: u64) -> Result<()> {
@@ -419,12 +419,12 @@ pub mod depth {
         margin_out::debit_free_callback_handler(ctx, output)
     }
 
-    #[arcium_callback(encrypted_ix = "debit_market")]
-    pub fn debit_market_callback(
-        ctx: Context<DebitMarketCallback>,
-        output: SignedComputationOutputs<DebitMarketOutput>,
+    #[arcium_callback(encrypted_ix = "debit_market_v2")]
+    pub fn debit_market_v2_callback(
+        ctx: Context<DebitMarketV2Callback>,
+        output: SignedComputationOutputs<DebitMarketV2Output>,
     ) -> Result<()> {
-        margin_out::debit_market_callback_handler(ctx, output)
+        margin_out::debit_market_v2_callback_handler(ctx, output)
     }
 
     pub fn cancel_free_debit(ctx: Context<CancelFreeDebit>) -> Result<()> {
@@ -543,12 +543,12 @@ pub mod depth {
         reserve::reserve_quote_handler(ctx, computation_offset)
     }
 
-    #[arcium_callback(encrypted_ix = "reserve_quote")]
-    pub fn reserve_quote_callback(
-        ctx: Context<ReserveQuoteCallback>,
-        output: SignedComputationOutputs<ReserveQuoteOutput>,
+    #[arcium_callback(encrypted_ix = "reserve_quote_v2")]
+    pub fn reserve_quote_v2_callback(
+        ctx: Context<ReserveQuoteV2Callback>,
+        output: SignedComputationOutputs<ReserveQuoteV2Output>,
     ) -> Result<()> {
-        reserve::reserve_quote_callback_handler(ctx, output)
+        reserve::reserve_quote_v2_callback_handler(ctx, output)
     }
 
     pub fn stop_quote(ctx: Context<StopQuote>) -> Result<()> {
@@ -699,12 +699,12 @@ pub mod depth {
         liquidation::liquidate_handler(ctx, computation_offset, target_owner, nonce, deadline)
     }
 
-    #[arcium_callback(encrypted_ix = "liquidate")]
-    pub fn liquidate_callback(
-        ctx: Context<LiquidateCallback>,
-        output: SignedComputationOutputs<LiquidateOutput>,
+    #[arcium_callback(encrypted_ix = "liquidate_v2")]
+    pub fn liquidate_v2_callback(
+        ctx: Context<LiquidateV2Callback>,
+        output: SignedComputationOutputs<LiquidateV2Output>,
     ) -> Result<()> {
-        liquidation::liquidate_callback_handler(ctx, output)
+        liquidation::liquidate_v2_callback_handler(ctx, output)
     }
 
     pub fn cancel_liquidation(ctx: Context<CancelLiquidation>) -> Result<()> {
@@ -718,12 +718,12 @@ pub mod depth {
         settlement::settle_trade_handler(ctx, computation_offset)
     }
 
-    #[arcium_callback(encrypted_ix = "settle_trade")]
-    pub fn settle_trade_callback(
-        ctx: Context<SettleTradeCallback>,
-        output: SignedComputationOutputs<SettleTradeOutput>,
+    #[arcium_callback(encrypted_ix = "settle_trade_v2")]
+    pub fn settle_trade_v2_callback(
+        ctx: Context<SettleTradeV2Callback>,
+        output: SignedComputationOutputs<SettleTradeV2Output>,
     ) -> Result<()> {
-        settlement::settle_trade_callback_handler(ctx, output)
+        settlement::settle_trade_v2_callback_handler(ctx, output)
     }
 
     pub fn cancel_trade(ctx: Context<CancelTrade>) -> Result<()> {

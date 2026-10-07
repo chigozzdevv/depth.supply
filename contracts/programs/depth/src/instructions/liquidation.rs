@@ -13,7 +13,7 @@ use crate::{
     ArciumSignerAccount, ID, ID_CONST,
 };
 
-#[init_computation_definition_accounts("liquidate", payer)]
+#[init_computation_definition_accounts("liquidate_v2", payer)]
 #[derive(Accounts)]
 pub struct InitLiquidateCompDef<'info> {
     #[account(mut)]
@@ -33,7 +33,7 @@ pub struct InitLiquidateCompDef<'info> {
     pub system_program: Program<'info, System>,
 }
 
-#[queue_computation_accounts("liquidate", payer)]
+#[queue_computation_accounts("liquidate_v2", payer)]
 #[derive(Accounts)]
 #[instruction(computation_offset: u64, target_owner: Pubkey, nonce: u64)]
 pub struct Liquidate<'info> {
@@ -82,9 +82,9 @@ pub struct LiquidationTrade<'info> {
     pub offer: UncheckedAccount<'info>,
 }
 
-#[callback_accounts("liquidate")]
+#[callback_accounts("liquidate_v2")]
 #[derive(Accounts)]
-pub struct LiquidateCallback<'info> {
+pub struct LiquidateV2Callback<'info> {
     pub arcium_program: Program<'info, Arcium>,
     #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_LIQUIDATE))]
     pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
@@ -133,7 +133,7 @@ pub struct CancelLiquidation<'info> {
 }
 
 pub fn init_liquidate_comp_def_handler(ctx: Context<InitLiquidateCompDef>) -> Result<()> {
-    init_depth_comp_def!(ctx.accounts, "liquidate")?;
+    init_depth_comp_def!(ctx.accounts, "liquidate_v2")?;
     Ok(())
 }
 
@@ -278,7 +278,7 @@ pub fn liquidate_handler(
         ctx.accounts,
         computation_offset,
         args,
-        vec![LiquidateCallback::callback_ix(
+        vec![LiquidateV2Callback::callback_ix(
             computation_offset,
             &ctx.accounts.mxe_account,
             &[
@@ -319,11 +319,11 @@ pub fn liquidate_handler(
     Ok(())
 }
 
-pub fn liquidate_callback_handler(
-    ctx: Context<LiquidateCallback>,
-    output: SignedComputationOutputs<LiquidateOutput>,
+pub fn liquidate_v2_callback_handler(
+    ctx: Context<LiquidateV2Callback>,
+    output: SignedComputationOutputs<LiquidateV2Output>,
 ) -> Result<()> {
-    let LiquidateOutput { field_0: result } = output
+    let LiquidateV2Output { field_0: result } = output
         .verify_output(
             &ctx.accounts.cluster_account,
             &ctx.accounts.computation_account,

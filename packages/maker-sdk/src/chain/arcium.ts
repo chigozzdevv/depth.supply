@@ -10,7 +10,7 @@ import {
   getMempoolAccAddress,
   getMXEAccAddress,
 } from "@arcium-hq/client";
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { computationName, DEPTH_PROGRAM_ID } from "@depth/bindings";
 import type { Connection, PublicKey } from "@solana/web3.js";
 
 type MxeState = { cluster: number; mxeProgramId: PublicKey };
@@ -37,7 +37,7 @@ export async function queueAccounts(
   }
   const definition = getCompDefAccAddress(
     DEPTH_PROGRAM_ID,
-    Buffer.from(getCompDefAccOffset(name)).readUInt32LE(),
+    Buffer.from(getCompDefAccOffset(computationName(name))).readUInt32LE(),
   );
   if (!(await connection.getAccountInfo(definition, "confirmed"))) {
     throw new Error(`${name} computation is not deployed`);
