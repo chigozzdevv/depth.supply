@@ -25,6 +25,8 @@ const manifestPath =
 const traderPath =
   process.env.DEPTH_DEMO_TRADER_PATH ||
   ".env.recovery/devnet/trader.solana.json";
+const appPath =
+  process.env.DEPTH_DEMO_APP_PATH || ".env.recovery/devnet/app.solana.json";
 
 async function signer(path: string): Promise<Keypair> {
   return Keypair.fromSecretKey(
@@ -32,18 +34,39 @@ async function signer(path: string): Promise<Keypair> {
   );
 }
 
-async function demoTrader(): Promise<Keypair> {
+async function demoSigner(path: string): Promise<Keypair> {
   try {
-    return await signer(traderPath);
+    return await signer(path);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const keypair = Keypair.generate();
-  await writeFile(traderPath, JSON.stringify(Array.from(keypair.secretKey)), {
+  await writeFile(path, JSON.stringify(Array.from(keypair.secretKey)), {
     flag: "wx",
     mode: 0o600,
   });
   return keypair;
+}
+
+async function fundSigner(
+  connection: Connection,
+  owner: Keypair,
+  recipient: PublicKey,
+  role: string,
+): Promise<void> {
+  const balance = await connection.getBalance(recipient, "confirmed");
+  if (balance >= 200_000_000) return;
+  const transaction = new Transaction().add(
+    SystemProgram.transfer({
+      fromPubkey: owner.publicKey,
+      toPubkey: recipient,
+      lamports: 500_000_000 - balance,
+    }),
+  );
+  const signature = await sendAndConfirmTransaction(connection, transaction, [
+    owner,
+  ]);
+  console.log(`fund_${role}_sol ${signature}`);
 }
 
 async function ready(
@@ -84,31 +107,37 @@ const deployment = {
   trustedSigner: new PublicKey(manifest.signer),
 };
 const owner = await signer(signerPath);
-const trader = await demoTrader();
-const traderSol = await connection.getBalance(trader.publicKey, "confirmed");
-if (traderSol < 200_000_000) {
-  const transaction = new Transaction().add(
-    SystemProgram.transfer({
-      fromPubkey: owner.publicKey,
-      toPubkey: trader.publicKey,
-      lamports: 500_000_000 - traderSol,
-    }),
-  );
-  const signature = await sendAndConfirmTransaction(connection, transaction, [
-    owner,
-  ]);
-  console.log(`fund_trader_sol ${signature}`);
+const trader = await demoSigner(traderPath);
+const appOwner = await demoSigner(appPath);
+if (trader.publicKey.equals(appOwner.publicKey)) {
+  throw new Error("Demo app and trader must use distinct signers");
 }
+await fundSigner(connection, owner, trader.publicKey, "trader");
+await fundSigner(connection, owner, appOwner.publicKey, "app");
 
 const app = await createDepth({
   environment: "devnet",
   connection,
   deployment,
-  wallet: new anchor.Wallet(trader),
+  wallet: new anchor.Wallet(appOwner),
 });
 const registration = await app.app.register({ feeBps: 1 });
 await registration.confirm({ timeoutMs: 180_000 });
-console.log(`app ready ${trader.publicKey.toBase58()}`);
+console.log(`app ready ${appOwner.publicKey.toBase58()}`);
+
+const traderClient = await createDepth({
+  environment: "devnet",
+  connection,
+  deployment,
+  appId: appOwner.publicKey,
+  wallet: new anchor.Wallet(trader),
+});
+const traderBalance = balanceAddress(trader.publicKey);
+if (!(await ready(traderClient, "BalanceAccount", traderBalance, true))) {
+  const opened = await traderClient.account.open();
+  console.log(`open_trader_balance ${opened.signature}`);
+  await ready(traderClient, "BalanceAccount", traderBalance);
+}
 
 const maker = await createDepth({
   environment: "devnet",
@@ -129,16 +158,17 @@ if (!(await ready(maker, "MarketAccount", makerMarket, true))) {
   await ready(maker, "MarketAccount", makerMarket);
 }
 const traderMarket = marketAccountAddress(trader.publicKey);
-if (!(await ready(app, "MarketAccount", traderMarket, true))) {
-  const opened = await app.position.open();
+if (!(await ready(traderClient, "MarketAccount", traderMarket, true))) {
+  const opened = await traderClient.position.open();
   console.log(`open_trader_market ${opened.signature}`);
-  await ready(app, "MarketAccount", traderMarket);
+  await ready(traderClient, "MarketAccount", traderMarket);
 }
 console.log(
   JSON.stringify({
     maker: owner.publicKey.toBase58(),
-    appId: trader.publicKey.toBase58(),
+    appId: appOwner.publicKey.toBase58(),
     trader: trader.publicKey.toBase58(),
+    traderBalance: traderBalance.toBase58(),
     makerBalance: makerBalance.toBase58(),
     makerMarket: makerMarket.toBase58(),
     traderMarket: traderMarket.toBase58(),
