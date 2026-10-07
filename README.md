@@ -14,7 +14,10 @@ requirements.
 | `contracts/` | Solana program, Arcium computations, and integration tests |
 | `packages/` | Bindings, schemas, and trader and maker SDKs |
 | `server/` | Public API and market workers |
-| `scripts/` | Build and binding automation |
+| `scripts/` | Build automation and devnet verification commands |
+| `keys/` | Local signer keys and recovery custody data, ignored by Git |
+| `deployments/` | Generated signed manifests and committee configuration, ignored by Git |
+| `artifacts/` | Generated devnet verification records, ignored by Git |
 
 ## Development
 
@@ -27,22 +30,18 @@ pnpm install --frozen-lockfile
 pnpm --dir contracts install --frozen-lockfile
 ```
 
-For a fresh checkout, create a local test signer at
-`contracts/target/test-wallet.json` before running the integration tests:
-
-```sh
-mkdir -p contracts/target
-solana-keygen new --no-bip39-passphrase --silent --outfile contracts/target/test-wallet.json
-```
+Contract integration tests create their own signer at `keys/localnet/wallet.json`.
+Devnet uses a separate deployer at `keys/devnet/deployer.json` and retains the
+program identity at `keys/devnet/program.json`. These private files must be
+provisioned independently of the Git checkout and kept outside generated build
+directories. The build command links the configured program identity into
+Anchor's build directory when it is available.
 
 Build the program and encrypted instructions from `contracts/`, then refresh
 the generated TypeScript binding and run the workspace checks:
 
 ```sh
-cd contracts
-avm use 1.0.2
-arcium build
-cd ..
+pnpm --dir contracts build
 pnpm sync:bindings
 pnpm build
 pnpm typecheck
@@ -68,6 +67,10 @@ already exist. Keep `.env.local` private. The public API uses `SOLANA_RPC_URL`:
 pnpm --dir server start
 ```
 
+All configured file paths resolve from the repository root, including commands
+run from a package directory. Set `DEPTH_DEVNET_MANIFEST_PATH` to
+`deployments/devnet/manifest.json` to serve the signed devnet deployment.
+
 After deploying a market, the keeper uses `SOLANA_RPC_URL` and needs
 `DEPTH_KEEPER_KEYPAIR_PATH` pointing to its Solana signer. The default
 `PYTH_ORACLE_MODE=sponsored` reads the configured Pyth SOL/USD feed without a
@@ -76,6 +79,9 @@ Hermes API key:
 ```sh
 pnpm --dir server keeper
 ```
+
+The devnet example uses `keys/devnet/deployer.json` for the keeper. A production
+keeper should use its own funded signer.
 
 The optional Hermes publisher runs separately with `PYTH_ORACLE_MODE=hermes`
 and `PYTH_API_KEY`:
@@ -133,8 +139,9 @@ The devnet market policy is in `contracts/config/devnet-market.json`. Provide
 five committee signer public keys and X25519 encryption public keys in a JSON
 array of `{ "signer": "...", "encryptionKey": "<base64>" }` entries. Set
 `DEPTH_RECOVERY_COMMITTEE_PATH` to that file and
-`DEPTH_RECOVERY_ENVELOPES_PATH` to a private output path. Relative paths start
-in `contracts/`. Then run:
+`DEPTH_RECOVERY_ENVELOPES_PATH` to a private output path. The example paths are
+`deployments/devnet/committee.json` and `keys/devnet/recovery/envelopes.json`.
+Then run:
 
 ```sh
 pnpm --dir contracts init:market
@@ -151,12 +158,44 @@ capture and sign the deployed configuration with:
 bun packages/sdk/scripts/manifest.ts RPC_URL SIGNER_FILE VERSION EXPIRY_UNIX OUTPUT_FILE
 ```
 
+Use the root environment without putting the RPC URL in command arguments:
+
+```sh
+bun --env-file=.env.local packages/sdk/scripts/manifest.ts env keys/devnet/deployer.json VERSION EXPIRY_UNIX deployments/devnet/manifest.json
+```
+
 The manifest signer must be the deployed program's upgrade authority. Set
 `DEPTH_DEVNET_MANIFEST_PATH` or `DEPTH_MAINNET_MANIFEST_PATH` to the signed
 JSON file on the public service. The service publishes it at
 `/.well-known/depth/<environment>.json`; SDKs verify the signature, network,
 program, MXE, and market configuration against Solana. The Node-only committee
 tools are available from `@depth/sdk/operator`.
+
+## Devnet verification
+
+After deploying and signing a manifest, initialize the demo app and accounts:
+
+```sh
+pnpm devnet:setup
+pnpm devnet:audit
+```
+
+The setup command uses `keys/devnet/app.json` and `keys/devnet/trader.json` and
+funds their Solana transaction costs from the deployer when needed. Fund the
+trader with devnet USDC before running the live quote and trading proof:
+
+```sh
+pnpm devnet:quote
+pnpm devnet:callbacks
+```
+
+The quote command submits real devnet transactions, validates quote tiers,
+checks oracle reservation protection, and runs deposit, allocation, open,
+close, release, withdrawal, and fee claims through the SDK and settlement
+services. It saves operation IDs and nonces to `artifacts/devnet/quote-proof.json`
+and refuses to start another proof over an interrupted mutation. The callback
+command verifies finalized Arcium callbacks and circuit hashes without
+submitting transactions. `pnpm devnet:audit` reads the current deployment.
 
 An interrupted trade can be recovered with `depth.trade.flow(clientNonce)`;
 its order and margin allocation are linked by that nonce. A restarted maker
