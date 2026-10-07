@@ -1,7 +1,7 @@
 import * as anchor from "@anchor-lang/core";
 import {
-  DEPTH_IDL,
   DEPTH_PROGRAM_ID,
+  accountOffsets,
   quoteQueueAddress,
 } from "@depth/bindings";
 import { PublicKey } from "@solana/web3.js";
@@ -205,17 +205,19 @@ export class QuoteWorker {
       {
         commitment: "confirmed",
         filters: [
-          { memcmp: { offset: 80, bytes: this.chain.market.toBase58() } },
+          { memcmp: this.chain.program.coder.accounts.memcmp("quoteRecord") },
+          {
+            memcmp: {
+              offset: accountOffsets.QuoteRecord.market,
+              bytes: this.chain.market.toBase58(),
+            },
+          },
         ],
       }
     );
-    const discriminator = new anchor.BorshAccountsCoder(
-      DEPTH_IDL
-    ).accountDiscriminator("quoteRecord");
     for (const entry of [...accounts].sort((a, b) =>
       a.pubkey.toBase58().localeCompare(b.pubkey.toBase58())
     )) {
-      if (!entry.account.data.subarray(0, 8).equals(discriminator)) continue;
       const account = this.chain.program.coder.accounts.decode<QuoteState>(
         "quoteRecord",
         entry.account.data

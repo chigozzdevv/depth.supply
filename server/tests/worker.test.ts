@@ -211,3 +211,69 @@ test("quote worker admits the waiting head only after market capacity is availab
   });
   assert.equal(reserved, 1);
 });
+
+test("quote worker releases closing collateral using the quote discriminator", async () => {
+  const market = PublicKey.unique();
+  const active = PublicKey.unique();
+  const closing = PublicKey.unique();
+  const maker = PublicKey.unique();
+  let filters: unknown;
+  const chain = {
+    market,
+    protocol: PublicKey.unique(),
+    wallet: { publicKey: PublicKey.unique() },
+    read: async (name: string) =>
+      name === "Market"
+        ? {
+            pendingOrders: 0,
+            status: { active: {} },
+            activeQuoteCount: 1,
+            activeQuotes: [active],
+            quotedNotional: new anchor.BN(1_000),
+          }
+        : name === "QuoteQueue"
+          ? { market, count: 0, entries: [] }
+          : {
+              market,
+              maker,
+              status: { active: {} },
+              capacity: new anchor.BN(500),
+            },
+    connection: {
+      getProgramAccounts: async (_program: PublicKey, options: { filters: unknown }) => {
+        filters = options.filters;
+        return [{ pubkey: closing, account: { data: Buffer.alloc(1) } }];
+      },
+    },
+    queue: async () => ({}),
+    program: {
+      coder: {
+        accounts: {
+          memcmp: () => ({ offset: 0, bytes: "quote-discriminator" }),
+          decode: () => ({
+            market,
+            maker,
+            status: { closing: {} },
+            attachedOrders: 0,
+          }),
+        },
+      },
+      methods: {
+        releaseQuote: () => ({
+          accountsPartial: (accounts: { quote: PublicKey }) => ({
+            rpc: async () => {
+              assert.ok(accounts.quote.equals(closing));
+              return "release-signature";
+            },
+          }),
+        }),
+      },
+    },
+  } as unknown as ChainSigner;
+  assert.deepEqual(await new QuoteWorker(chain).advance(), {
+    stage: "release_quote",
+    signature: "release-signature",
+  });
+  assert.equal((filters as Array<{ memcmp: { bytes: string } }>)[0].memcmp.bytes, "quote-discriminator");
+  assert.equal((filters as Array<{ memcmp: { bytes: string } }>)[1].memcmp.bytes, market.toBase58());
+});
