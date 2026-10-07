@@ -85,6 +85,20 @@ export const accountOffsets = {
     "bump": 516,
     "replacement_nonce": 517
   },
+  "BackstopOffer": {
+    "maker": 8,
+    "market": 40,
+    "nonce": 72,
+    "capacity": 80,
+    "margin": 88,
+    "expiry": 96,
+    "market_revision": 104,
+    "oracle_timestamp": 112,
+    "funding_index": 120,
+    "pending_computation": 136,
+    "status": 168,
+    "bump": 169
+  },
   "WithdrawalReceipt": {
     "owner": 8,
     "balance": 40,
@@ -132,6 +146,15 @@ export const accountOffsets = {
   }
 } as const;
 export const enumValues = {
+  "BackstopStatus": {
+    "Reserving": 0,
+    "Active": 1,
+    "Locked": 2,
+    "Releasing": 3,
+    "Consumed": 4,
+    "Cancelled": 5,
+    "Rejected": 6
+  },
   "DepositStatus": {
     "Pending": 0,
     "Crediting": 1,
@@ -178,5 +201,17 @@ export const enumValues = {
     "Filled": 9,
     "Rejected": 10,
     "Cancelled": 11
+  },
+  "QuoteStatus": {
+    "Validating": 0,
+    "Validated": 1,
+    "Waiting": 2,
+    "Reserving": 3,
+    "Active": 4,
+    "Closing": 5,
+    "Releasing": 6,
+    "Cancelled": 7,
+    "Filled": 8,
+    "Rejected": 9
   }
 } as const;

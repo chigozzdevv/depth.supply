@@ -78,6 +78,7 @@ for (const name of [
   "OrderRecord",
   "MarketAccount",
   "QuoteRecord",
+  "BackstopOffer",
   "WithdrawalReceipt",
   "DepositReceipt",
   "MarginTransfer",
@@ -106,6 +107,8 @@ const variants = Object.fromEntries(
           "MarketAccountStatus",
           "DepositStatus",
           "MarginTransferStatus",
+          "QuoteStatus",
+          "BackstopStatus",
         ].includes(name) &&
         type.kind === "enum" &&
         type.variants.every((variant) => !variant.fields?.length)

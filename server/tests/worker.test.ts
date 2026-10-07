@@ -23,9 +23,13 @@ test("oracle updates respect the settlement lock and reject unverified feeds", a
   let pendingOrders = 1;
   let timestamp = 99;
   let calls = 0;
+  let blockedSnapshot: string | undefined;
+  let expiredSnapshot = false;
   const priceAccount = PublicKey.unique();
+  const marketAddress = PublicKey.unique();
   let marketOracle = priceAccount;
   const chain = {
+    market: marketAddress,
     read: async () => ({
       pendingOrders,
       status: { active: {} },
@@ -37,8 +41,20 @@ test("oracle updates respect the settlement lock and reject unverified feeds", a
         owner: new PublicKey("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"),
         data,
       }),
+      getProgramAccounts: async (_program: PublicKey, options: {
+        filters: Array<{ memcmp: { bytes: string } }>;
+      }) => {
+        const deadline = Buffer.alloc(8);
+        deadline.writeBigInt64LE(
+          BigInt(Math.floor(Date.now() / 1_000) + (expiredSnapshot ? -1 : 60)),
+        );
+        return options.filters[0].memcmp.bytes === blockedSnapshot
+          ? [{ pubkey: PublicKey.unique(), account: { data: deadline } }]
+          : [];
+      },
     },
     program: {
+      coder: { accounts: { memcmp: (name: string) => ({ offset: 0, bytes: name }) } },
       methods: {
         refreshOracle: () => ({
           accountsPartial: () => ({
@@ -60,9 +76,17 @@ test("oracle updates respect the settlement lock and reject unverified feeds", a
   assert.equal(await service.advance(), "oracle-signature");
   timestamp = 100;
   assert.equal(await service.advance(), undefined);
+  data.writeBigInt64LE(101n, 93);
+  for (const name of ["quoteRecord", "marginTransfer", "backstopOffer"]) {
+    blockedSnapshot = name;
+    assert.equal(await service.advance(), undefined);
+  }
+  blockedSnapshot = "quoteRecord";
+  expiredSnapshot = true;
+  assert.equal(await service.advance(), "oracle-signature");
   data[40] = 0;
   await assert.rejects(service.advance(), /verified SOL/);
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
 });
 
 test("risk checks skip an already checked account and submit one eligible target", async () => {
