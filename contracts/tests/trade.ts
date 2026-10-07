@@ -828,6 +828,77 @@ describe("confidential trade settlement", () => {
       (await program.account.backstopOffer.fetch(backstopOffer)).status
     ).to.deep.equal({ active: {} });
 
+    for (let tierCount = 1; tierCount <= 4; tierCount++) {
+      const nonce = new anchor.BN(69 + tierCount);
+      const [preparedQuote] = PublicKey.findProgramAddressSync(
+        [
+          Buffer.from("quote"),
+          market.toBuffer(),
+          authority.toBuffer(),
+          nonce.toArrayLike(Buffer, "le", 8),
+        ],
+        program.programId
+      );
+      const snapshot = await program.account.market.fetch(market);
+      const oraclePrice = BigInt(snapshot.oraclePriceE8.toString());
+      const bid = Array.from({ length: 4 }, (_, index) =>
+        index < tierCount
+          ? (oraclePrice * BigInt(9_950 - index * 10)) / 10_000n
+          : 0n
+      );
+      const ask = Array.from({ length: 4 }, (_, index) =>
+        index < tierCount
+          ? (oraclePrice * BigInt(10_050 + index * 10)) / 10_000n
+          : 0n
+      );
+      const input = encryptQuote([...bid, ...ask]);
+      offset = harness.offset();
+      await program.methods
+        .submitQuote(
+          offset,
+          nonce,
+          config.maxAccountNotional,
+          tierCount,
+          new anchor.BN(Math.floor(Date.now() / 1000) + 115),
+          snapshot.revision,
+          snapshot.oracleTimestamp,
+          input.ciphertexts,
+          input.inputKey,
+          input.inputNonce
+        )
+        .accountsPartial({
+          ...harness.queue(offset, "prepare_quote"),
+          payer: authority,
+          market,
+          marketAccount: makerState.marketAccount,
+          grant: null,
+          quote: preparedQuote,
+        })
+        .rpc(options);
+      await harness.finalize(offset);
+      const prepared = await program.account.quoteRecord.fetch(preparedQuote);
+      expect(prepared.status, `${tierCount} quote tiers`).to.deep.equal({
+        validated: {},
+      });
+      expect(prepared.capacity.eq(config.maxAccountNotional)).to.equal(true);
+      expect(prepared.tierCount).to.equal(tierCount);
+      await program.methods
+        .cancelPreparedQuote()
+        .accountsPartial({
+          actor: authority,
+          grant: null,
+          quote: preparedQuote,
+        })
+        .rpc(options);
+      await program.methods
+        .closeQuote()
+        .accountsPartial({ maker: authority, quote: preparedQuote })
+        .rpc(options);
+      expect(
+        await program.account.quoteRecord.fetchNullable(preparedQuote)
+      ).to.equal(null);
+    }
+
     const quoteNonce = new anchor.BN(77);
     const [quote] = PublicKey.findProgramAddressSync(
       [
