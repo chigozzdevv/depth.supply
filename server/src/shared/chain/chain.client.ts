@@ -1,11 +1,17 @@
-import { BorshAccountsCoder, type Idl } from "@anchor-lang/core";
+import {
+  BorshAccountsCoder,
+  convertIdlToCamelCase,
+  type Idl,
+} from "@anchor-lang/core";
 import { DEPTH_IDL, DEPTH_PROGRAM_ID } from "@depth/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 export type ChainAccount<T> = { value: T; slot: number };
 
 export class ChainClient {
-  private readonly coder = new BorshAccountsCoder(DEPTH_IDL as Idl);
+  private readonly coder = new BorshAccountsCoder(
+    convertIdlToCamelCase(DEPTH_IDL as Idl),
+  );
 
   constructor(
     private readonly connection: Connection,
@@ -25,7 +31,10 @@ export class ChainClient {
       throw new Error("Account is not owned by Depth");
     }
     return {
-      value: this.coder.decode<T>(name, result.value.data),
+      value: this.coder.decode<T>(
+        name[0].toLowerCase() + name.slice(1),
+        result.value.data,
+      ),
       slot: result.context.slot,
     };
   }
@@ -45,12 +54,19 @@ export class ChainClient {
     const name = names.find((candidate) =>
       result
         .value!.data.subarray(0, 8)
-        .equals(this.coder.accountDiscriminator(candidate)),
+        .equals(
+          this.coder.accountDiscriminator(
+            candidate[0].toLowerCase() + candidate.slice(1),
+          ),
+        ),
     );
     if (!name) return undefined;
     return {
       name,
-      value: this.coder.decode(name, result.value.data),
+      value: this.coder.decode(
+        name[0].toLowerCase() + name.slice(1),
+        result.value.data,
+      ),
       slot: result.context.slot,
     };
   }

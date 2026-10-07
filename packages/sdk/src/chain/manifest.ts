@@ -89,7 +89,7 @@ export async function captureDeployment(
   expiresAt: number,
 ): Promise<DeploymentManifest> {
   const connection = provider.connection;
-  const coder = new anchor.BorshAccountsCoder(DEPTH_IDL);
+  const coder = new anchor.Program(DEPTH_IDL, provider).coder.accounts;
   const programInfo = await connection.getAccountInfo(
     DEPTH_PROGRAM_ID,
     "confirmed",
@@ -122,9 +122,9 @@ export async function captureDeployment(
     config: unknown;
     revision: anchor.BN;
     settlementMint: PublicKey;
-  }>("Market", marketInfo.data);
+  }>("market", marketInfo.data);
   const protocol = coder.decode<{ settlementMint: PublicKey }>(
-    "Protocol",
+    "protocol",
     protocolInfo.data,
   );
   if (!market.settlementMint.equals(protocol.settlementMint))
