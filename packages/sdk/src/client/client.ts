@@ -554,7 +554,7 @@ export class DepthClient {
       ) => this.releaseRequest(input, clientNonce),
       transferHandle: (nonce: bigint) => this.funding.transferHandle(nonce),
       summary: async (
-        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
+        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 180_000 },
       ): Promise<BalanceSnapshot> => {
         const view = await this.requestBalanceView();
         const result = (await view.wait(options)) as BalanceSnapshot;
@@ -593,7 +593,7 @@ export class DepthClient {
             ),
       open: async () => this.funding.openMarket(),
       summary: async (
-        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
+        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 180_000 },
       ): Promise<PositionSnapshot> => {
         const view = await this.requestMarketView();
         const result = (await view.wait(options)) as PositionSnapshot;
@@ -776,7 +776,44 @@ export class DepthClient {
         deadline,
       );
     }
-    const position = await this.position.summary({ timeoutMs: 120_000 });
+    const viewDeadline = Date.now() + 120_000;
+    let position: PositionSnapshot;
+    for (;;) {
+      const remaining = viewDeadline - Date.now();
+      if (remaining <= 0) {
+        throw new Error("Private position did not stabilize before the trade deadline");
+      }
+      try {
+        position = await this.position.summary({ timeoutMs: remaining });
+      } catch (error) {
+        if (!String(error).includes("Market account is processing another operation")) {
+          throw error;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        continue;
+      }
+      [market, account] = await Promise.all([
+        this.market(),
+        this.read<AccountState>("MarketAccount", this.accountAddress()),
+      ]);
+      if (
+        position.status === "ready" &&
+        enumName(account.status) === "ready" &&
+        account.version.toString() === position.version.toString()
+      ) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    this.validateTrade(
+      market.state,
+      protocol,
+      account,
+      app,
+      appId,
+      intent,
+      deadline,
+    );
     if (
       position.status !== "ready" ||
       position.collateral === undefined ||
@@ -835,9 +872,6 @@ export class DepthClient {
         throw new Error(`Market quote snapshot missing account ${index}`);
       }
     });
-    if (account.version.toString() !== position.version.toString()) {
-      throw new Error("Position version changed; request a fresh private view");
-    }
     const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
     if (!mxePublicKey) throw new Error("MXE public key is unavailable");
     const secret = x25519.utils.randomSecretKey();
