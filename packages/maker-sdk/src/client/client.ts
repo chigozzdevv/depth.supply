@@ -881,8 +881,8 @@ export class MakerClient {
 
   private validateQuote(input: QuoteInput, market: MarketState): void {
     const now = Math.floor(Date.now() / 1_000);
-    if (stateName(market.status) !== "active")
-      throw new Error("Market is not active");
+    if (!["draft", "active"].includes(stateName(market.status)))
+      throw new Error("Market does not accept quotes");
     if (input.tiers.length === 0 || input.tiers.length > 4) {
       throw new RangeError("A quote needs one to four tiers");
     }

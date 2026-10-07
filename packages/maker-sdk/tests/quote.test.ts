@@ -197,6 +197,40 @@ test("flat quotes use published tiers within capacity", () => {
   );
 });
 
+test("draft market accepts the initial quote required for activation", () => {
+  const client = Object.create(MakerClient.prototype) as {
+    validateQuote: (
+      input: Record<string, unknown>,
+      market: Record<string, unknown>
+    ) => void;
+  };
+  const now = Math.floor(Date.now() / 1_000);
+  const quote = {
+    tiers: [{ size: 100_000_000n, bidE8: 19_900_000_000n, askE8: 20_100_000_000n }],
+    maxCapacity: 100_000_000n,
+    expiresAt: now + 60,
+  };
+  const market = {
+    status: { draft: {} },
+    oracleTimestamp: new anchor.BN(now),
+    config: {
+      quoteTiers: [new anchor.BN(100_000_000)],
+      maxAccountNotional: new anchor.BN(1_000_000_000),
+      maxMarketNotional: new anchor.BN(10_000_000_000),
+      maxQuoteLifetimeSeconds: 3_600,
+      maxOracleAgeSeconds: 300,
+    },
+  };
+  assert.doesNotThrow(() => client.validateQuote(quote, market));
+  assert.doesNotThrow(() =>
+    client.validateQuote(quote, { ...market, status: { active: {} } })
+  );
+  assert.throws(
+    () => client.validateQuote(quote, { ...market, status: { paused: {} } }),
+    /does not accept quotes/
+  );
+});
+
 test("cancellation stops selection before releasing reserved margin", async () => {
   const maker = PublicKey.unique();
   const id = PublicKey.unique();
