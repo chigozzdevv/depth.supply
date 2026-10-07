@@ -1,5 +1,6 @@
 import { Buffer as BufferPolyfill } from "buffer";
 import { PublicKey } from "@solana/web3.js";
+import type { AccountInfo } from "@solana/web3.js";
 import idl from "@/depth.json";
 import type { Depth } from "@/depth";
 
@@ -16,10 +17,33 @@ export const SOL_USD_MARKET_ID = "SOL-USD";
 export const PYTH_PUSH_ORACLE_ID = new PublicKey(
   "pythWSnswVUd12oZpeFP8e9CVaEqJg25g1Vtc2biRsT",
 );
+export const PYTH_RECEIVER_ID = new PublicKey(
+  "rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ",
+);
 export const SOL_USD_PUSH_ACCOUNT = PublicKey.findProgramAddressSync(
   [Buffer.alloc(2), SOL_USD_FEED_ID],
   PYTH_PUSH_ORACLE_ID,
 )[0];
+
+const PRICE_UPDATE_DISCRIMINATOR = Buffer.from("22f123639d7ef4cd", "hex");
+
+export function solUsdPublishTime(info: AccountInfo<Buffer> | null): number {
+  if (!info) return 0;
+  if (
+    !info.owner.equals(PYTH_RECEIVER_ID) ||
+    info.data.length !== 134 ||
+    !info.data.subarray(0, 8).equals(PRICE_UPDATE_DISCRIMINATOR) ||
+    info.data[40] !== 1 ||
+    !info.data.subarray(41, 73).equals(SOL_USD_FEED_ID)
+  ) {
+    throw new Error("Pyth account is not a verified SOL/USD feed");
+  }
+  const timestamp = Number(info.data.readBigInt64LE(93));
+  if (!Number.isSafeInteger(timestamp) || timestamp <= 0) {
+    throw new Error("Pyth SOL/USD publish time is invalid");
+  }
+  return timestamp;
+}
 
 export function marketAddress(programId = DEPTH_PROGRAM_ID): PublicKey {
   return PublicKey.findProgramAddressSync(
