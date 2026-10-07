@@ -189,6 +189,48 @@ describe("trader wire and operation lifecycle", () => {
   });
 });
 
+test("position summary retries a risk check that wins the view submission race", async () => {
+  const wallet = new anchor.Wallet(Keypair.generate());
+  const constructor = DepthClient as unknown as new (options: {
+    wallet: anchor.Wallet;
+    connection: Connection;
+    deployment: { localnet: true };
+  }) => DepthClient;
+  const client = new constructor({
+    wallet,
+    connection: new Connection("http://127.0.0.1:8899"),
+    deployment: { localnet: true },
+  });
+  let attempts = 0;
+  let closed = false;
+  client.requestMarketView = async () => {
+    if (++attempts === 1) {
+      throw Object.assign(new Error("Market account is processing another operation"), {
+        error: { errorCode: { code: "WrongMarketAccountStatus" } },
+      });
+    }
+    return {
+      wait: async () => ({
+        status: "ready",
+        id: PublicKey.unique().toBase58(),
+        version: 1n,
+        slot: 1,
+        collateral: 10n,
+        position: 0n,
+      }),
+      close: async () => {
+        closed = true;
+        return "close-signature";
+      },
+    } as unknown as DepthView;
+  };
+  const position = await client.position.summary({ timeoutMs: 3_000 });
+  assert.equal(position.status, "ready");
+  assert.equal(position.position, 0n);
+  assert.equal(attempts, 2);
+  assert.equal(closed, true);
+});
+
 test("operation polling resumes after a transient RPC failure without submitting another order", async () => {
   const operation = new DepthOperation(
     PublicKey.unique(),

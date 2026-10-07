@@ -595,8 +595,30 @@ export class DepthClient {
       summary: async (
         options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 180_000 },
       ): Promise<PositionSnapshot> => {
-        const view = await this.requestMarketView();
-        const result = (await view.wait(options)) as PositionSnapshot;
+        const deadline = Date.now() + options.timeoutMs;
+        let view: DepthView;
+        for (;;) {
+          try {
+            view = await this.requestMarketView();
+            break;
+          } catch (error) {
+            const code = (error as {
+              error?: { errorCode?: { code?: string } };
+            }).error?.errorCode?.code;
+            if (
+              code !== "WrongMarketAccountStatus" &&
+              !String(error).includes("Market account is processing another operation")
+            ) {
+              throw error;
+            }
+            if (Date.now() >= deadline) throw error;
+            await new Promise((resolve) => setTimeout(resolve, 1_000));
+          }
+        }
+        const result = (await view.wait({
+          ...options,
+          timeoutMs: Math.max(0, deadline - Date.now()),
+        })) as PositionSnapshot;
         if (result.status !== "pending") await view.close();
         return result;
       },
