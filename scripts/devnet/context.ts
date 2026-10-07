@@ -7,6 +7,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolvePath, settingPath } from "@/workspace";
+import { loadSigner as roleSigner } from "@/workspace/signers";
 import { ChainSigner } from "@/server/shared/chain/chain.signer";
 
 export { setTimeout as sleep } from "node:timers/promises";
@@ -93,22 +94,7 @@ export async function writeJson(path: string, value: unknown): Promise<void> {
 export async function loadSigner(
   name: "deployer" | "app" | "trader",
 ): Promise<Keypair> {
-  const variable =
-    name === "deployer"
-      ? "DEPTH_DEPLOYER_KEYPAIR_PATH"
-      : `DEPTH_DEMO_${name.toUpperCase()}_PATH`;
-  const path = settingPath(variable, `keys/devnet/${name}.json`)!;
-  const secret = await readJson<number[]>(path).catch(() => {
-    throw new Error(`${name} signer file is unavailable or invalid`);
-  });
-  assert.ok(
-    Array.isArray(secret) && secret.length === 64,
-    `${name} signer is invalid`,
-  );
-  assert.ok(
-    secret.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255),
-  );
-  return Keypair.fromSecretKey(Uint8Array.from(secret));
+  return roleSigner(name);
 }
 
 export async function devnetConnection(): Promise<Connection> {

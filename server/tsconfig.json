@@ -11,6 +11,7 @@
     "baseUrl": ".",
     "paths": {
       "@/workspace": ["../scripts/paths"],
+      "@/workspace/*": ["../scripts/*"],
       "@/*": ["src/*"]
     },
     "types": ["node"]

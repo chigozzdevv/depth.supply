@@ -8,13 +8,14 @@ import {
   solUsdPublishTime,
   SOL_USD_PUSH_ACCOUNT,
 } from "@depth/bindings";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import { Buffer } from "buffer";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { createRecoveryShares } from "@/recovery/shares";
 import type { RecoveryEnvelope } from "@/recovery/shares";
 import { resolvePath, settingPath } from "@/workspace";
+import { loadSigner } from "@/workspace/signers";
 
 const genesisHash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const checkOnly = process.argv.includes("--check");
@@ -29,10 +30,6 @@ const committeePath = settingPath(
 const envelopePath = settingPath(
   "DEPTH_RECOVERY_ENVELOPES_PATH",
   "keys/devnet/recovery/envelopes.json",
-);
-const signerPath = settingPath(
-  "DEPTH_DEPLOYER_KEYPAIR_PATH",
-  "keys/devnet/deployer.json",
 );
 
 if (!rpc || new URL(rpc).protocol !== "https:") {
@@ -165,9 +162,7 @@ const connection = new Connection(rpc, "confirmed");
 if ((await connection.getGenesisHash()) !== genesisHash) {
   throw new Error("The configured RPC does not point to Solana devnet");
 }
-const signer = Keypair.fromSecretKey(
-  Uint8Array.from(JSON.parse(await readFile(signerPath, "utf8"))),
-);
+const signer = loadSigner("deployer");
 const provider = new anchor.AnchorProvider(
   connection,
   new anchor.Wallet(signer),

@@ -4,39 +4,28 @@ import {
   getClusterAccAddress,
   getMXEAccAddress,
 } from "@arcium-hq/client";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import { execFileSync, spawn } from "node:child_process";
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
-import { dirname } from "node:path";
+import { Connection, PublicKey } from "@solana/web3.js";
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { readCircuits, verifyRemote } from "./circuits.mjs";
-import { resolvePath, settingPath } from "../../scripts/paths.mjs";
+import { resolvePath } from "../../scripts/paths.mjs";
+import {
+  createSigner,
+  loadSigner,
+  signerPath as rolePath,
+} from "../../scripts/signers.mjs";
+import { resolveArcium } from "../../scripts/toolchain.mjs";
 
 const genesisHash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const clusterOffset = 456;
 const programPath = resolvePath("contracts/target/deploy/depth.so");
 const programSize = statSync(programPath).size;
 const maxLength = programSize;
-const programKeypairPath = settingPath(
-  "DEPTH_PROGRAM_KEYPAIR_PATH",
-  "keys/devnet/program.json"
-);
-const bufferKeypairPath = settingPath(
-  "DEPTH_BUFFER_KEYPAIR_PATH",
-  "keys/devnet/buffer.json"
-);
-const signerPath = settingPath(
-  "DEPTH_DEPLOYER_KEYPAIR_PATH",
-  "keys/devnet/deployer.json"
-);
-const arciumCli = process.env.DEPTH_ARCIUM_CLI || "arcium";
+const programKeypairPath = rolePath("program");
+const bufferKeypairPath = rolePath("buffer");
+const signerPath = rolePath("deployer");
 const idl = JSON.parse(
-  readFileSync(resolvePath("contracts/target/idl/depth.json"), "utf8")
+  readFileSync(resolvePath("contracts/target/idl/depth.json"), "utf8"),
 );
 const programId = new PublicKey(idl.address);
 const resume = process.argv.includes("--resume");
@@ -50,16 +39,7 @@ if (
 ) {
   throw new Error("Usage: deploy.mjs [--check] [--resume | --upgrade]");
 }
-if (!upgrade) {
-  const arciumVersion = execFileSync(arciumCli, ["--version"], {
-    encoding: "utf8",
-  }).trim();
-  if (arciumVersion !== "arcium 0.15.0") {
-    throw new Error(
-      `Arcium CLI 0.15.0 is required for devnet MXE deployment; found ${arciumVersion}`
-    );
-  }
-}
+const arciumCli = upgrade ? undefined : resolveArcium("deploy");
 
 const rpc = process.env.SOLANA_RPC_URL;
 const circuitBase = process.env.DEPTH_CIRCUIT_BASE_URL?.replace(/\/+$/, "");
@@ -74,31 +54,20 @@ const connection = new Connection(rpc, "confirmed");
 if ((await connection.getGenesisHash()) !== genesisHash) {
   throw new Error("The configured RPC does not point to Solana devnet");
 }
-const signer = Keypair.fromSecretKey(
-  Uint8Array.from(JSON.parse(readFileSync(signerPath, "utf8")))
-);
-const programKeypair = Keypair.fromSecretKey(
-  Uint8Array.from(JSON.parse(readFileSync(programKeypairPath, "utf8")))
-);
+const signer = loadSigner("deployer");
+loadSigner("program", { expectedPublicKey: programId });
 const bufferKeypairExists = existsSync(bufferKeypairPath);
-const bufferKeypair = bufferKeypairExists
-  ? Keypair.fromSecretKey(
-      Uint8Array.from(JSON.parse(readFileSync(bufferKeypairPath, "utf8")))
-    )
-  : Keypair.generate();
-if (!programKeypair.publicKey.equals(programId)) {
-  throw new Error("The program keypair does not match the Depth IDL");
-}
+const bufferKeypair = bufferKeypairExists ? loadSigner("buffer") : undefined;
 if (!readFileSync(programPath).includes(Buffer.from(circuitBase))) {
   throw new Error(
-    "The program binary does not contain the configured circuit URL"
+    "The program binary does not contain the configured circuit URL",
   );
 }
 
 const provider = new anchor.AnchorProvider(
   connection,
   new anchor.Wallet(signer),
-  { commitment: "confirmed" }
+  { commitment: "confirmed" },
 );
 const arcium = getArciumProgram(provider);
 const [
@@ -129,7 +98,7 @@ if (!cluster?.owner.equals(arcium.programId)) {
 const required =
   Math.max(
     0,
-    Math.max(bufferRent, programRent) - (bufferAccount?.lamports ?? 0)
+    Math.max(bufferRent, programRent) - (bufferAccount?.lamports ?? 0),
   ) +
   programAccountRent +
   1_000_000_000;
@@ -138,7 +107,7 @@ console.log(`Program: ${programId.toBase58()} (${programSize} bytes)`);
 console.log(`Signer: ${signer.publicKey.toBase58()}`);
 console.log(`Wallet: ${(balance / 1_000_000_000).toFixed(3)} SOL`);
 console.log(
-  `Peak deployment estimate: ${(required / 1_000_000_000).toFixed(3)} SOL`
+  `Peak deployment estimate: ${(required / 1_000_000_000).toFixed(3)} SOL`,
 );
 if (upgrade) {
   const loader = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
@@ -150,7 +119,7 @@ if (upgrade) {
   )
     throw new Error("Upgrade requires an existing upgradeable Depth program");
   const programData = await connection.getAccountInfo(
-    new PublicKey(existing.data.subarray(4))
+    new PublicKey(existing.data.subarray(4)),
   );
   if (
     !programData?.owner.equals(loader) ||
@@ -172,16 +141,16 @@ if (upgrade) {
     [...accounts, ...clearing].some(
       ({ account }) =>
         !("ready" in account.status) ||
-        !account.pendingComputation.equals(PublicKey.default)
+        !account.pendingComputation.equals(PublicKey.default),
     )
   )
     throw new Error(
-      "Pause trading and finish pending computations before upgrading"
+      "Pause trading and finish pending computations before upgrading",
     );
 }
 if (existing && !resume && !upgrade) {
   throw new Error(
-    "The program already exists; use --resume only after inspecting it"
+    "The program already exists; use --resume only after inspecting it",
   );
 }
 if (balance < required && (!existing || upgrade)) {
@@ -193,19 +162,13 @@ const circuits = await readCircuits();
 await verifyRemote(circuitBase, circuits);
 console.log(`Verified ${circuits.length} hosted circuits`);
 
-if (!bufferKeypairExists) {
-  mkdirSync(dirname(bufferKeypairPath), { recursive: true, mode: 0o700 });
-  writeFileSync(
-    bufferKeypairPath,
-    JSON.stringify(Array.from(bufferKeypair.secretKey)),
-    { flag: "wx", mode: 0o600 }
-  );
-}
+createSigner("buffer");
 
 async function run(command, args) {
   const child = spawn(command, args, {
     stdio: ["inherit", "pipe", "pipe"],
     cwd: resolvePath("contracts"),
+    env: { ...process.env, ARCIUM_NO_UPDATE_CHECK: "1" },
   });
   function forward(source) {
     let pending = "";

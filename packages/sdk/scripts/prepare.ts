@@ -19,23 +19,16 @@ import {
   SOL_USD_PUSH_ACCOUNT,
   solUsdPublishTime,
 } from "@depth/bindings";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { DepthProvider } from "@/chain/provider";
-import { settingPath } from "@/workspace";
+import { loadSigner } from "@/workspace/signers";
 
 const rpc = process.env.SOLANA_RPC_URL;
 if (!rpc || new URL(rpc).protocol !== "https:") {
   throw new Error("SOLANA_RPC_URL must be an HTTPS devnet endpoint");
 }
-const signerPath = settingPath(
-  "DEPTH_DEPLOYER_KEYPAIR_PATH",
-  "keys/devnet/deployer.json",
-);
-const signer = Keypair.fromSecretKey(
-  Uint8Array.from(JSON.parse(await readFile(signerPath, "utf8"))),
-);
+const signer = loadSigner("deployer");
 const connection = new Connection(rpc, "confirmed");
 if (
   (await connection.getGenesisHash()) !==

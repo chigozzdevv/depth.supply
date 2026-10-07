@@ -11,6 +11,7 @@
     "baseUrl": ".",
     "paths": {
       "@/workspace": ["../../scripts/paths"],
+      "@/workspace/*": ["../../scripts/*"],
       "@/depth": ["../bindings/src/depth.ts"],
       "@/depth.json": ["../bindings/src/depth.json"],
       "@/*": ["src/*"]

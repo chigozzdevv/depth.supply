@@ -5,14 +5,16 @@
     "build": "node scripts/build-package.mjs bindings schema sdk maker-sdk",
     "sync:bindings": "node scripts/sync-bindings.mjs",
     "typecheck": "pnpm -r typecheck && tsc --noEmit -p scripts/tsconfig.json",
-    "test": "node --test scripts/paths.test.mjs scripts/toolchain.test.mjs && bun test scripts/devnet/workflow.test.ts && pnpm -r test",
+    "test": "node --test scripts/paths.test.mjs scripts/signers.test.mjs scripts/toolchain.test.mjs && bun test scripts/devnet/workflow.test.ts && pnpm -r test",
+    "tools:setup": "node --env-file-if-exists=.env.local scripts/setup.mjs",
+    "keys:setup": "node --env-file-if-exists=.env.local scripts/keys.mjs",
     "devnet:setup": "bun --env-file=.env.local packages/sdk/scripts/setup.ts",
     "devnet:prepare": "bun --env-file=.env.local packages/sdk/scripts/prepare.ts",
+    "devnet:manifest": "bun --env-file=.env.local packages/sdk/scripts/manifest.ts",
     "devnet:quote": "bun --env-file=.env.local scripts/devnet/quote.ts",
     "devnet:audit": "bun --env-file=.env.local scripts/devnet/quote.ts --audit",
     "devnet:callbacks": "bun --env-file=.env.local scripts/devnet/callback.ts",
-    "scripts:typecheck": "tsc --noEmit -p scripts/tsconfig.json",
-    "tools:setup": "node --env-file-if-exists=.env.local scripts/setup.mjs"
+    "scripts:typecheck": "tsc --noEmit -p scripts/tsconfig.json"
   },
   "devDependencies": {
     "@anchor-lang/core": "1.0.2",

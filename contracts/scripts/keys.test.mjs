@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { Keypair } from "@solana/web3.js";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -22,7 +29,7 @@ test("a cleared build directory is linked back to the durable program identity",
   const { source, target, key } = fixture(t);
   stageProgramKeypair(source, target);
   const restored = Keypair.fromSecretKey(
-    Uint8Array.from(JSON.parse(readFileSync(target, "utf8")))
+    Uint8Array.from(JSON.parse(readFileSync(target, "utf8"))),
   );
   assert.ok(restored.publicKey.equals(key.publicKey));
   rmSync(join(target, ".."), { recursive: true });
@@ -46,6 +53,27 @@ test("equivalent key formatting is accepted while a different identity is preser
   assert.throws(() => stageProgramKeypair(alternate, target), /differs/);
   assert.deepEqual(
     JSON.parse(readFileSync(target, "utf8")),
-    Array.from(key.secretKey)
+    Array.from(key.secretKey),
   );
+});
+
+test("missing keys and dangling build links fail without replacing an identity", (t) => {
+  const { source, target, key } = fixture(t);
+  stageProgramKeypair(source, target);
+  rmSync(source);
+  assert.throws(
+    () => stageProgramKeypair(source, target),
+    /program signer file is unavailable/,
+  );
+  assert.ok(lstatSync(target).isSymbolicLink());
+  writeFileSync(source, JSON.stringify(Array.from(key.secretKey)), {
+    mode: 0o600,
+  });
+  rmSync(target);
+  symlinkSync(join(target, "..", "missing.json"), target);
+  assert.throws(
+    () => stageProgramKeypair(source, target),
+    /generated program signer file is unavailable/,
+  );
+  assert.ok(lstatSync(target).isSymbolicLink());
 });

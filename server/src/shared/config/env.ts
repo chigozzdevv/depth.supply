@@ -1,7 +1,7 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
-import { readFileSync } from "node:fs";
-import { resolvePath, settingPath } from "@/shared/config/path";
+import { settingPath } from "@/shared/config/path";
+import { loadSigner } from "@/workspace/signers";
 
 export type ServerConfig = { rpcUrl: string; host: string; port: number };
 export type OracleMode = "sponsored" | "hermes";
@@ -46,7 +46,7 @@ export function oracleMode(env: NodeJS.ProcessEnv = process.env): OracleMode {
 }
 
 export function serverConfig(
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
 ): ServerConfig {
   const url = rpcUrl(env.SOLANA_RPC_URL, "SOLANA_RPC_URL");
   const port = Number(env.PORT ?? "8787");
@@ -57,29 +57,10 @@ export function serverConfig(
 }
 
 export function keeperConfig(
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
 ): KeeperConfig {
   const url = rpcUrl(env.SOLANA_RPC_URL, "SOLANA_RPC_URL");
   const mode = oracleMode(env);
-  if (env.DEPTH_KEEPER_KEYPAIR && env.DEPTH_KEEPER_KEYPAIR_PATH) {
-    throw new Error("Configure one keeper signer source");
-  }
-  const source = env.DEPTH_KEEPER_KEYPAIR_PATH
-    ? readFileSync(resolvePath(env.DEPTH_KEEPER_KEYPAIR_PATH), "utf8")
-    : env.DEPTH_KEEPER_KEYPAIR;
-  if (!source) {
-    throw new Error(
-      "DEPTH_KEEPER_KEYPAIR or DEPTH_KEEPER_KEYPAIR_PATH is required"
-    );
-  }
-  const bytes: unknown = JSON.parse(source);
-  if (
-    !Array.isArray(bytes) ||
-    bytes.length !== 64 ||
-    !bytes.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)
-  ) {
-    throw new Error("DEPTH_KEEPER_KEYPAIR must be a 64-byte JSON array");
-  }
   const interval = Number(env.DEPTH_ORACLE_INTERVAL_MS ?? "10000");
   if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 60000) {
     throw new Error("DEPTH_ORACLE_INTERVAL_MS must be between 1000 and 60000");
@@ -91,12 +72,12 @@ export function keeperConfig(
     oracleMode: mode,
     oracleIntervalMs: interval,
     rpcUrl: url,
-    keypair: Keypair.fromSecretKey(Uint8Array.from(bytes)),
+    keypair: loadSigner("keeper", { env }),
   };
 }
 
 export function publisherConfig(
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
 ): PublisherConfig {
   if (oracleMode(env) !== "hermes") {
     throw new Error("PYTH_ORACLE_MODE=hermes is required to run the publisher");

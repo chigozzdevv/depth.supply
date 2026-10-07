@@ -1,20 +1,17 @@
 import * as anchor from "@anchor-lang/core";
 import { getAccount, getMint } from "@solana/spl-token";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import { readFileSync } from "node:fs";
 import { submitTransaction } from "./tx.mjs";
-import { resolvePath, settingPath } from "../../scripts/paths.mjs";
+import { resolvePath } from "../../scripts/paths.mjs";
+import { loadSigner } from "../../scripts/signers.mjs";
 
 const genesisHash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const settlementMint = new PublicKey(
-  "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU"
+  "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU",
 );
 const loader = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
 const rpc = process.env.SOLANA_RPC_URL;
-const signerPath = settingPath(
-  "DEPTH_DEPLOYER_KEYPAIR_PATH",
-  "keys/devnet/deployer.json"
-);
 if (!rpc || new URL(rpc).protocol !== "https:") {
   throw new Error("SOLANA_RPC_URL must be an HTTPS devnet endpoint");
 }
@@ -23,11 +20,9 @@ const connection = new Connection(rpc, "confirmed");
 if ((await connection.getGenesisHash()) !== genesisHash) {
   throw new Error("The configured RPC does not point to Solana devnet");
 }
-const signer = Keypair.fromSecretKey(
-  Uint8Array.from(JSON.parse(readFileSync(signerPath, "utf8")))
-);
+const signer = loadSigner("deployer");
 const idl = JSON.parse(
-  readFileSync(resolvePath("contracts/target/idl/depth.json"), "utf8")
+  readFileSync(resolvePath("contracts/target/idl/depth.json"), "utf8"),
 );
 const programId = new PublicKey(idl.address);
 const programAccount = await connection.getAccountInfo(programId);
@@ -41,20 +36,20 @@ if (mint.decimals !== 6) {
 
 const [programData] = PublicKey.findProgramAddressSync(
   [programId.toBuffer()],
-  loader
+  loader,
 );
 const [protocol] = PublicKey.findProgramAddressSync(
   [Buffer.from("protocol")],
-  programId
+  programId,
 );
 const [vault] = PublicKey.findProgramAddressSync(
   [Buffer.from("vault")],
-  programId
+  programId,
 );
 const provider = new anchor.AnchorProvider(
   connection,
   new anchor.Wallet(signer),
-  { commitment: "confirmed" }
+  { commitment: "confirmed" },
 );
 const program = new anchor.Program(idl, provider);
 if (!(await connection.getAccountInfo(protocol))) {
@@ -87,9 +82,9 @@ if (
   !vaultState.isInitialized
 ) {
   throw new Error(
-    "The protocol or vault configuration differs from devnet USDC"
+    "The protocol or vault configuration differs from devnet USDC",
   );
 }
 console.log(
-  `Verified protocol ${protocol.toBase58()} and vault ${vault.toBase58()}`
+  `Verified protocol ${protocol.toBase58()} and vault ${vault.toBase58()}`,
 );

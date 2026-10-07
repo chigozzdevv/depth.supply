@@ -1,58 +1,18 @@
-import { spawn, execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { Keypair } from "@solana/web3.js";
-import { dirname } from "node:path";
 import { resolvePath } from "../../scripts/paths.mjs";
+import { createSigner } from "../../scripts/signers.mjs";
+import { arciumRuntime } from "../../scripts/toolchain.mjs";
 import { stageProgramKeypair } from "./keys.mjs";
 
 stageProgramKeypair();
-const walletPath = resolvePath("keys/localnet/wallet.json");
-if (!existsSync(walletPath)) {
-  mkdirSync(dirname(walletPath), { recursive: true, mode: 0o700 });
-  writeFileSync(
-    walletPath,
-    JSON.stringify(Array.from(Keypair.generate().secretKey)),
-    {
-      flag: "wx",
-      mode: 0o600,
-    }
-  );
-}
-
-const expectedAnchor = readFileSync("Anchor.toml", "utf8").match(
-  /anchor_version = "([^"]+)"/
-)?.[1];
-if (!expectedAnchor) throw new Error("Anchor.toml must pin an Anchor version");
-const anchorVersion = execFileSync("anchor", ["--version"], {
-  encoding: "utf8",
-}).trim();
-let anchorPath = process.env.PATH;
-let toolDirectory;
-if (!anchorVersion.endsWith(` ${expectedAnchor}`)) {
-  const pinned = join(homedir(), ".avm", "bin", `anchor-${expectedAnchor}`);
-  if (!existsSync(pinned))
-    throw new Error(`Install Anchor ${expectedAnchor}; found ${anchorVersion}`);
-  toolDirectory = mkdtempSync(join(tmpdir(), "depth-anchor-"));
-  symlinkSync(pinned, join(toolDirectory, "anchor"));
-  anchorPath = `${toolDirectory}:${process.env.PATH ?? ""}`;
-  process.once("exit", () =>
-    rmSync(toolDirectory, { recursive: true, force: true })
-  );
-}
+createSigner("localnet");
+const runtime = arciumRuntime("build");
 
 const address = Keypair.fromSeed(
-  createHash("sha256").update("depth.oracle.fixture.v1").digest()
+  createHash("sha256").update("depth.oracle.fixture.v1").digest(),
 ).publicKey.toBase58();
 if (address !== "3RW84c8AwWtLCVyETK2Xtruo9YsgFnMMt6uW2cDN4mzV") {
   throw new Error("Oracle fixture address changed");
@@ -62,74 +22,74 @@ function writeOracleFixture() {
   const now = BigInt(Math.floor(Date.now() / 1000));
   writePriceUpdate(address, 20_000_000_000n, 20_000_000n, now, "price-update");
   const secondAddress = Keypair.fromSeed(
-    createHash("sha256").update("depth.oracle.second.v1").digest()
+    createHash("sha256").update("depth.oracle.second.v1").digest(),
   ).publicKey.toBase58();
   writePriceUpdate(
     secondAddress,
     20_000_000_000n,
     20_000_000n,
     now + 100n,
-    "price-second"
+    "price-second",
   );
   const exitAddress = Keypair.fromSeed(
-    createHash("sha256").update("depth.oracle.exit.v1").digest()
+    createHash("sha256").update("depth.oracle.exit.v1").digest(),
   ).publicKey.toBase58();
   writePriceUpdate(
     exitAddress,
     20_000_000_000n,
     20_000_000n,
     now + 300n,
-    "price-exit"
+    "price-exit",
   );
   const renewalAddress = Keypair.fromSeed(
-    createHash("sha256").update("depth.oracle.renewal.v1").digest()
+    createHash("sha256").update("depth.oracle.renewal.v1").digest(),
   ).publicKey.toBase58();
   writePriceUpdate(
     renewalAddress,
     20_000_000_000n,
     20_000_000n,
     now + 450n,
-    "price-renewal"
+    "price-renewal",
   );
   const riskAddress = Keypair.fromSeed(
-    createHash("sha256").update("depth.oracle.risk.v1").digest()
+    createHash("sha256").update("depth.oracle.risk.v1").digest(),
   ).publicKey.toBase58();
   writePriceUpdate(
     riskAddress,
     20_000_000_000n,
     20_000_000n,
     now + 600n,
-    "price-risk"
+    "price-risk",
   );
   const crashAddress = Keypair.fromSeed(
-    createHash("sha256").update("depth.oracle.crash.v1").digest()
+    createHash("sha256").update("depth.oracle.crash.v1").digest(),
   ).publicKey.toBase58();
   writePriceUpdate(
     crashAddress,
     100_000_000n,
     1_000_000n,
     now + 750n,
-    "price-crash"
+    "price-crash",
   );
   const followupAddress = Keypair.fromSeed(
-    createHash("sha256").update("depth.oracle.followup.v1").digest()
+    createHash("sha256").update("depth.oracle.followup.v1").digest(),
   ).publicKey.toBase58();
   writePriceUpdate(
     followupAddress,
     100_000_000n,
     1_000_000n,
     now + 751n,
-    "price-followup"
+    "price-followup",
   );
   const defaultAddress = Keypair.fromSeed(
-    createHash("sha256").update("depth.oracle.default.v1").digest()
+    createHash("sha256").update("depth.oracle.default.v1").digest(),
   ).publicKey.toBase58();
   writePriceUpdate(
     defaultAddress,
     10_000_000_000_000n,
     1_000_000_000n,
     now + 300n,
-    "price-default"
+    "price-default",
   );
 }
 
@@ -139,7 +99,7 @@ function writePriceUpdate(address, price, confidence, publishTime, filename) {
   data[40] = 1;
   Buffer.from(
     "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
-    "hex"
+    "hex",
   ).copy(data, 41);
   data.writeBigInt64LE(price, 73);
   data.writeBigUInt64LE(confidence, 81);
@@ -149,9 +109,9 @@ function writePriceUpdate(address, price, confidence, publishTime, filename) {
   data.writeBigInt64LE(price, 109);
   data.writeBigUInt64LE(confidence, 117);
   data.writeBigUInt64LE(0n, 125);
-  mkdirSync("artifacts/localnet", { recursive: true });
+  mkdirSync(resolvePath("contracts/artifacts/localnet"), { recursive: true });
   writeFileSync(
-    `artifacts/localnet/${filename}.json`,
+    resolvePath(`contracts/artifacts/localnet/${filename}.json`),
     JSON.stringify({
       pubkey: address,
       account: {
@@ -161,17 +121,17 @@ function writePriceUpdate(address, price, confidence, publishTime, filename) {
         executable: false,
         rentEpoch: 0,
       },
-    })
+    }),
   );
 }
 
 function run(args, testFile, scenario) {
   return new Promise((resolve) => {
-    const child = spawn("arcium", ["test", ...args], {
+    const child = spawn(runtime.command, ["test", ...args], {
       stdio: "inherit",
+      cwd: resolvePath("contracts"),
       env: {
-        ...process.env,
-        PATH: anchorPath,
+        ...runtime.env,
         DEPTH_TEST_FILE: testFile,
         DEPTH_TEST_SCENARIO: scenario ?? "",
       },
