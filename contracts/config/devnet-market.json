@@ -1,0 +1,18 @@
+{
+  "initialMarginBps": 1000,
+  "maintenanceMarginBps": 500,
+  "liquidationFeeBps": 50,
+  "tradeFeeBps": 5,
+  "insuranceFeeBps": 1,
+  "maxAccountNotional": "1000000000",
+  "maxMarketNotional": "10000000000",
+  "maxOracleAgeSeconds": 300,
+  "maxConfidenceBps": 100,
+  "maxQuoteDeviationBps": 500,
+  "maxQuoteLifetimeSeconds": 120,
+  "maxOrderQueueSeconds": 300,
+  "fundingIntervalSeconds": 3600,
+  "fundingRateCapBps": 50,
+  "quoteTiers": ["1000000", "10000000", "100000000", "1000000000"],
+  "backstopMinCollateral": "100000000"
+}

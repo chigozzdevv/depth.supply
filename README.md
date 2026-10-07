@@ -18,7 +18,7 @@ requirements.
 
 ## Development
 
-Install the pinned Arcium CLI 0.13.2, Anchor CLI 1.0.2, Solana CLI 3.1.10,
+Install Arcium CLI 0.13.2 for builds, Anchor CLI 1.0.2, Solana CLI 3.1.10,
 Rust 1.89.0, Docker, Bun, and pnpm. The contracts need
 [Arcium's development dependencies](https://docs.arcium.com/developers/installation).
 
@@ -101,6 +101,12 @@ Use the verified `DEPTH_CIRCUIT_BASE_URL` printed by the uploader when running
 The devnet deployment command checks the signer, program identity, hosted
 circuits, cluster, and rent before creating the program and MXE:
 
+Use Arcium CLI 0.15.0 for the devnet deployment command because the live
+cluster's key recovery instruction uses its account layout. Set
+`DEPTH_ARCIUM_CLI` to the 0.15.0 executable if the default `arcium` command is
+still 0.13.2. The deployed computation definitions remain pinned to circuits
+compiled with 0.13.2.
+
 ```sh
 pnpm --dir contracts deploy:devnet --check
 pnpm --dir contracts deploy:devnet
@@ -109,6 +115,20 @@ pnpm --dir contracts init:protocol
 ```
 
 The protocol setup uses Circle's devnet USDC mint and verifies its vault.
+The devnet market policy is in `contracts/config/devnet-market.json`. Provide
+five committee signer public keys and X25519 encryption public keys in a JSON
+array of `{ "signer": "...", "encryptionKey": "<base64>" }` entries. Set
+`DEPTH_RECOVERY_COMMITTEE_PATH` to that file and
+`DEPTH_RECOVERY_ENVELOPES_PATH` to a private output path. Relative paths start
+in `contracts/`. Then run:
+
+```sh
+pnpm --dir contracts init:market
+```
+
+The command saves five encrypted recovery shares before creating the draft
+market. Each committee member must receive its own envelope and retain its
+private keys independently.
 
 After initializing the market, release operators can
 capture and sign the deployed configuration with:
