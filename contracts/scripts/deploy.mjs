@@ -18,23 +18,28 @@ const programKeypairPath = "target/deploy/depth-keypair.json";
 const bufferKeypairPath = "target/deploy/depth-buffer.json";
 const signerPath = "target/test-wallet.json";
 const arciumCli = process.env.DEPTH_ARCIUM_CLI || "arcium";
-const arciumVersion = execFileSync(arciumCli, ["--version"], {
-  encoding: "utf8",
-}).trim();
-if (arciumVersion !== "arcium 0.15.0") {
-  throw new Error(
-    `Arcium CLI 0.15.0 is required for devnet MXE deployment; found ${arciumVersion}`
-  );
-}
-const programId = new PublicKey(
-  JSON.parse(readFileSync("target/idl/depth.json", "utf8")).address
-);
+const idl = JSON.parse(readFileSync("target/idl/depth.json", "utf8"));
+const programId = new PublicKey(idl.address);
 const resume = process.argv.includes("--resume");
 const checkOnly = process.argv.includes("--check");
+const upgrade = process.argv.includes("--upgrade");
 if (
-  process.argv.slice(2).some((arg) => !["--resume", "--check"].includes(arg))
+  (resume && upgrade) ||
+  process.argv
+    .slice(2)
+    .some((arg) => !["--resume", "--check", "--upgrade"].includes(arg))
 ) {
-  throw new Error("Usage: deploy.mjs [--check] [--resume]");
+  throw new Error("Usage: deploy.mjs [--check] [--resume | --upgrade]");
+}
+if (!upgrade) {
+  const arciumVersion = execFileSync(arciumCli, ["--version"], {
+    encoding: "utf8",
+  }).trim();
+  if (arciumVersion !== "arcium 0.15.0") {
+    throw new Error(
+      `Arcium CLI 0.15.0 is required for devnet MXE deployment; found ${arciumVersion}`
+    );
+  }
 }
 
 const rpc = process.env.SOLANA_RPC_URL;
@@ -116,12 +121,51 @@ console.log(`Wallet: ${(balance / 1_000_000_000).toFixed(3)} SOL`);
 console.log(
   `Peak deployment estimate: ${(required / 1_000_000_000).toFixed(3)} SOL`
 );
-if (existing && !resume) {
+if (upgrade) {
+  const loader = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
+  if (
+    !existing?.executable ||
+    !existing.owner.equals(loader) ||
+    existing.data.length !== 36 ||
+    existing.data.readUInt32LE(0) !== 2
+  )
+    throw new Error("Upgrade requires an existing upgradeable Depth program");
+  const programData = await connection.getAccountInfo(
+    new PublicKey(existing.data.subarray(4))
+  );
+  if (
+    !programData?.owner.equals(loader) ||
+    programData.data.readUInt32LE(0) !== 3 ||
+    programData.data[12] !== 1 ||
+    !new PublicKey(programData.data.subarray(13, 45)).equals(signer.publicKey)
+  )
+    throw new Error("Deployment signer is not the program upgrade authority");
+  const depth = new anchor.Program(idl, provider);
+  const [protocols, markets, accounts, clearing] = await Promise.all([
+    depth.account.protocol.all(),
+    depth.account.market.all(),
+    depth.account.marketAccount.all(),
+    depth.account.clearingAccount.all(),
+  ]);
+  if (
+    protocols.some(({ account }) => account.tradingEnabled) ||
+    markets.some(({ account }) => account.pendingOrders !== 0) ||
+    [...accounts, ...clearing].some(
+      ({ account }) =>
+        !("ready" in account.status) ||
+        !account.pendingComputation.equals(PublicKey.default)
+    )
+  )
+    throw new Error(
+      "Pause trading and finish pending computations before upgrading"
+    );
+}
+if (existing && !resume && !upgrade) {
   throw new Error(
     "The program already exists; use --resume only after inspecting it"
   );
 }
-if (balance < required && !existing) {
+if (balance < required && (!existing || upgrade)) {
   throw new Error("The deployment wallet needs more devnet SOL");
 }
 if (checkOnly) process.exit(0);
@@ -163,7 +207,7 @@ async function run(command, args) {
   if (exitCode !== 0) process.exit(exitCode);
 }
 
-if (!existing) {
+if (!existing || upgrade) {
   console.log("Uploading program through the configured RPC...");
   await run("solana", [
     "program",
@@ -202,7 +246,7 @@ const args = [
   "--skip-deploy",
 ];
 if (resume) args.push("--resume");
-await run(arciumCli, args);
+if (!upgrade) await run(arciumCli, args);
 
 const program = await connection.getAccountInfo(programId);
 if (!program?.executable) throw new Error("Depth program is not executable");

@@ -96,8 +96,9 @@ pnpm --dir contracts verify:circuits --local
 pnpm --dir contracts upload:circuits
 ```
 
-Use the verified `DEPTH_CIRCUIT_BASE_URL` printed by the uploader when running
-`arcium build` for a public deployment. Set that URL in the root `.env.local`.
+Set the verified `DEPTH_CIRCUIT_BASE_URL` printed by the uploader in the root
+`.env.local`, then run `pnpm --dir contracts build`. The build command loads
+the root environment and selects the pinned Anchor version.
 The devnet deployment command checks the signer, program identity, hosted
 circuits, cluster, and rent before creating the program and MXE:
 
@@ -113,6 +114,19 @@ pnpm --dir contracts deploy:devnet
 pnpm --dir contracts init:defs
 pnpm --dir contracts init:protocol
 ```
+
+For an existing program, pause trading and finish pending computations before
+upgrading. Rebuild with the verified circuit URL, then run:
+
+```sh
+pnpm --dir contracts deploy:devnet --check --upgrade
+pnpm --dir contracts deploy:devnet --upgrade
+pnpm --dir contracts init:defs
+```
+
+Changed circuits use new versioned definitions; existing definitions stay
+available for historical verification. Sign a new deployment manifest after
+the upgrade and definition initialization.
 
 The protocol setup uses Circle's devnet USDC mint and verifies its vault.
 The devnet market policy is in `contracts/config/devnet-market.json`. Provide
