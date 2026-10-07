@@ -18,24 +18,35 @@ requirements.
 | `keys/` | Local signer keys and recovery custody data, ignored by Git |
 | `deployments/` | Generated signed manifests and committee configuration, ignored by Git |
 | `artifacts/` | Generated devnet verification records, ignored by Git |
+| `.tools/` | Verified local Arcium binaries, ignored by Git |
 
 ## Development
 
-Install Arcium CLI 0.13.2 for builds, Anchor CLI 1.0.2, Solana CLI 3.1.10,
+Install Anchor CLI 1.0.2, Solana CLI 3.1.10,
 Rust 1.89.0, Docker, Bun, and pnpm. The contracts need
 [Arcium's development dependencies](https://docs.arcium.com/developers/installation).
 
 ```sh
 pnpm install --frozen-lockfile
 pnpm --dir contracts install --frozen-lockfile
+pnpm tools:setup
 ```
 
 Contract integration tests create their own signer at `keys/localnet/wallet.json`.
 Devnet uses a separate deployer at `keys/devnet/deployer.json` and retains the
 program identity at `keys/devnet/program.json`. These private files must be
 provisioned independently of the Git checkout and kept outside generated build
-directories. The build command links the configured program identity into
-Anchor's build directory when it is available.
+directories. The build command verifies and links the configured program
+identity into Anchor's build directory when it is present; an explicitly
+configured missing key or a different identity is rejected. Deployment always
+requires the durable program and deployer keys.
+
+`toolchain.json` pins the Arcium compiler/test and deployment binaries with
+SHA-256 checksums for Apple Silicon and x86 Linux. `pnpm tools:setup` downloads
+them from Arcium's official host into the ignored `.tools/` directory without
+changing the global CLI. `pnpm tools:setup --check` verifies the installation.
+Optional `DEPTH_ARCIUM_BUILD_CLI` and `DEPTH_ARCIUM_DEPLOY_CLI` overrides accept
+an executable path or command name and must match the pinned hash and version.
 
 Build the program and encrypted instructions from `contracts/`, then refresh
 the generated TypeScript binding and run the workspace checks:
@@ -68,7 +79,9 @@ pnpm --dir server start
 ```
 
 All configured file paths resolve from the repository root, including commands
-run from a package directory. Set `DEPTH_DEVNET_MANIFEST_PATH` to
+run from a package directory; absolute paths support mounted signer secrets.
+Deployment scripts and services share one signer loader, which validates
+key material and required public identities. Set `DEPTH_DEVNET_MANIFEST_PATH` to
 `deployments/devnet/manifest.json` to serve the signed devnet deployment.
 
 After deploying a market, the keeper uses `SOLANA_RPC_URL` and needs
@@ -109,10 +122,9 @@ The devnet deployment command checks the signer, program identity, hosted
 circuits, cluster, and rent before creating the program and MXE:
 
 Use Arcium CLI 0.15.0 for the devnet deployment command because the live
-cluster's key recovery instruction uses its account layout. Set
-`DEPTH_ARCIUM_CLI` to the 0.15.0 executable if the default `arcium` command is
-still 0.13.2. The deployed computation definitions remain pinned to circuits
-compiled with 0.13.2.
+cluster's key recovery instruction uses its account layout. The toolchain
+resolver selects this version for deployment; compilation and local tests
+remain pinned to 0.13.2 alongside the Rust and TypeScript Arcium dependencies.
 
 ```sh
 pnpm --dir contracts deploy:devnet --check
@@ -161,7 +173,7 @@ bun packages/sdk/scripts/manifest.ts RPC_URL SIGNER_FILE VERSION EXPIRY_UNIX OUT
 Use the root environment without putting the RPC URL in command arguments:
 
 ```sh
-bun --env-file=.env.local packages/sdk/scripts/manifest.ts env keys/devnet/deployer.json VERSION EXPIRY_UNIX deployments/devnet/manifest.json
+pnpm devnet:manifest VERSION EXPIRY_UNIX deployments/devnet/manifest.json
 ```
 
 The manifest signer must be the deployed program's upgrade authority. Set
@@ -176,11 +188,15 @@ tools are available from `@depth/sdk/operator`.
 After deploying and signing a manifest, initialize the demo app and accounts:
 
 ```sh
+pnpm keys:setup devnet
 pnpm devnet:setup
 pnpm devnet:audit
 ```
 
-The setup command uses `keys/devnet/app.json` and `keys/devnet/trader.json` and
+The key setup command explicitly creates missing demo identities, preserves
+existing identities, and rejects invalid keys. Deployers and program keys are
+provisioned independently.
+The setup command loads the configured app and trader signers and
 funds their Solana transaction costs from the deployer when needed. Fund the
 trader with devnet USDC before running the live quote and trading proof:
 
