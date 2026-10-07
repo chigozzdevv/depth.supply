@@ -10,6 +10,7 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
+      "@/workspace": ["../scripts/paths"],
       "@/*": ["src/*"]
     },
     "types": ["node"]

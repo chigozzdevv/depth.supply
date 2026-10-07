@@ -7,7 +7,7 @@
     "init:defs": "node --env-file-if-exists=../.env.local scripts/defs.mjs",
     "init:protocol": "node --env-file-if-exists=../.env.local scripts/protocol.mjs",
     "init:market": "bun --env-file=../.env.local ../packages/sdk/scripts/market.ts",
-    "test": "node --test scripts/circuits.test.mjs && node scripts/test.mjs",
+    "test": "node --test scripts/circuits.test.mjs scripts/keys.test.mjs && node --env-file-if-exists=../.env.local scripts/test.mjs",
     "typecheck": "tsc --noEmit",
     "verify:circuits": "node --env-file-if-exists=../.env.local scripts/verify-circuits.mjs",
     "upload:circuits": "node --env-file-if-exists=../.env.local scripts/upload-circuits.mjs",

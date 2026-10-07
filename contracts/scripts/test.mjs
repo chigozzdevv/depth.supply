@@ -12,6 +12,23 @@ import {
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { Keypair } from "@solana/web3.js";
+import { dirname } from "node:path";
+import { resolvePath } from "../../scripts/paths.mjs";
+import { stageProgramKeypair } from "./keys.mjs";
+
+stageProgramKeypair();
+const walletPath = resolvePath("keys/localnet/wallet.json");
+if (!existsSync(walletPath)) {
+  mkdirSync(dirname(walletPath), { recursive: true, mode: 0o700 });
+  writeFileSync(
+    walletPath,
+    JSON.stringify(Array.from(Keypair.generate().secretKey)),
+    {
+      flag: "wx",
+      mode: 0o600,
+    }
+  );
+}
 
 const expectedAnchor = readFileSync("Anchor.toml", "utf8").match(
   /anchor_version = "([^"]+)"/

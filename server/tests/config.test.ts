@@ -3,14 +3,30 @@ import { SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import {
   keeperConfig,
+  deploymentPaths,
   oracleMode,
   publisherConfig,
   serverConfig,
 } from "@/shared/config/env";
+
+test("deployment paths resolve from the repository root", () => {
+  const root = fileURLToPath(new URL("../../", import.meta.url));
+  assert.deepEqual(
+    deploymentPaths({
+      DEPTH_DEVNET_MANIFEST_PATH: "deployments/devnet/manifest.json",
+      DEPTH_MAINNET_MANIFEST_PATH: "",
+    }),
+    {
+      devnet: join(root, "deployments/devnet/manifest.json"),
+      "mainnet-beta": undefined,
+    }
+  );
+});
 
 test("shared configuration validates RPC URLs and the keeper signer", () => {
   const keypair = Keypair.generate();
@@ -69,6 +85,13 @@ test("keeper and publisher can load one signer from a local file", () => {
       DEPTH_KEEPER_KEYPAIR_PATH: path,
     };
     assert.ok(keeperConfig(env).keypair.publicKey.equals(signer.publicKey));
+    const root = fileURLToPath(new URL("../../", import.meta.url));
+    assert.ok(
+      keeperConfig({
+        ...env,
+        DEPTH_KEEPER_KEYPAIR_PATH: relative(root, path),
+      }).keypair.publicKey.equals(signer.publicKey)
+    );
     assert.ok(
       publisherConfig({
         ...env,
@@ -109,8 +132,11 @@ test("publisher configuration requires a Pyth key and a valid shard", () => {
     /PYTH_ORACLE_MODE=hermes/
   );
   assert.ok(
-    keeperConfig({ ...env, PYTH_ORACLE_MODE: "sponsored", PYTH_API_KEY: "" })
-      .priceAccount.equals(SOL_USD_PUSH_ACCOUNT)
+    keeperConfig({
+      ...env,
+      PYTH_ORACLE_MODE: "sponsored",
+      PYTH_API_KEY: "",
+    }).priceAccount.equals(SOL_USD_PUSH_ACCOUNT)
   );
   assert.throws(
     () => publisherConfig({ ...env, DEPTH_PYTH_SHARD_ID: "65536" }),

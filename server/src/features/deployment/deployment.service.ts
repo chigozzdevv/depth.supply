@@ -1,5 +1,6 @@
 import { DEPTH_PROGRAM_ID } from "@depth/bindings";
 import { readFile } from "node:fs/promises";
+import { resolvePath } from "@/shared/config/path";
 
 const genesis = {
   devnet: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
@@ -18,7 +19,7 @@ export class DeploymentService {
     if (!path) return undefined;
     let contents: string;
     try {
-      contents = await readFile(path, "utf8");
+      contents = await readFile(resolvePath(path), "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
       throw error;

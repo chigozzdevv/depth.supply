@@ -1,6 +1,7 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
 import { readFileSync } from "node:fs";
+import { resolvePath, settingPath } from "@/shared/config/path";
 
 export type ServerConfig = { rpcUrl: string; host: string; port: number };
 export type OracleMode = "sponsored" | "hermes";
@@ -19,6 +20,13 @@ export type PublisherConfig = KeeperConfig & {
   intervalMs: number;
   healthPort: number;
 };
+
+export function deploymentPaths(env: NodeJS.ProcessEnv = process.env) {
+  return {
+    devnet: settingPath("DEPTH_DEVNET_MANIFEST_PATH", undefined, env),
+    "mainnet-beta": settingPath("DEPTH_MAINNET_MANIFEST_PATH", undefined, env),
+  };
+}
 
 function rpcUrl(value: string | undefined, name: string): string {
   if (!value) throw new Error(`${name} is required`);
@@ -57,7 +65,7 @@ export function keeperConfig(
     throw new Error("Configure one keeper signer source");
   }
   const source = env.DEPTH_KEEPER_KEYPAIR_PATH
-    ? readFileSync(env.DEPTH_KEEPER_KEYPAIR_PATH, "utf8")
+    ? readFileSync(resolvePath(env.DEPTH_KEEPER_KEYPAIR_PATH), "utf8")
     : env.DEPTH_KEEPER_KEYPAIR;
   if (!source) {
     throw new Error(

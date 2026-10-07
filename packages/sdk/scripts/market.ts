@@ -10,9 +10,11 @@ import {
 } from "@depth/bindings";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { Buffer } from "buffer";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { createRecoveryShares } from "@/recovery/shares";
 import type { RecoveryEnvelope } from "@/recovery/shares";
+import { resolvePath, settingPath } from "@/workspace";
 
 const genesisHash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const checkOnly = process.argv.includes("--check");
@@ -20,18 +22,21 @@ if (process.argv.slice(2).some((value) => value !== "--check")) {
   throw new Error("Usage: market.ts [--check]");
 }
 const rpc = process.env.SOLANA_RPC_URL;
-const committeePath = process.env.DEPTH_RECOVERY_COMMITTEE_PATH;
-const envelopePath = process.env.DEPTH_RECOVERY_ENVELOPES_PATH;
-const signerPath =
-  process.env.DEPTH_DEPLOYER_KEYPAIR_PATH || "target/test-wallet.json";
+const committeePath = settingPath(
+  "DEPTH_RECOVERY_COMMITTEE_PATH",
+  "deployments/devnet/committee.json",
+);
+const envelopePath = settingPath(
+  "DEPTH_RECOVERY_ENVELOPES_PATH",
+  "keys/devnet/recovery/envelopes.json",
+);
+const signerPath = settingPath(
+  "DEPTH_DEPLOYER_KEYPAIR_PATH",
+  "keys/devnet/deployer.json",
+);
 
 if (!rpc || new URL(rpc).protocol !== "https:") {
   throw new Error("SOLANA_RPC_URL must be an HTTPS devnet endpoint");
-}
-if (!committeePath || !envelopePath) {
-  throw new Error(
-    "Set DEPTH_RECOVERY_COMMITTEE_PATH and DEPTH_RECOVERY_ENVELOPES_PATH",
-  );
 }
 
 function integer(value: unknown, name: string, max: number): number {
@@ -57,10 +62,7 @@ function amount(value: unknown, name: string): anchor.BN {
 }
 
 const rawPolicy = JSON.parse(
-  await readFile(
-    new URL("../../../contracts/config/devnet-market.json", import.meta.url),
-    "utf8",
-  ),
+  await readFile(resolvePath("contracts/config/devnet-market.json"), "utf8"),
 ) as Record<string, unknown>;
 const rawTiers = rawPolicy.quoteTiers;
 if (!Array.isArray(rawTiers) || rawTiers.length !== 4) {
@@ -237,6 +239,7 @@ try {
     signers: committee.map((member) => member.signer.toBase58()),
     envelopes: generated.envelopes,
   };
+  await mkdir(dirname(envelopePath), { recursive: true, mode: 0o700 });
   await writeFile(envelopePath, `${JSON.stringify(shares, null, 2)}\n`, {
     flag: "wx",
     mode: 0o600,

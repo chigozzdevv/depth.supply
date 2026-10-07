@@ -6,5 +6,8 @@ coverage/
 .env
 .env.*
 !.env.example
+/keys/
+/deployments/
+/artifacts/
 *.log
 .DS_Store

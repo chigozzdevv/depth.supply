@@ -2,7 +2,8 @@ import Fastify from "fastify";
 import { DEPTH_PROGRAM_ID } from "@depth/bindings";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { deploymentRoute } from "@/features/deployment/deployment.route";
@@ -12,9 +13,13 @@ test("public deployment route serves only the configured matching release", asyn
   const directory = await mkdtemp(join(tmpdir(), "depth-manifest-"));
   const path = join(directory, "devnet.json");
   const app = Fastify();
+  const root = fileURLToPath(new URL("../../", import.meta.url));
   deploymentRoute(
     app,
-    new DeploymentService({ devnet: path, "mainnet-beta": undefined })
+    new DeploymentService({
+      devnet: relative(root, path),
+      "mainnet-beta": undefined,
+    })
   );
   try {
     const unavailable = await app.inject("/.well-known/depth/devnet.json");

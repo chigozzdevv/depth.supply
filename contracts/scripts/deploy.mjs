@@ -6,19 +6,38 @@ import {
 } from "@arcium-hq/client";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname } from "node:path";
 import { readCircuits, verifyRemote } from "./circuits.mjs";
+import { resolvePath, settingPath } from "../../scripts/paths.mjs";
 
 const genesisHash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const clusterOffset = 456;
-const programPath = "target/deploy/depth.so";
+const programPath = resolvePath("contracts/target/deploy/depth.so");
 const programSize = statSync(programPath).size;
 const maxLength = programSize;
-const programKeypairPath = "target/deploy/depth-keypair.json";
-const bufferKeypairPath = "target/deploy/depth-buffer.json";
-const signerPath = "target/test-wallet.json";
+const programKeypairPath = settingPath(
+  "DEPTH_PROGRAM_KEYPAIR_PATH",
+  "keys/devnet/program.json"
+);
+const bufferKeypairPath = settingPath(
+  "DEPTH_BUFFER_KEYPAIR_PATH",
+  "keys/devnet/buffer.json"
+);
+const signerPath = settingPath(
+  "DEPTH_DEPLOYER_KEYPAIR_PATH",
+  "keys/devnet/deployer.json"
+);
 const arciumCli = process.env.DEPTH_ARCIUM_CLI || "arcium";
-const idl = JSON.parse(readFileSync("target/idl/depth.json", "utf8"));
+const idl = JSON.parse(
+  readFileSync(resolvePath("contracts/target/idl/depth.json"), "utf8")
+);
 const programId = new PublicKey(idl.address);
 const resume = process.argv.includes("--resume");
 const checkOnly = process.argv.includes("--check");
@@ -175,6 +194,7 @@ await verifyRemote(circuitBase, circuits);
 console.log(`Verified ${circuits.length} hosted circuits`);
 
 if (!bufferKeypairExists) {
+  mkdirSync(dirname(bufferKeypairPath), { recursive: true, mode: 0o700 });
   writeFileSync(
     bufferKeypairPath,
     JSON.stringify(Array.from(bufferKeypair.secretKey)),
@@ -185,6 +205,7 @@ if (!bufferKeypairExists) {
 async function run(command, args) {
   const child = spawn(command, args, {
     stdio: ["inherit", "pipe", "pipe"],
+    cwd: resolvePath("contracts"),
   });
   function forward(source) {
     let pending = "";

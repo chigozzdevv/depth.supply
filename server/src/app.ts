@@ -12,18 +12,13 @@ import { QuoteService } from "@/features/quote/quote.service";
 import { recoveryRoute } from "@/features/recovery/recovery.route";
 import { RecoveryService } from "@/features/recovery/recovery.service";
 import type { ChainClient } from "@/shared/chain/chain.client";
+import { deploymentPaths } from "@/shared/config/env";
 import { registerHttp } from "@/shared/http/http.plugin";
 
 export function buildApp(chain: ChainClient, logger = true): FastifyInstance {
   const app = Fastify({ logger, bodyLimit: 1_024 });
   registerHttp(app);
-  deploymentRoute(
-    app,
-    new DeploymentService({
-      devnet: process.env.DEPTH_DEVNET_MANIFEST_PATH,
-      "mainnet-beta": process.env.DEPTH_MAINNET_MANIFEST_PATH,
-    })
-  );
+  deploymentRoute(app, new DeploymentService(deploymentPaths()));
   marketRoute(app, new MarketService(chain));
   recoveryRoute(app, new RecoveryService(chain));
   quoteRoute(app, new QuoteService(chain));

@@ -1,8 +1,10 @@
 import * as anchor from "@anchor-lang/core";
 import { Connection, Keypair } from "@solana/web3.js";
 import { createPrivateKey, sign } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { captureDeployment, manifestBytes } from "@/chain/manifest";
+import { resolvePath } from "@/workspace";
 
 const [rpcSource, keyfile, versionText, expiryText, output] =
   process.argv.slice(2);
@@ -23,7 +25,7 @@ if (
   );
 }
 const signer = Keypair.fromSecretKey(
-  Uint8Array.from(JSON.parse(await readFile(keyfile, "utf8"))),
+  Uint8Array.from(JSON.parse(await readFile(resolvePath(keyfile), "utf8"))),
 );
 const provider = new anchor.AnchorProvider(
   new Connection(rpc, "confirmed"),
@@ -40,8 +42,10 @@ const key = createPrivateKey({
   type: "pkcs8",
 });
 const signature = sign(null, manifestBytes(payload), key).toString("base64");
+const outputPath = resolvePath(output);
+await mkdir(dirname(outputPath), { recursive: true });
 await writeFile(
-  output,
+  outputPath,
   JSON.stringify(
     { payload, signer: signer.publicKey.toBase58(), signature },
     null,
@@ -49,4 +53,4 @@ await writeFile(
   ) + "\n",
   { flag: "wx" },
 );
-process.stdout.write(`Wrote deployment manifest to ${output}\n`);
+process.stdout.write(`Wrote deployment manifest to ${outputPath}\n`);

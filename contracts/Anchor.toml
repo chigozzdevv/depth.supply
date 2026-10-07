@@ -14,7 +14,7 @@ url = "https://api.apr.dev"
 
 [provider]
 cluster = "localnet"
-wallet = "target/test-wallet.json"
+wallet = "../keys/localnet/wallet.json"
 
 [scripts]
 test = "pnpm exec ts-mocha -r tsconfig-paths/register -p ./tsconfig.json -t 1000000 tests/${DEPTH_TEST_FILE:-base}.ts"

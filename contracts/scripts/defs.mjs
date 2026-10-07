@@ -10,10 +10,15 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import { readFileSync } from "node:fs";
 import { readCircuits } from "./circuits.mjs";
 import { submitTransaction } from "./tx.mjs";
+import { resolvePath, settingPath } from "../../scripts/paths.mjs";
 
 const genesisHash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const clusterOffset = 456;
 const rpc = process.env.SOLANA_RPC_URL;
+const signerPath = settingPath(
+  "DEPTH_DEPLOYER_KEYPAIR_PATH",
+  "keys/devnet/deployer.json"
+);
 if (!rpc || new URL(rpc).protocol !== "https:") {
   throw new Error("SOLANA_RPC_URL must be an HTTPS devnet endpoint");
 }
@@ -22,9 +27,11 @@ if ((await connection.getGenesisHash()) !== genesisHash) {
   throw new Error("The configured RPC does not point to Solana devnet");
 }
 const signer = Keypair.fromSecretKey(
-  Uint8Array.from(JSON.parse(readFileSync("target/test-wallet.json", "utf8")))
+  Uint8Array.from(JSON.parse(readFileSync(signerPath, "utf8")))
 );
-const idl = JSON.parse(readFileSync("target/idl/depth.json", "utf8"));
+const idl = JSON.parse(
+  readFileSync(resolvePath("contracts/target/idl/depth.json"), "utf8")
+);
 const programId = new PublicKey(idl.address);
 const programAccount = await connection.getAccountInfo(programId);
 if (!programAccount?.executable) throw new Error("Depth is not deployed");

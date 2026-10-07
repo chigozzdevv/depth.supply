@@ -8,25 +8,29 @@ import {
   SystemProgram,
   Transaction,
 } from "@solana/web3.js";
-import { readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { createDepth, type DepthClient } from "@/client/client";
 import type { SignedManifest } from "@/chain/manifest";
+import { settingPath } from "@/workspace";
 
 const rpc = process.env.SOLANA_RPC_URL;
 if (!rpc || new URL(rpc).protocol !== "https:") {
   throw new Error("SOLANA_RPC_URL must be an HTTPS devnet endpoint");
 }
-const signerPath =
-  process.env.DEPTH_DEPLOYER_KEYPAIR_PATH ||
-  "contracts/target/test-wallet.json";
-const manifestPath =
-  process.env.DEPTH_DEVNET_MANIFEST_PATH ||
-  ".env.recovery/devnet/manifest.json";
-const traderPath =
-  process.env.DEPTH_DEMO_TRADER_PATH ||
-  ".env.recovery/devnet/trader.solana.json";
-const appPath =
-  process.env.DEPTH_DEMO_APP_PATH || ".env.recovery/devnet/app.solana.json";
+const signerPath = settingPath(
+  "DEPTH_DEPLOYER_KEYPAIR_PATH",
+  "keys/devnet/deployer.json",
+);
+const manifestPath = settingPath(
+  "DEPTH_DEVNET_MANIFEST_PATH",
+  "deployments/devnet/manifest.json",
+);
+const traderPath = settingPath(
+  "DEPTH_DEMO_TRADER_PATH",
+  "keys/devnet/trader.json",
+);
+const appPath = settingPath("DEPTH_DEMO_APP_PATH", "keys/devnet/app.json");
 
 async function signer(path: string): Promise<Keypair> {
   return Keypair.fromSecretKey(
@@ -41,6 +45,7 @@ async function demoSigner(path: string): Promise<Keypair> {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const keypair = Keypair.generate();
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await writeFile(path, JSON.stringify(Array.from(keypair.secretKey)), {
     flag: "wx",
     mode: 0o600,

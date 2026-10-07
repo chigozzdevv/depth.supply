@@ -8,6 +8,9 @@ import {
 } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
+import { stageProgramKeypair } from "./keys.mjs";
+
+stageProgramKeypair();
 
 const expectedAnchor = readFileSync("Anchor.toml", "utf8").match(
   /anchor_version = "([^"]+)"/
