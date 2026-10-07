@@ -121,7 +121,9 @@ test("risk checks skip an already checked account and submit one eligible target
     next: async () => [{ address: target, state: {} }],
   };
   assert.equal(await service.advance(), undefined);
-  lastCheck = now - 1;
+  lastCheck = now - 299;
+  assert.equal(await service.advance(), undefined);
+  lastCheck = now - 300;
   assert.equal(await service.advance(), "risk-signature");
   assert.equal(submissions, 1);
 });

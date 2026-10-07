@@ -26,6 +26,7 @@ type Offer = {
   status: Variant;
   expiry: Integer;
 };
+const RISK_PROBE_INTERVAL_SECONDS = 300;
 
 export class RiskService {
   private readonly scan: ChainScan;
@@ -87,6 +88,8 @@ export class RiskService {
         !target.market.equals(this.chain.market) ||
         target.owner.equals(offer.maker) ||
         !("ready" in target.status) ||
+        now - target.lastLiquidationTimestamp.toNumber() <
+          RISK_PROBE_INTERVAL_SECONDS ||
         target.lastLiquidationTimestamp.toNumber() >=
           market.oracleTimestamp.toNumber()
       )
