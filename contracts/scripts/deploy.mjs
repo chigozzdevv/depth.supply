@@ -5,7 +5,7 @@ import {
   getMXEAccAddress,
 } from "@arcium-hq/client";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { readCircuits, verifyRemote } from "./circuits.mjs";
 
@@ -17,6 +17,15 @@ const maxLength = programSize;
 const programKeypairPath = "target/deploy/depth-keypair.json";
 const bufferKeypairPath = "target/deploy/depth-buffer.json";
 const signerPath = "target/test-wallet.json";
+const arciumCli = process.env.DEPTH_ARCIUM_CLI || "arcium";
+const arciumVersion = execFileSync(arciumCli, ["--version"], {
+  encoding: "utf8",
+}).trim();
+if (arciumVersion !== "arcium 0.15.0") {
+  throw new Error(
+    `Arcium CLI 0.15.0 is required for devnet MXE deployment; found ${arciumVersion}`
+  );
+}
 const programId = new PublicKey(
   JSON.parse(readFileSync("target/idl/depth.json", "utf8")).address
 );
@@ -84,10 +93,9 @@ const [
   connection.getAccountInfo(programId),
   connection.getAccountInfo(getClusterAccAddress(clusterOffset)),
   bufferKeypairExists
-    ? connection.getAccountInfo(
-        bufferKeypair.publicKey,
-        { dataSlice: { offset: 0, length: 0 } }
-      )
+    ? connection.getAccountInfo(bufferKeypair.publicKey, {
+        dataSlice: { offset: 0, length: 0 },
+      })
     : null,
 ]);
 if (!cluster?.owner.equals(arcium.programId)) {
@@ -95,7 +103,10 @@ if (!cluster?.owner.equals(arcium.programId)) {
 }
 // The loader returns the buffer balance to the payer before funding ProgramData.
 const required =
-  Math.max(0, Math.max(bufferRent, programRent) - (bufferAccount?.lamports ?? 0)) +
+  Math.max(
+    0,
+    Math.max(bufferRent, programRent) - (bufferAccount?.lamports ?? 0)
+  ) +
   programAccountRent +
   1_000_000_000;
 console.log(`Network: devnet, Arcium cluster: ${clusterOffset}`);
@@ -136,7 +147,8 @@ async function run(command, args) {
     source.on("data", (chunk) => {
       const lines = (pending + chunk.toString()).split(/\r?\n/);
       pending = lines.pop();
-      for (const line of lines) console.log(line.replaceAll(rpc, "[devnet RPC]"));
+      for (const line of lines)
+        console.log(line.replaceAll(rpc, "[devnet RPC]"));
     });
     source.on("end", () => {
       if (pending) console.log(pending.replaceAll(rpc, "[devnet RPC]"));
@@ -190,7 +202,7 @@ const args = [
   "--skip-deploy",
 ];
 if (resume) args.push("--resume");
-await run("arcium", args);
+await run(arciumCli, args);
 
 const program = await connection.getAccountInfo(programId);
 if (!program?.executable) throw new Error("Depth program is not executable");
