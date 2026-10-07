@@ -1,10 +1,12 @@
 import * as anchor from "@anchor-lang/core";
-import { SOL_USD_FEED_ID } from "@depth/bindings";
+import { accountOffsets, enumValues, SOL_USD_FEED_ID } from "@depth/bindings";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { priceTimestamp } from "@/features/oracle/oracle.price";
 import { OraclePublisher } from "@/features/oracle/oracle.publisher";
+import { OracleService } from "@/features/oracle/oracle.service";
+import type { ChainSigner } from "@/shared/chain/chain.signer";
 import { publisherConfig } from "@/shared/config/env";
 
 const receiver = new PublicKey("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ");
@@ -59,4 +61,110 @@ test("publisher leaves a recently updated verified feed alone", async () => {
     config
   );
   assert.equal(await publisher.advance(), undefined);
+});
+
+test("oracle refresh preserves pending quote snapshots until expiry", async () => {
+  const now = Math.floor(Date.now() / 1_000);
+  const price = priceAccount();
+  price.data.writeBigInt64LE(BigInt(now), 93);
+  const market = PublicKey.unique();
+  const oracle = PublicKey.unique();
+  let quoteStatus: number = enumValues.QuoteStatus.Validating;
+  let expiry = now + 60;
+  let refreshes = 0;
+  const queriedStatuses = new Set<number>();
+  const chain = {
+    market,
+    read: async () => ({
+      pendingOrders: 0,
+      status: { active: {} },
+      oracleAccount: oracle,
+      oracleTimestamp: new anchor.BN(now - 1),
+    }),
+    connection: {
+      getAccountInfo: async () => price,
+      getProgramAccounts: async (
+        _program: PublicKey,
+        options: {
+          dataSlice: { offset: number; length: number };
+          filters: Array<{ memcmp: { offset: number; bytes: string } }>;
+        }
+      ) => {
+        if (options.filters[0].memcmp.bytes !== "quoteRecord") return [];
+        assert.deepEqual(options.dataSlice, {
+          offset: accountOffsets.QuoteRecord.expiry,
+          length: 8,
+        });
+        const marketFilter = options.filters.find(
+          ({ memcmp }) => memcmp.offset === accountOffsets.QuoteRecord.market
+        );
+        assert.equal(marketFilter?.memcmp.bytes, market.toBase58());
+        const statusFilter = options.filters.find(
+          ({ memcmp }) => memcmp.offset === accountOffsets.QuoteRecord.status
+        );
+        assert.ok(statusFilter);
+        const statusBytes = anchor.utils.bytes.bs58.decode(
+          statusFilter.memcmp.bytes
+        );
+        assert.equal(statusBytes.length, 1);
+        queriedStatuses.add(statusBytes[0]);
+        if (statusBytes[0] !== quoteStatus) return [];
+        const data = Buffer.alloc(8);
+        data.writeBigInt64LE(BigInt(expiry));
+        return [{ pubkey: PublicKey.unique(), account: { data } }];
+      },
+    },
+    program: {
+      coder: {
+        accounts: { memcmp: (name: string) => ({ offset: 0, bytes: name }) },
+      },
+      methods: {
+        refreshOracle: () => ({
+          accountsPartial: () => ({
+            rpc: async () => {
+              refreshes++;
+              return "oracle-signature";
+            },
+          }),
+        }),
+      },
+    },
+  } as unknown as ChainSigner;
+  const service = new OracleService(chain, oracle);
+
+  assert.equal(await service.advance(), undefined);
+  quoteStatus = enumValues.QuoteStatus.Validated;
+  assert.equal(await service.advance(), undefined);
+  quoteStatus = enumValues.QuoteStatus.Reserving;
+  assert.equal(await service.advance(), undefined);
+  assert.equal(refreshes, 0);
+  assert.deepEqual(
+    queriedStatuses,
+    new Set([
+      enumValues.QuoteStatus.Validating,
+      enumValues.QuoteStatus.Validated,
+      enumValues.QuoteStatus.Reserving,
+    ])
+  );
+
+  expiry = now - 1;
+  for (const status of [
+    enumValues.QuoteStatus.Validating,
+    enumValues.QuoteStatus.Validated,
+    enumValues.QuoteStatus.Reserving,
+  ]) {
+    quoteStatus = status;
+    assert.equal(await service.advance(), "oracle-signature");
+  }
+  assert.equal(refreshes, 3);
+
+  expiry = now + 60;
+  for (const status of [
+    enumValues.QuoteStatus.Waiting,
+    enumValues.QuoteStatus.Active,
+  ]) {
+    quoteStatus = status;
+    assert.equal(await service.advance(), "oracle-signature");
+  }
+  assert.equal(refreshes, 5);
 });

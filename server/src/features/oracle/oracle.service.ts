@@ -53,6 +53,20 @@ export class OracleService {
         status: enumValues.QuoteStatus.Validating,
       },
       {
+        name: "quoteRecord",
+        marketOffset: accountOffsets.QuoteRecord.market,
+        statusOffset: accountOffsets.QuoteRecord.status,
+        deadlineOffset: accountOffsets.QuoteRecord.expiry,
+        status: enumValues.QuoteStatus.Validated,
+      },
+      {
+        name: "quoteRecord",
+        marketOffset: accountOffsets.QuoteRecord.market,
+        statusOffset: accountOffsets.QuoteRecord.status,
+        deadlineOffset: accountOffsets.QuoteRecord.expiry,
+        status: enumValues.QuoteStatus.Reserving,
+      },
+      {
         name: "marginTransfer",
         marketOffset: accountOffsets.MarginTransfer.market,
         statusOffset: accountOffsets.MarginTransfer.status,
