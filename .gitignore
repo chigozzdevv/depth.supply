@@ -9,5 +9,6 @@ coverage/
 /keys/
 /deployments/
 /artifacts/
+/.tools/
 *.log
 .DS_Store

@@ -1,0 +1,16 @@
+{
+  "arcium": {
+    "build": "0.13.2",
+    "deploy": "0.15.0",
+    "targets": {
+      "aarch64_macos": {
+        "0.13.2": "76f54cca4878afe26fd039b023a8dc9b890e13464c33c10b6e328a74d65ef8b5",
+        "0.15.0": "8f831e2a9afa6b37dc95ed72bad527b6df815b5570dbc92ade93bbf1ffe1ba44"
+      },
+      "x86_64_linux": {
+        "0.13.2": "6f960e03ad75d00b6c68a1a96fa9e9824e07fdce9acf5cce48af32055553e7f3",
+        "0.15.0": "0486dabf60232e57cdcd1406707187888420b2404781ac6829990870e08b453b"
+      }
+    }
+  }
+}
