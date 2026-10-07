@@ -4,7 +4,9 @@ import { createPrivateKey, sign } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { captureDeployment, manifestBytes } from "@/chain/manifest";
 
-const [rpc, keyfile, versionText, expiryText, output] = process.argv.slice(2);
+const [rpcSource, keyfile, versionText, expiryText, output] =
+  process.argv.slice(2);
+const rpc = rpcSource === "env" ? process.env.SOLANA_RPC_URL : rpcSource;
 const version = Number(versionText);
 const expiresAt = Number(expiryText);
 if (
@@ -17,7 +19,7 @@ if (
   expiresAt <= Math.floor(Date.now() / 1000)
 ) {
   throw new Error(
-    "Usage: manifest.ts <rpc> <signer-keypair.json> <version> <expiry-unix-seconds> <output.json>",
+    "Usage: manifest.ts <rpc|env> <signer-keypair.json> <version> <expiry-unix-seconds> <output.json>",
   );
 }
 const signer = Keypair.fromSecretKey(
