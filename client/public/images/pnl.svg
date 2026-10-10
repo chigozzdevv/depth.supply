@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="540" viewBox="0 0 420 540">
+  <defs>
+    <linearGradient id="fade" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="white" stop-opacity="0"/>
+      <stop offset=".42" stop-color="white" stop-opacity="0"/>
+      <stop offset="1" stop-color="white"/>
+    </linearGradient>
+    <linearGradient id="vertical" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="white" stop-opacity=".18"/>
+      <stop offset=".3" stop-color="white" stop-opacity=".75"/>
+      <stop offset=".7" stop-color="white"/>
+      <stop offset="1" stop-color="white" stop-opacity=".28"/>
+    </linearGradient>
+    <mask id="cipher" maskUnits="userSpaceOnUse" x="0" y="0" width="420" height="540">
+      <rect width="420" height="540" fill="url(#fade)"/>
+    </mask>
+    <mask id="depth" maskUnits="userSpaceOnUse" x="0" y="0" width="420" height="540">
+      <rect width="420" height="540" fill="url(#vertical)"/>
+    </mask>
+  </defs>
+  <rect width="420" height="540" fill="#0b0b0b"/>
+  <g mask="url(#cipher)">
+    <g mask="url(#depth)">
+      <path d="M0 0h2v13h-2zM54 0h6v4h-6zM126 0h6v13h-6zM198 0h2v4h-2zM342 0h6v4h-6zM396 0h2v4h-2zM414 0h2v13h-2zM18 18h6v4h-6zM162 18h6v13h-6zM180 18h6v4h-6zM288 18h2v4h-2zM306 18h2v4h-2zM324 18h2v13h-2zM0 54h6v4h-6zM18 54h6v13h-6zM162 54h6v4h-6zM270 54h2v13h-2zM288 54h2v4h-2zM306 54h2v4h-2zM414 54h6v4h-6zM54 72h6v13h-6zM126 72h6v4h-6zM180 72h2v13h-2zM198 72h2v4h-2zM252 72h6v4h-6zM396 72h2v4h-2zM18 90h2v4h-2zM162 90h2v4h-2zM198 90h6v4h-6zM252 90h6v4h-6zM288 90h2v13h-2zM342 90h6v13h-6zM36 108h2v4h-2zM72 108h6v13h-6zM108 108h6v4h-6zM144 108h2v4h-2zM342 108h2v13h-2zM378 108h6v4h-6zM72 126h6v4h-6zM126 126h2v13h-2zM216 126h2v4h-2zM270 126h6v4h-6zM324 126h6v13h-6zM378 126h2v4h-2zM54 144h2v4h-2zM126 144h2v4h-2zM144 144h6v4h-6zM216 144h6v13h-6zM378 144h6v4h-6zM396 144h2v13h-2zM0 162h2v4h-2zM18 162h6v4h-6zM180 162h2v4h-2zM198 162h6v13h-6zM234 162h2v13h-2zM396 162h6v4h-6zM414 162h2v4h-2zM216 180h2v13h-2zM234 180h6v4h-6zM270 180h2v4h-2zM288 180h6v13h-6zM306 180h6v4h-6zM324 180h2v4h-2zM18 198h2v13h-2zM36 198h6v13h-6zM126 198h6v4h-6zM144 198h6v4h-6zM252 198h2v4h-2zM342 198h2v4h-2zM0 216h6v13h-6zM108 216h2v13h-2zM180 216h6v4h-6zM234 216h2v4h-2zM288 216h6v4h-6zM360 216h2v4h-2zM414 216h6v13h-6zM72 234h2v4h-2zM108 234h2v4h-2zM144 234h2v13h-2zM234 234h6v13h-6zM270 234h6v4h-6zM360 234h6v4h-6zM36 252h2v13h-2zM72 252h2v4h-2zM108 252h2v4h-2zM234 252h6v4h-6zM324 252h6v4h-6zM360 252h6v13h-6zM0 270h6v4h-6zM72 270h2v13h-2zM180 270h6v13h-6zM234 270h2v4h-2zM306 270h6v4h-6zM360 270h2v4h-2zM414 270h6v4h-6zM36 288h6v4h-6zM54 288h6v4h-6zM144 288h6v13h-6zM162 288h2v13h-2zM252 288h2v4h-2zM342 288h2v4h-2zM270 306h2v4h-2zM288 306h6v4h-6zM306 306h6v13h-6zM324 306h2v4h-2zM360 306h6v4h-6zM378 306h2v13h-2zM0 324h2v4h-2zM162 324h6v4h-6zM180 324h2v4h-2zM198 324h6v4h-6zM360 324h2v13h-2zM396 324h6v13h-6zM414 324h2v4h-2zM36 342h6v4h-6zM54 342h2v4h-2zM126 342h2v4h-2zM198 342h2v13h-2zM216 342h6v4h-6zM378 342h6v13h-6zM54 360h2v13h-2zM108 360h6v4h-6zM216 360h2v4h-2zM270 360h6v13h-6zM324 360h6v4h-6zM378 360h2v4h-2zM36 378h2v4h-2zM72 378h6v4h-6zM108 378h6v13h-6zM144 378h2v4h-2zM216 378h6v4h-6zM252 378h2v13h-2zM18 396h2v4h-2zM162 396h2v4h-2zM252 396h6v13h-6zM306 396h2v13h-2zM342 396h6v4h-6zM396 396h6v4h-6zM0 414h2v13h-2zM54 414h6v4h-6zM126 414h6v13h-6zM198 414h2v4h-2zM342 414h6v4h-6zM396 414h2v4h-2zM414 414h2v13h-2zM18 432h6v4h-6zM162 432h6v13h-6zM180 432h6v4h-6zM288 432h2v4h-2zM306 432h2v4h-2zM324 432h2v13h-2zM0 468h6v4h-6zM18 468h6v13h-6zM162 468h6v4h-6zM270 468h2v13h-2zM288 468h2v4h-2zM306 468h2v4h-2zM414 468h6v4h-6zM54 486h6v13h-6zM126 486h6v4h-6zM180 486h2v13h-2zM198 486h2v4h-2zM252 486h6v4h-6zM396 486h2v4h-2zM18 504h2v4h-2zM162 504h2v4h-2zM198 504h6v4h-6zM252 504h6v4h-6zM288 504h2v13h-2zM342 504h6v13h-6zM36 522h2v4h-2zM72 522h6v13h-6zM108 522h6v4h-6zM144 522h2v4h-2zM342 522h2v13h-2zM378 522h6v4h-6z" fill="#aaa69d" opacity=".17"/>
+      <path d="M270 0h6v4h-6zM36 18h6v4h-6zM144 54h6v4h-6zM324 72h6v4h-6zM108 90h6v4h-6zM0 108h6v4h-6zM414 108h6v4h-6zM18 126h6v4h-6zM306 144h6v4h-6zM216 162h6v4h-6zM252 180h6v4h-6zM234 198h6v4h-6zM54 216h6v4h-6zM396 234h6v4h-6zM198 252h6v4h-6zM126 270h6v4h-6zM360 288h6v4h-6zM342 306h6v4h-6zM378 324h6v4h-6zM288 342h6v4h-6zM162 360h6v4h-6zM180 378h6v4h-6zM72 396h6v4h-6zM270 414h6v4h-6zM36 432h6v4h-6zM144 468h6v4h-6zM324 486h6v4h-6zM108 504h6v4h-6zM0 522h6v4h-6zM414 522h6v4h-6z" fill="#ff8a3d" opacity=".24"/>
+    </g>
+  </g>
+</svg>
