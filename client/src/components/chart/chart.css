@@ -1,0 +1,388 @@
+.chart-surface {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+.chart-expanded {
+  position: fixed;
+  inset: 12px;
+  width: auto;
+  height: auto;
+  z-index: 100;
+  box-shadow: 0 0 0 100vmax #000c;
+}
+.terminal .chart-panel.chart-expanded {
+  height: auto;
+  grid-template-rows: 40px minmax(0, 1fr);
+}
+.chart-indicators {
+  position: relative;
+}
+.chart-indicators summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px;
+  color: var(--terminal-muted);
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+}
+.chart-indicators summary::-webkit-details-marker {
+  display: none;
+}
+.chart-indicators summary:hover,
+.chart-indicators .chart-tool-active {
+  color: var(--terminal-accent);
+}
+.chart-indicators em {
+  font-size: 10px;
+  font-style: normal;
+}
+.chart-indicator-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 12;
+  width: 210px;
+  padding: 6px;
+  border: 1px solid var(--terminal-border);
+  border-radius: 4px;
+  background: var(--terminal-background);
+  box-shadow: 0 8px 24px #0008;
+}
+.chart-indicator-menu button {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 9px 8px;
+  text-align: left;
+  font-size: 11px;
+  border-radius: 3px;
+  color: var(--terminal-muted);
+}
+.chart-indicator-menu button > span {
+  width: 14px;
+  height: 14px;
+}
+.chart-indicator-menu button:hover {
+  background: #ffffff0c;
+  color: var(--terminal-text);
+}
+.chart-indicator-menu button[aria-pressed="true"] {
+  color: var(--terminal-accent);
+}
+@media (max-width: 600px) {
+  .chart-panel {
+    grid-template-rows: 68px 430px;
+  }
+  .maker-chart .chart-panel {
+    grid-template-rows: 68px 300px;
+  }
+  .terminal .chart-panel.chart-expanded {
+    grid-template-rows: 68px minmax(0, 1fr);
+  }
+  .chart-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 3px;
+    padding: 4px 10px;
+  }
+  .chart-intervals {
+    justify-content: space-between;
+  }
+  .chart-actions {
+    justify-content: flex-end;
+  }
+  .chart-indicators {
+    margin-right: auto;
+  }
+  .chart-indicator-menu {
+    left: 0;
+    right: auto;
+  }
+  .chart-caption {
+    top: 68px;
+  }
+  .chart-expanded {
+    inset: 6px;
+  }
+}
+
+.chart-drawing-root,
+.chart-drawing-overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.chart-drawing-root {
+  z-index: 5;
+  pointer-events: none;
+}
+
+.chart-drawing-toolbar {
+  position: absolute;
+  top: var(--chart-drawing-center-y, 50%);
+  left: 10px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  border-radius: 4px;
+  background: rgba(11, 11, 11, 0.9);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.18);
+  padding: 3px;
+  pointer-events: auto;
+  transform: translateY(-50%);
+  backdrop-filter: blur(8px);
+}
+
+.chart-drawing-toolbar button {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--terminal-muted);
+}
+
+.chart-drawing-toolbar button:hover,
+.chart-drawing-toolbar button[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--terminal-text);
+}
+
+.chart-drawing-toolbar button[aria-pressed="true"] {
+  box-shadow: inset 2px 0 var(--terminal-accent);
+}
+
+.chart-drawing-toolbar button:focus-visible {
+  outline: 2px solid rgba(255, 165, 83, 0.58);
+  outline-offset: 1px;
+}
+
+.chart-drawing-toolbar button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.chart-drawing-instruction {
+  position: absolute;
+  top: var(--chart-drawing-center-y, 50%);
+  left: 52px;
+  z-index: 3;
+  border-radius: 5px;
+  background: rgba(11, 11, 11, 0.86);
+  color: var(--terminal-muted);
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 7px 8px;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.chart-drawing-context {
+  position: absolute;
+  top: var(--chart-drawing-center-y, 50%);
+  left: 51px;
+  z-index: 4;
+  pointer-events: auto;
+  transform: translateY(-50%);
+}
+
+.chart-drawing-context-actions {
+  display: flex;
+  gap: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  border-radius: 4px;
+  background: rgba(11, 11, 11, 0.94);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.2);
+  padding: 3px;
+  backdrop-filter: blur(8px);
+}
+
+.chart-drawing-context-actions button,
+.chart-drawing-appearance button {
+  display: grid;
+  place-items: center;
+  border-radius: 5px;
+  color: var(--terminal-muted);
+}
+
+.chart-drawing-context-actions button {
+  width: 29px;
+  height: 29px;
+}
+
+.chart-drawing-context-actions button:hover:not(:disabled),
+.chart-drawing-context-actions button[aria-expanded="true"],
+.chart-drawing-context-actions button[aria-pressed="true"],
+.chart-drawing-appearance button:hover,
+.chart-drawing-appearance button[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--terminal-text);
+}
+
+.chart-drawing-context-actions button:focus-visible,
+.chart-drawing-appearance button:focus-visible {
+  outline: 2px solid rgba(255, 165, 83, 0.58);
+  outline-offset: 1px;
+}
+
+.chart-drawing-context-actions button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.chart-drawing-appearance {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  display: grid;
+  width: 224px;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 4px;
+  background: rgba(11, 11, 11, 0.98);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.34);
+  padding: 9px;
+}
+
+.chart-drawing-appearance-row {
+  display: grid;
+  grid-template-columns: 57px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+}
+
+.chart-drawing-appearance-row > span {
+  color: var(--terminal-muted);
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.chart-drawing-appearance-row > div {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.chart-drawing-appearance button {
+  width: 28px;
+  height: 25px;
+}
+
+.chart-drawing-color-choice > span {
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  background: var(--chart-drawing-swatch);
+}
+
+.chart-drawing-color-choice[aria-pressed="true"] > span {
+  box-shadow:
+    0 0 0 2px rgba(11, 11, 11, 1),
+    0 0 0 3px rgba(255, 255, 255, 0.5);
+}
+
+.chart-drawing-line-choice > span {
+  width: 20px;
+  border-top-color: currentColor;
+  border-top-style: solid;
+}
+
+.chart-drawing-line-choice svg line {
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.5;
+}
+
+@media (max-width: 520px) {
+  .chart-drawing-toolbar {
+    left: 6px;
+  }
+
+  .chart-drawing-toolbar button {
+    width: 27px;
+    height: 27px;
+  }
+
+  .chart-drawing-instruction {
+    top: var(--chart-drawing-center-y, 50%);
+    right: 8px;
+    left: 43px;
+    width: fit-content;
+    max-width: calc(100% - 51px);
+  }
+
+  .chart-drawing-context {
+    left: 43px;
+  }
+
+  .chart-drawing-appearance {
+    width: 204px;
+    max-width: calc(100vw - 150px);
+  }
+}
+
+.chart-drawing-overlay {
+  inset: 0 auto auto 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.chart-drawing-overlay-active {
+  cursor: crosshair;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.chart-drawing-line {
+  fill: none;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.chart-drawing-preview {
+  opacity: 0.62;
+}
+
+.chart-drawing-hit-area {
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.chart-drawing-selected .chart-drawing-line {
+  filter: drop-shadow(0 0 4px rgba(255, 165, 83, 0.36));
+}
+
+.chart-drawing-price-label {
+  fill: var(--terminal-muted);
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  text-anchor: end;
+}
+
+.chart-measure-label rect {
+  fill: rgba(11, 11, 11, 0.92);
+}
+
+.chart-measure-label text {
+  font-family: var(--font-mono), monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
