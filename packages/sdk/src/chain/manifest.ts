@@ -13,9 +13,13 @@ import {
   computations,
 } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { verify } from "@noble/ed25519";
+import { sync, utils } from "@noble/ed25519";
 import { sha256 } from "@noble/hashes/sha256";
+import { sha512 } from "@noble/hashes/sha512";
+import { concatBytes } from "@noble/hashes/utils";
 import { Buffer } from "buffer";
+
+utils.sha512Sync = (...messages) => sha512(concatBytes(...messages));
 
 export type DeploymentManifest = {
   version: number;
@@ -37,8 +41,7 @@ export type SignedManifest = {
   signature: string;
 };
 export type DeploymentPolicy =
-  | { manifest: SignedManifest; trustedSigner: PublicKey }
-  | { localnet: true };
+  { manifest: SignedManifest; trustedSigner: PublicKey } | { localnet: true };
 
 function normalized(value: unknown): unknown {
   if (anchor.BN.isBN(value)) return value.toString();
@@ -73,11 +76,11 @@ export async function authenticateManifest(
     payload.version < 1 ||
     !Number.isSafeInteger(payload.expiresAt) ||
     payload.expiresAt <= Math.floor(Date.now() / 1000) ||
-    !(await verify(
+    !sync.verify(
       Buffer.from(signed.signature, "base64"),
       manifestBytes(payload),
       trusted.toBytes(),
-    ))
+    )
   ) {
     throw new Error("Manifest signature, version, or expiry is invalid");
   }

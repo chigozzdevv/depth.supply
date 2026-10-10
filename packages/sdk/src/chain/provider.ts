@@ -87,15 +87,13 @@ export class DepthProvider extends anchor.AnchorProvider {
       )
         throw error;
       const first = transaction.signatures[0] as
-        | Uint8Array
-        | { signature: Uint8Array | null }
-        | undefined;
+        Uint8Array | { signature: Uint8Array | null } | undefined;
       const bytes =
         transaction instanceof Transaction
           ? transaction.signature
           : first instanceof Uint8Array
-          ? first
-          : first?.signature;
+            ? first
+            : first?.signature;
       if (!bytes || bytes.every((byte) => byte === 0)) throw error;
       const signature = anchor.utils.bytes.bs58.encode(bytes);
       const failed = await this.connection.getTransaction(signature, {

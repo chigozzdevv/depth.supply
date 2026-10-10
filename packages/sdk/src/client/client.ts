@@ -38,6 +38,7 @@ import { releasableMargin } from "@/account/release";
 import { submissionError } from "@/operation/error";
 import { DepthOperation } from "@/operation/operation";
 import { DepthRecovery } from "@/recovery/recovery";
+import { ExecutionHistory } from "@/history/history";
 import { encodeSide, u64 } from "@/trade/input";
 import { resolveAmount } from "@/trade/amount";
 import type { AmountSelector } from "@/trade/amount";
@@ -45,6 +46,8 @@ import { tradeDeadline, tradeLimit } from "@/trade/terms";
 import { TradeFlow } from "@/trade/flow";
 import { DepthView } from "@/view/view";
 import type { BalanceSnapshot, PositionSnapshot } from "@/view/view";
+import { positionPnl } from "@/position/pnl";
+import { settlementTransaction } from "@/chain/settlement";
 import type {
   AccountState,
   AppState,
@@ -111,6 +114,16 @@ export class DepthClient {
     );
   }
 
+  private historyClient?: ExecutionHistory;
+  get history(): ExecutionHistory {
+    return (this.historyClient ??= new ExecutionHistory(
+      this.program,
+      this.options.connection,
+      this.options.wallet.publicKey,
+      (id) => this.requestFillView(id),
+    ));
+  }
+
   private constructor(readonly options: ResolvedDepthOptions) {
     this.provider = new DepthProvider(options.connection, options.wallet, {
       commitment: "confirmed",
@@ -121,7 +134,15 @@ export class DepthClient {
   }
 
   static async create(options: DepthOptions): Promise<DepthClient> {
-    const resolved = { ...options, ...(await resolveConnection(options)) };
+    const appId =
+      typeof options.appId === "string"
+        ? new PublicKey(options.appId)
+        : options.appId;
+    const resolved = {
+      ...options,
+      ...(await resolveConnection(options)),
+      appId,
+    };
     const client = new DepthClient(resolved);
     await verifyDeployment(client.provider, resolved.deployment);
     await client.verifyDeployment();
@@ -267,7 +288,8 @@ export class DepthClient {
   async requestFillView(order: PublicKey): Promise<DepthView> {
     const record = await this.read<OrderState>("OrderRecord", order);
     if (
-      !record.trader.equals(this.options.wallet.publicKey) ||
+      (!record.trader.equals(this.options.wallet.publicKey) &&
+        !record.maker?.equals(this.options.wallet.publicKey)) ||
       !record.market.equals(this.marketAddress) ||
       enumName(record.kind) !== "trade" ||
       enumName(record.status) !== "filled"
@@ -298,16 +320,16 @@ export class DepthClient {
       kind === "balance"
         ? "view_balance"
         : kind === "market"
-        ? "view_market"
-        : "view_fill",
+          ? "view_market"
+          : "view_fill",
       offset,
     );
     const builder =
       kind === "balance"
         ? this.program.methods.requestBalanceView
         : kind === "market"
-        ? this.program.methods.requestMarketView
-        : this.program.methods.requestFillView;
+          ? this.program.methods.requestMarketView
+          : this.program.methods.requestFillView;
     const signature = await builder(offset, viewNonce, Array.from(publicKey))
       .accountsPartial({
         ...queue,
@@ -381,8 +403,7 @@ export class DepthClient {
 
   private async allocateRequest(
     input:
-      | bigint
-      | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
+      bigint | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
     clientNonce?: bigint,
   ) {
     if (typeof input === "bigint") {
@@ -406,8 +427,7 @@ export class DepthClient {
 
   private async releaseRequest(
     input:
-      | bigint
-      | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
+      bigint | { marketId: typeof SOL_USD_MARKET_ID; amount: AmountSelector },
     clientNonce?: bigint,
   ) {
     if (typeof input === "bigint") {
@@ -520,6 +540,24 @@ export class DepthClient {
 
   private accountActions() {
     const actions = {
+      detail: (item: Parameters<FundingDiscovery["detail"]>[0]) =>
+        new FundingDiscovery(
+          this.program,
+          this.options.connection,
+          this.options.wallet.publicKey,
+        ).detail(item),
+      transaction: (item: Parameters<FundingDiscovery["transaction"]>[0]) =>
+        new FundingDiscovery(
+          this.program,
+          this.options.connection,
+          this.options.wallet.publicKey,
+        ).transaction(item),
+      history: (options?: Parameters<FundingDiscovery["history"]>[0]) =>
+        new FundingDiscovery(
+          this.program,
+          this.options.connection,
+          this.options.wallet.publicKey,
+        ).history(options),
       pending: (options?: Parameters<FundingDiscovery["pending"]>[0]) =>
         new FundingDiscovery(
           this.program,
@@ -555,7 +593,9 @@ export class DepthClient {
       ) => this.releaseRequest(input, clientNonce),
       transferHandle: (nonce: bigint) => this.funding.transferHandle(nonce),
       summary: async (
-        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 180_000 },
+        options: { timeoutMs: number; pollMs?: number } = {
+          timeoutMs: 180_000,
+        },
       ): Promise<BalanceSnapshot> => {
         const view = await this.requestBalanceView();
         const result = (await view.wait(options)) as BalanceSnapshot;
@@ -593,8 +633,41 @@ export class DepthClient {
               clientNonce,
             ),
       open: async () => this.funding.openMarket(),
+      transaction: () =>
+        settlementTransaction(this.options.connection, this.program, address, {
+          trader: this.options.wallet.publicKey,
+          market: this.marketAddress,
+        }),
+      pnl: async () => {
+        const position = await this.positionActions(id).summary();
+        const [market, account] = await Promise.all([
+          this.market(),
+          this.read<AccountState>("MarketAccount", address),
+        ]);
+        const age =
+          Math.floor(Date.now() / 1_000) -
+          market.state.oracleTimestamp.toNumber();
+        if (age < 0 || age > market.state.config.maxOracleAgeSeconds)
+          throw new Error(
+            "A fresh oracle price is required to value this position",
+          );
+        if (
+          position.version !== BigInt(account.version.toString()) ||
+          enumName(account.status) !== "ready"
+        )
+          throw new Error(
+            "The position changed during valuation; refresh its private view",
+          );
+        return positionPnl(
+          position,
+          BigInt(market.state.oraclePriceE8.toString()),
+          BigInt(market.state.fundingIndex.toString()),
+        );
+      },
       summary: async (
-        options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 180_000 },
+        options: { timeoutMs: number; pollMs?: number } = {
+          timeoutMs: 180_000,
+        },
       ): Promise<PositionSnapshot> => {
         const deadline = Date.now() + options.timeoutMs;
         let view: DepthView;
@@ -603,12 +676,16 @@ export class DepthClient {
             view = await this.requestMarketView();
             break;
           } catch (error) {
-            const code = (error as {
-              error?: { errorCode?: { code?: string } };
-            }).error?.errorCode?.code;
+            const code = (
+              error as {
+                error?: { errorCode?: { code?: string } };
+              }
+            ).error?.errorCode?.code;
             if (
               code !== "WrongMarketAccountStatus" &&
-              !String(error).includes("Market account is processing another operation")
+              !String(error).includes(
+                "Market account is processing another operation",
+              )
             ) {
               throw error;
             }
@@ -669,6 +746,13 @@ export class DepthClient {
         this.program,
         this.options.connection,
         (order) => this.requestFillView(order),
+        undefined,
+        async () => {
+          const detail = await this.history.execution(clientNonce);
+          if (!detail.pnl)
+            throw new Error("This execution does not close any exposure");
+          return detail.pnl;
+        },
       ),
     flow: (clientNonce: bigint) => new TradeFlow(this, clientNonce),
     unpairedAllocations: (
@@ -723,8 +807,8 @@ export class DepthClient {
       intent === "close"
         ? 0n
         : intent === "reduce"
-        ? 0n
-        : (input as TradeInput).notional;
+          ? 0n
+          : (input as TradeInput).notional;
     u64(amount, "notional");
     if ((intent === "increase" || intent === "reverse") && amount === 0n)
       throw new RangeError("Trade amount must be positive");
@@ -804,12 +888,18 @@ export class DepthClient {
     for (;;) {
       const remaining = viewDeadline - Date.now();
       if (remaining <= 0) {
-        throw new Error("Private position did not stabilize before the trade deadline");
+        throw new Error(
+          "Private position did not stabilize before the trade deadline",
+        );
       }
       try {
         position = await this.position.summary({ timeoutMs: remaining });
       } catch (error) {
-        if (!String(error).includes("Market account is processing another operation")) {
+        if (
+          !String(error).includes(
+            "Market account is processing another operation",
+          )
+        ) {
           throw error;
         }
         await new Promise((resolve) => setTimeout(resolve, 1_000));
@@ -963,6 +1053,7 @@ export class DepthClient {
       this.program,
       this.options.connection,
       (id) => this.requestFillView(id),
+      position,
     );
   }
 

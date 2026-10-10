@@ -8,14 +8,14 @@ import {
   withdrawalAddress,
 } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
+import {
+  receiptTransaction,
+  type ReceiptTransaction,
+} from "@/chain/transaction";
+import { settlementTransaction } from "@/chain/settlement";
 
 export type PendingKind =
-  | "deposit"
-  | "allocation"
-  | "release"
-  | "withdrawal"
-  | "trade"
-  | "risk";
+  "deposit" | "allocation" | "release" | "withdrawal" | "trade" | "risk";
 
 export type PendingItem = {
   id: PublicKey;
@@ -29,6 +29,8 @@ export type PendingPage = {
   nextCursor?: string;
 };
 
+export type ReceiptDetail = ReceiptTransaction & { amount?: bigint };
+
 export type UnpairedAllocation = {
   id: PublicKey;
   nonce: bigint;
@@ -38,10 +40,7 @@ export type UnpairedAllocation = {
 };
 
 type AccountName =
-  | "depositReceipt"
-  | "marginTransfer"
-  | "withdrawalReceipt"
-  | "orderRecord";
+  "depositReceipt" | "marginTransfer" | "withdrawalReceipt" | "orderRecord";
 
 type AccountState = {
   owner?: PublicKey;
@@ -64,6 +63,53 @@ export class FundingDiscovery {
     private readonly connection: Connection,
     private readonly owner: PublicKey,
   ) {}
+
+  async transaction(item: PendingItem) {
+    return this.detail(item);
+  }
+
+  async detail(item: PendingItem): Promise<ReceiptDetail> {
+    const name: AccountName =
+      item.kind === "deposit"
+        ? "depositReceipt"
+        : item.kind === "withdrawal"
+          ? "withdrawalReceipt"
+          : item.kind === "allocation" || item.kind === "release"
+            ? "marginTransfer"
+            : "orderRecord";
+    const info = await this.connection.getAccountInfo(item.id, "confirmed");
+    if (!info?.owner.equals(this.program.programId))
+      throw new Error("Receipt is unavailable");
+    const state = this.program.coder.accounts.decode<AccountState>(
+      name,
+      info.data,
+    );
+    const canonical = this.project(name, item.id, state, true);
+    if (
+      !canonical ||
+      canonical.kind !== item.kind ||
+      canonical.nonce !== item.nonce
+    )
+      throw new Error("Receipt does not match this wallet and operation");
+    if (
+      (canonical.kind === "trade" || canonical.kind === "risk") &&
+      canonical.status === "filled"
+    )
+      return settlementTransaction(this.connection, this.program, item.id, {
+        orderId: item.id,
+      });
+    const transaction = await receiptTransaction(
+      this.connection,
+      this.program,
+      item.id,
+    );
+    return {
+      ...transaction,
+      ...(state.amount === undefined
+        ? {}
+        : { amount: BigInt(state.amount.toString()) }),
+    };
+  }
 
   async unpairedAllocations(
     options: {
@@ -96,7 +142,9 @@ export class FundingDiscovery {
     const keys = accounts
       .map(({ pubkey }) => pubkey)
       .filter((id) => !cursor || id.toBase58() > cursor)
-      .sort((a, b) => a.toBase58().localeCompare(b.toBase58()));
+      .sort((a, b) =>
+        a.toBase58() < b.toBase58() ? -1 : a.toBase58() > b.toBase58() ? 1 : 0,
+      );
     const items: UnpairedAllocation[] = [];
     let checked = 0;
     while (checked < keys.length && items.length < limit) {
@@ -174,6 +222,19 @@ export class FundingDiscovery {
       limit?: number;
     } = {},
   ): Promise<PendingPage> {
+    return this.list(options, false);
+  }
+
+  async history(
+    options: { cursor?: string; limit?: number } = {},
+  ): Promise<PendingPage> {
+    return this.list(options, true);
+  }
+
+  private async list(
+    options: { cursor?: string; limit?: number },
+    includeFinal: boolean,
+  ): Promise<PendingPage> {
     const limit = options.limit ?? 20;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100)
       throw new RangeError("limit must be an integer from 1 to 100");
@@ -224,7 +285,13 @@ export class FundingDiscovery {
         accounts.map(({ pubkey }) => ({ name, id: pubkey })),
       )
       .filter(({ id }) => !cursor || id.toBase58() > cursor)
-      .sort((a, b) => a.id.toBase58().localeCompare(b.id.toBase58()));
+      .sort((a, b) =>
+        a.id.toBase58() < b.id.toBase58()
+          ? -1
+          : a.id.toBase58() > b.id.toBase58()
+            ? 1
+            : 0,
+      );
     const items: PendingItem[] = [];
     let checked = 0;
     while (checked < keys.length && items.length < limit) {
@@ -243,7 +310,7 @@ export class FundingDiscovery {
           entry.name,
           account.data,
         );
-        const item = this.project(entry.name, entry.id, state);
+        const item = this.project(entry.name, entry.id, state, includeFinal);
         if (item) items.push(item);
         if (items.length === limit) break;
       }
@@ -260,6 +327,7 @@ export class FundingDiscovery {
     name: AccountName,
     id: PublicKey,
     state: AccountState,
+    includeFinal = false,
   ): PendingItem | undefined {
     const nonce = BigInt(state.nonce.toString());
     const current = status(state);
@@ -270,7 +338,8 @@ export class FundingDiscovery {
         throw new Error("Deposit owner changed during discovery");
       canonical = depositAddress(this.owner, nonce, this.program.programId);
       kind = "deposit";
-      if (current !== "pending" && current !== "crediting") return undefined;
+      if (!includeFinal && current !== "pending" && current !== "crediting")
+        return undefined;
     } else if (name === "marginTransfer") {
       if (
         !state.owner?.equals(this.owner) ||
@@ -279,14 +348,17 @@ export class FundingDiscovery {
         throw new Error("Margin transfer changed during discovery");
       canonical = transferAddress(this.owner, nonce, this.program.programId);
       kind = state.toMarket ? "allocation" : "release";
-      if (!["debiting", "escrow", "crediting"].includes(current))
+      if (
+        !includeFinal &&
+        !["debiting", "escrow", "crediting"].includes(current)
+      )
         return undefined;
     } else if (name === "withdrawalReceipt") {
       if (!state.owner?.equals(this.owner))
         throw new Error("Withdrawal owner changed during discovery");
       canonical = withdrawalAddress(this.owner, nonce, this.program.programId);
       kind = "withdrawal";
-      if (current !== "queued") return undefined;
+      if (!includeFinal && current !== "queued") return undefined;
     } else {
       if (
         !state.trader?.equals(this.owner) ||
@@ -306,9 +378,9 @@ export class FundingDiscovery {
       )[0];
       kind =
         Object.keys(state.kind ?? {})[0] === "liquidation" ? "risk" : "trade";
-      if (["filled", "rejected", "cancelled"].includes(current))
-        return undefined;
-      if (
+      if (["filled", "rejected", "cancelled"].includes(current)) {
+        if (!includeFinal) return undefined;
+      } else if (
         ![
           "matching",
           "matched",

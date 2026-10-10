@@ -1,16 +1,28 @@
 import * as anchor from "@anchor-lang/core";
 import { SOL_USD_MARKET_ID } from "@depthhq/bindings";
-import { PublicKey } from "@solana/web3.js";
+import {
+  PublicKey,
+  type Transaction,
+  type VersionedTransaction,
+} from "@solana/web3.js";
 import type { AmountSelector } from "@/trade/amount";
 import type {
   ConnectionOptions,
   ResolvedConnection,
 } from "@/chain/environment";
 
-export type DepthWallet = anchor.Wallet;
+export type DepthWallet = {
+  publicKey: PublicKey;
+  signTransaction<T extends Transaction | VersionedTransaction>(
+    transaction: T,
+  ): Promise<T>;
+  signAllTransactions<T extends Transaction | VersionedTransaction>(
+    transactions: T[],
+  ): Promise<T[]>;
+};
 
 export type DepthOptions = ConnectionOptions & {
-  appId?: PublicKey;
+  appId?: PublicKey | string;
   wallet: DepthWallet;
 };
 
@@ -107,5 +119,8 @@ export type OrderState = {
   status: Record<string, unknown>;
   kind: Record<string, unknown>;
   trader: PublicKey;
+  maker?: PublicKey;
   market: PublicKey;
+  traderVersion: anchor.BN;
+  fundingIndex: anchor.BN;
 };

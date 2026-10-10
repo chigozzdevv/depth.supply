@@ -4,12 +4,19 @@ export {
   createDepth as create_depth,
 } from "@/client/client";
 export { DepthOperation } from "@/operation/operation";
+export { ExecutionHistory } from "@/history/history";
+export type { ExecutionDetail } from "@/history/history";
+export type { PositionPnl } from "@/position/pnl";
+export { positionPnl } from "@/position/pnl";
+export type { SettlementTransaction } from "@/chain/settlement";
+export type { ReceiptTransaction } from "@/chain/transaction";
 export { TradeFlow } from "@/trade/flow";
 export type { TradeFlowSnapshot } from "@/trade/flow";
 export { MarketCatalog } from "@/catalog/catalog";
 export type { MarketPolicy, MarketSummary } from "@/catalog/catalog";
 export { AppAdmin, AppRegistration, AppUpdate } from "@/app/app";
 export { FundingDiscovery } from "@/account/discovery";
+export type { ReceiptDetail } from "@/account/discovery";
 export type {
   PendingItem,
   PendingKind,

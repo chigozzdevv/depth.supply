@@ -1,14 +1,17 @@
+import { endpoint, environments, type DepthEnvironment } from "@/chain/network";
+export { endpoint, environments } from "@/chain/network";
+export type { DepthEnvironment } from "@/chain/network";
 import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { authenticateManifest } from "@/chain/manifest";
 import type { DeploymentPolicy, SignedManifest } from "@/chain/manifest";
 import { DepthError } from "@/operation/error";
-
-export type DepthEnvironment = "localnet" | "devnet" | "mainnet-beta";
+import { HttpConnection } from "@/chain/connection";
 
 export type ConnectionOptions = {
   environment?: DepthEnvironment;
   connection?: Connection;
+  rpcUrl?: string;
   deployment?: DeploymentPolicy;
   serviceUrl?: string;
   manifestUrl?: string;
@@ -20,23 +23,6 @@ export type ResolvedConnection = {
   serviceUrl?: string;
   environment?: DepthEnvironment;
 };
-
-const environments = {
-  localnet: {
-    rpc: "http://127.0.0.1:8899",
-    service: "http://127.0.0.1:8787",
-  },
-  devnet: {
-    rpc: "https://api.devnet.solana.com",
-    service: "https://depth.supply",
-    genesis: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
-  },
-  "mainnet-beta": {
-    rpc: "https://api.mainnet.solana.com",
-    service: "https://depth.supply",
-    genesis: "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
-  },
-} as const;
 
 const loader = new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111");
 
@@ -50,24 +36,6 @@ function unavailable(message: string, cause?: unknown): DepthError {
     undefined,
     cause === undefined ? undefined : { cause },
   );
-}
-
-function endpoint(
-  value: string,
-  environment: DepthEnvironment,
-  name: string,
-): string {
-  const url = new URL(value);
-  const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
-  if (
-    url.protocol !== "https:" &&
-    !(environment === "localnet" && url.protocol === "http:" && loopback)
-  ) {
-    throw new RangeError(
-      `${name} must use HTTPS, or loopback HTTP on localnet`,
-    );
-  }
-  return url.toString().replace(/\/$/, "");
 }
 
 async function upgradeAuthority(connection: Connection): Promise<PublicKey> {
@@ -87,7 +55,7 @@ async function upgradeAuthority(connection: Connection): Promise<PublicKey> {
   }
   const data = await connection.getAccountInfo(
     new PublicKey(program.data.subarray(4)),
-    "confirmed",
+    { commitment: "confirmed", dataSlice: { offset: 0, length: 45 } },
   );
   if (
     !data?.owner.equals(loader) ||
@@ -118,7 +86,11 @@ export async function resolveConnection(
   const environment = options.environment;
   const config = environments[environment];
   const connection =
-    options.connection ?? new Connection(config.rpc, "confirmed");
+    options.connection ??
+    new HttpConnection(
+      endpoint(options.rpcUrl ?? config.rpc, environment, "rpcUrl"),
+      "confirmed",
+    );
   const serviceUrl = endpoint(
     options.serviceUrl ?? config.service,
     environment,
@@ -148,7 +120,10 @@ export async function resolveConnection(
           environment,
           "manifestUrl",
         );
-        const response = await fetch(url, { cache: "no-store" });
+        const response = await fetch(url, {
+          cache: "no-store",
+          signal: AbortSignal.timeout(15_000),
+        });
         if (!response.ok) {
           throw unavailable(
             `Deployment manifest returned HTTP ${response.status}`,

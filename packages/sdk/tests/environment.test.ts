@@ -23,12 +23,16 @@ test("environment setup reads a signed release and binds it to the chain authori
   let genesis = devnet;
   const connection = {
     getGenesisHash: async () => genesis,
-    getAccountInfo: async (key: PublicKey) =>
-      key.equals(DEPTH_PROGRAM_ID)
-        ? { executable: true, owner: loader, data: program }
-        : key.equals(dataAddress)
-        ? { executable: false, owner: loader, data: programData }
-        : null,
+    getAccountInfo: async (key: PublicKey, config: unknown) => {
+      if (key.equals(DEPTH_PROGRAM_ID))
+        return { executable: true, owner: loader, data: program };
+      if (!key.equals(dataAddress)) return null;
+      assert.deepEqual(config, {
+        commitment: "confirmed",
+        dataSlice: { offset: 0, length: 45 },
+      });
+      return { executable: false, owner: loader, data: programData };
+    },
   } as unknown as import("@solana/web3.js").Connection;
   const payload = {
     version: 1,

@@ -25,7 +25,10 @@ export type ConfirmOptions = {
   signal?: AbortSignal;
 };
 
-function timing(options: ConfirmOptions): { timeoutMs: number; pollMs: number } {
+function timing(options: ConfirmOptions): {
+  timeoutMs: number;
+  pollMs: number;
+} {
   const timeoutMs = options.timeoutMs ?? 60_000;
   const pollMs = options.pollMs ?? 1_000;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0)
@@ -50,7 +53,10 @@ export class AppAdmin {
   }
 
   async summary(): Promise<AppSummary | undefined> {
-    const info = await this.connection.getAccountInfo(this.address, "confirmed");
+    const info = await this.connection.getAccountInfo(
+      this.address,
+      "confirmed",
+    );
     if (!info) return undefined;
     if (!info.owner.equals(this.program.programId))
       throw new Error("App configuration is not owned by Depth");
@@ -191,8 +197,7 @@ export class AppRegistration {
       );
       if (balance && !balance.owner.equals(this.admin.id))
         throw new Error("App fee balance belongs to another owner");
-      if (balance && "ready" in balance.status)
-        return { appId: this.admin.id };
+      if (balance && "ready" in balance.status) return { appId: this.admin.id };
       if (Date.now() >= deadline)
         throw new DepthError(
           "APP_BALANCE_PENDING",

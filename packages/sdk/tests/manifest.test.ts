@@ -2,6 +2,7 @@ import { Keypair } from "@solana/web3.js";
 import { createPrivateKey, sign } from "node:crypto";
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { authenticateManifest as authenticateBuiltManifest } from "@depthhq/sdk";
 import {
   authenticateManifest,
   manifestBytes,
@@ -29,11 +30,16 @@ test("deployment manifests reject changed payloads, untrusted signers, and expir
     signature: sign(null, manifestBytes(payload), key).toString("base64"),
   };
   await authenticateManifest(signed, keypair.publicKey);
+  await authenticateBuiltManifest(signed, keypair.publicKey);
   await assert.rejects(
     authenticateManifest(signed, Keypair.generate().publicKey),
     /not trusted/,
   );
   payload.version = 2;
+  await assert.rejects(
+    authenticateBuiltManifest(signed, keypair.publicKey),
+    /invalid/,
+  );
   await assert.rejects(
     authenticateManifest(signed, keypair.publicKey),
     /invalid/,

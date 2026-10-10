@@ -3,6 +3,7 @@ import {
   DEPTH_PROGRAM_ID,
   marketAddress,
   transferAddress,
+  depositAddress,
 } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
@@ -45,7 +46,7 @@ test("settled allocation without an order is discoverable after a restart", asyn
   const page = await new FundingDiscovery(
     program,
     connection,
-    owner
+    owner,
   ).unpairedAllocations();
   assert.equal(page.items.length, 1);
   assert.equal(page.items[0].nonce, nonce);
@@ -57,7 +58,57 @@ test("settled allocation without an order is discoverable after a restart", asyn
   const paired = await new FundingDiscovery(
     program,
     connection,
-    owner
+    owner,
   ).unpairedAllocations();
   assert.deepEqual(paired.items, []);
+});
+
+test("history pagination retains every canonical receipt while pending scans past terminal receipts", async () => {
+  const owner = PublicKey.unique();
+  const states = Array.from({ length: 30 }, (_, index) => ({
+    owner,
+    nonce: new anchor.BN(index + 1),
+    status: index === 29 ? { crediting: {} } : { credited: {} },
+  }));
+  const keys = states.map((state) =>
+    depositAddress(owner, BigInt(state.nonce.toString())),
+  );
+  const program = {
+    programId: DEPTH_PROGRAM_ID,
+    coder: {
+      accounts: {
+        memcmp: (name: string) => ({ offset: 0, bytes: name }),
+        decode: (_name: string, data: Buffer) => states[data[0]],
+      },
+    },
+  } as unknown as anchor.Program;
+  const connection = {
+    getProgramAccounts: async (
+      _id: PublicKey,
+      options: { filters: Array<{ memcmp: { bytes: string } }> },
+    ) =>
+      options.filters[0].memcmp.bytes === "depositReceipt"
+        ? keys.map((pubkey) => ({ pubkey }))
+        : [],
+    getMultipleAccountsInfo: async (ids: PublicKey[]) =>
+      ids.map((id) => ({
+        owner: DEPTH_PROGRAM_ID,
+        data: Buffer.from([keys.findIndex((key) => key.equals(id))]),
+      })),
+  } as unknown as Connection;
+  const discovery = new FundingDiscovery(program, connection, owner);
+  const found: string[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await discovery.history({ limit: 3, cursor });
+    found.push(...page.items.map((item) => item.id.toBase58()));
+    cursor = page.nextCursor;
+  } while (cursor);
+  assert.deepEqual(found, keys.map((key) => key.toBase58()).sort());
+  assert.equal(new Set(found).size, 30);
+  const pending = await discovery.pending({ limit: 1 });
+  assert.equal(pending.items[0].nonce, 30n);
+  assert.equal(pending.items[0].status, "crediting");
+  states[0].owner = PublicKey.unique();
+  await assert.rejects(discovery.history({ limit: 100 }), /owner changed/);
 });
