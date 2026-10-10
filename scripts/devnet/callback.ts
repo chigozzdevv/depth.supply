@@ -5,17 +5,20 @@ import {
   getCompDefAccAddress,
   getCompDefAccOffset,
 } from "@arcium-hq/client";
-import { DEPTH_IDL, DEPTH_PROGRAM_ID, computationName } from "@depthhq/bindings";
+import {
+  DEPTH_IDL,
+  DEPTH_PROGRAM_ID,
+  computationName,
+} from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { resolvePath } from "@/workspace";
 import {
-  artifactPath,
+  workflowPath,
   devnetConnection,
   isMain,
   readJson,
   safeError,
-  writeJson,
   type Proof,
   type ProofRecord,
 } from "@/devnet/context";
@@ -88,136 +91,120 @@ async function main() {
   }
   assert.equal(args.length, 0, "Unknown callback argument");
   const connection = await devnetConnection();
-  const targets = callbackTargets(
-    await readJson<Proof>(artifactPath("quote-proof")),
-  );
+  const targets = callbackTargets(await readJson<Proof>(workflowPath()));
   const instructionCoder = new anchor.BorshInstructionCoder(DEPTH_IDL);
   const accountCoder = new anchor.BorshAccountsCoder(ARCIUM_IDL as anchor.Idl);
-  const proof = {
-    checkedAt: new Date().toISOString(),
-    status: "running",
-    results: [] as Record<string, unknown>[],
-    error: undefined as string | undefined,
-  };
-  const save = () => writeJson(artifactPath("callback-proof"), proof);
-  await save();
-  try {
-    for (const target of targets) {
-      let found = 0;
-      const signatures = await connection.getSignaturesForAddress(
-        new PublicKey(target.address),
-        { limit: 80 },
-        "finalized",
+  for (const target of targets) {
+    let found = 0;
+    const signatures = await connection.getSignaturesForAddress(
+      new PublicKey(target.address),
+      { limit: 80 },
+      "finalized",
+    );
+    for (const item of signatures) {
+      if (item.err) continue;
+      const transaction = await connection.getParsedTransaction(
+        item.signature,
+        { commitment: "finalized", maxSupportedTransactionVersion: 0 },
       );
-      for (const item of signatures) {
-        if (item.err) continue;
-        const transaction = await connection.getParsedTransaction(
-          item.signature,
-          { commitment: "finalized", maxSupportedTransactionVersion: 0 },
+      if (!transaction || transaction.meta?.err) continue;
+      const instructions = [
+        ...transaction.transaction.message.instructions,
+        ...(transaction.meta?.innerInstructions ?? []).flatMap(
+          (inner) => inner.instructions,
+        ),
+      ];
+      for (const instruction of instructions) {
+        if (
+          !instruction.programId.equals(DEPTH_PROGRAM_ID) ||
+          !("accounts" in instruction)
+        )
+          continue;
+        const decoded = instructionCoder.decode(instruction.data, "base58");
+        if (
+          !decoded ||
+          decoded.name.replaceAll("_", "").toLowerCase() !==
+            target.callback.replaceAll("_", "").toLowerCase()
+        )
+          continue;
+        const schema = DEPTH_IDL.instructions.find(
+          (definition) => definition.name === decoded.name,
         );
-        if (!transaction || transaction.meta?.err) continue;
-        const instructions = [
-          ...transaction.transaction.message.instructions,
-          ...(transaction.meta?.innerInstructions ?? []).flatMap(
-            (inner) => inner.instructions,
+        assert.ok(schema, "Callback schema is missing");
+        const computation =
+          instruction.accounts[
+            schema.accounts.findIndex(
+              (account) =>
+                account.name.replaceAll("_", "").toLowerCase() ===
+                "computationaccount",
+            )
+          ];
+        const definition =
+          instruction.accounts[
+            schema.accounts.findIndex(
+              (account) =>
+                account.name.replaceAll("_", "").toLowerCase() ===
+                "compdefaccount",
+            )
+          ];
+        assert.ok(
+          computation && definition,
+          "Callback computation accounts are missing",
+        );
+        const circuit = target.callback.replace(/_callback$/, "");
+        const offset = Buffer.from(getCompDefAccOffset(circuit)).readUInt32LE();
+        assert.ok(
+          definition.equals(getCompDefAccAddress(DEPTH_PROGRAM_ID, offset)),
+        );
+        const info = await connection.getAccountInfo(definition, "finalized");
+        assert.ok(info && info.owner.equals(new PublicKey(ARCIUM_ADDR)));
+        const state = accountCoder.decode<{
+          deactivation_slot: anchor.BN | null;
+          circuit_source: { OffChain: [{ hash: number[] }] };
+        }>("ComputationDefinitionAccount", info.data);
+        assert.equal(state.deactivation_slot, null);
+        const hash = Buffer.from(
+          state.circuit_source.OffChain[0].hash,
+        ).toString("hex");
+        const localHash = Buffer.from(
+          await readJson<number[]>(
+            resolvePath(`contracts/build/${circuit}.hash`),
           ),
-        ];
-        for (const instruction of instructions) {
-          if (
-            !instruction.programId.equals(DEPTH_PROGRAM_ID) ||
-            !("accounts" in instruction)
-          )
-            continue;
-          const decoded = instructionCoder.decode(instruction.data, "base58");
-          if (
-            !decoded ||
-            decoded.name.replaceAll("_", "").toLowerCase() !==
-              target.callback.replaceAll("_", "").toLowerCase()
-          )
-            continue;
-          const schema = DEPTH_IDL.instructions.find(
-            (definition) => definition.name === decoded.name,
-          );
-          assert.ok(schema, "Callback schema is missing");
-          const computation =
-            instruction.accounts[
-              schema.accounts.findIndex(
-                (account) =>
-                  account.name.replaceAll("_", "").toLowerCase() ===
-                  "computationaccount",
-              )
-            ];
-          const definition =
-            instruction.accounts[
-              schema.accounts.findIndex(
-                (account) =>
-                  account.name.replaceAll("_", "").toLowerCase() ===
-                  "compdefaccount",
-              )
-            ];
-          assert.ok(
-            computation && definition,
-            "Callback computation accounts are missing",
-          );
-          const circuit = target.callback.replace(/_callback$/, "");
-          const offset = Buffer.from(
-            getCompDefAccOffset(circuit),
-          ).readUInt32LE();
-          assert.ok(
-            definition.equals(getCompDefAccAddress(DEPTH_PROGRAM_ID, offset)),
-          );
-          const info = await connection.getAccountInfo(definition, "finalized");
-          assert.ok(info && info.owner.equals(new PublicKey(ARCIUM_ADDR)));
-          const state = accountCoder.decode<{
-            deactivation_slot: anchor.BN | null;
-            circuit_source: { OffChain: [{ hash: number[] }] };
-          }>("ComputationDefinitionAccount", info.data);
-          assert.equal(state.deactivation_slot, null);
-          const hash = Buffer.from(
-            state.circuit_source.OffChain[0].hash,
-          ).toString("hex");
-          const localHash = Buffer.from(
-            await readJson<number[]>(
-              resolvePath(`contracts/build/${circuit}.hash`),
-            ),
-          ).toString("hex");
-          assert.equal(hash, localHash);
-          const result = {
-            role: target.role,
-            account: target.address,
-            instruction: target.callback,
-            circuit,
-            signature: item.signature,
-            slot: transaction.slot,
-            blockTime: transaction.blockTime,
-            commitment: "finalized",
-            computation: computation.toBase58(),
-            definition: definition.toBase58(),
-            definitionOffset: offset,
-            circuitHash: hash,
-            localHashMatches: true,
-          };
-          proof.results.push(result);
-          await save();
-          console.info(JSON.stringify(result));
-          found++;
-        }
-        if (found > 0) break;
+        ).toString("hex");
+        assert.equal(hash, localHash);
+        const result = {
+          role: target.role,
+          account: target.address,
+          instruction: target.callback,
+          circuit,
+          signature: item.signature,
+          slot: transaction.slot,
+          blockTime: transaction.blockTime,
+          commitment: "finalized",
+          computation: computation.toBase58(),
+          definition: definition.toBase58(),
+          definitionOffset: offset,
+          circuitHash: hash,
+          localHashMatches: true,
+        };
+        console.info(JSON.stringify(result));
+        found++;
       }
-      assert.equal(
-        found,
-        1,
-        `Expected one finalized ${target.callback} for ${target.role}`,
-      );
+      if (found > 0) break;
     }
-    proof.status = "complete";
-    await save();
-  } catch (error) {
-    proof.status = "failed";
-    proof.error = safeError(error);
-    await save();
-    throw error;
+    assert.equal(
+      found,
+      1,
+      `Expected one finalized ${target.callback} for ${target.role}`,
+    );
   }
+  console.info(
+    JSON.stringify({
+      complete: true,
+      checkedAt: new Date().toISOString(),
+      callbacks: targets.length,
+    }),
+  );
 }
 
 if (isMain(import.meta.url))

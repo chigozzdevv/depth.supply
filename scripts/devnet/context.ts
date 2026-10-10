@@ -1,4 +1,5 @@
 import * as anchor from "@anchor-lang/core";
+import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { createDepthMaker } from "@depthhq/maker-sdk";
 import type { SignedManifest } from "@depthhq/sdk";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
@@ -75,8 +76,8 @@ export function isMain(url: string): boolean {
   );
 }
 
-export function artifactPath(name: string): string {
-  return resolvePath(`artifacts/devnet/${name}.json`);
+export function workflowPath(): string {
+  return resolvePath("data/devnet/quote.json");
 }
 
 export async function readJson<T>(path: string): Promise<T> {
@@ -107,7 +108,43 @@ export async function devnetConnection(): Promise<Connection> {
   }
   const url = process.env.SOLANA_RPC_URL;
   assert.ok(url, "SOLANA_RPC_URL is required in the root .env.local");
-  const connection = new Connection(url, "confirmed");
+  const programData = PublicKey.findProgramAddressSync(
+    [DEPTH_PROGRAM_ID.toBuffer()],
+    new PublicKey("BPFLoaderUpgradeab1e11111111111111111111111"),
+  )[0].toBase58();
+  const connection = new Connection(url, {
+    commitment: "confirmed",
+    fetch: async (input, init) => {
+      const request = JSON.parse(String(init?.body));
+      const large =
+        ["getAccountInfo", "getMultipleAccounts"].includes(request.method) &&
+        !request.params?.[1]?.dataSlice &&
+        JSON.stringify(request.params?.[0]).includes(programData);
+      const signal = AbortSignal.any([
+        ...(init?.signal ? [init.signal] : []),
+        AbortSignal.timeout(20000),
+      ]);
+      try {
+        const response = await fetch(input, { ...init, signal });
+        if (large && !response.ok) throw new Error("Program read unavailable");
+        return large
+          ? new Response(await response.arrayBuffer(), {
+              status: response.status,
+              headers: response.headers,
+            })
+          : response;
+      } catch (error) {
+        if (!large || init?.signal?.aborted) throw error;
+        return fetch("https://api.devnet.solana.com", {
+          ...init,
+          signal: AbortSignal.any([
+            ...(init?.signal ? [init.signal] : []),
+            AbortSignal.timeout(20000),
+          ]),
+        });
+      }
+    },
+  });
   assert.equal(
     await connection.getGenesisHash(),
     devnetGenesis,
@@ -142,7 +179,7 @@ export async function devnetContext() {
   };
 }
 
-export async function journal(path: string) {
+export async function journal(path: string, resume = false) {
   const previous = await readJson<Proof>(path).catch(
     (error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
@@ -167,26 +204,37 @@ export async function journal(path: string) {
     "release_backstop",
     "resume_market",
   ]);
+  if (resume)
+    assert.ok(
+      previous && previous.status !== "complete",
+      "There is no interrupted proof to resume",
+    );
   assert.ok(
-    !previous ||
+    resume ||
+      !previous ||
       previous.status === "complete" ||
+      (previous.status === "failed" &&
+        previous.results.at(-1)?.stage === "reconciled") ||
       !previous.results.some((entry) =>
         mutationStages.has(String(entry.stage)),
       ),
     "The preceding run needs recovery or reconciliation before another proof can run; use its saved operation IDs and nonces",
   );
-  const proof: Proof = {
-    testedAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    status: "running",
-    results: [],
-    previousRuns: previous
-      ? [
-          ...(previous.previousRuns ?? []),
-          { ...previous, previousRuns: undefined },
-        ]
-      : [],
-  };
+  const proof: Proof = resume
+    ? previous!
+    : {
+        testedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: "running",
+        results: [],
+        previousRuns: previous
+          ? [
+              ...(previous.previousRuns ?? []),
+              { ...previous, previousRuns: undefined },
+            ]
+          : [],
+      };
+  proof.status = "running";
   let pending = Promise.resolve();
   async function save() {
     proof.updatedAt = new Date().toISOString();

@@ -1,10 +1,11 @@
-import { Keypair } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { callbackTargets } from "@/devnet/callback";
+import { fundingAmounts } from "@/devnet/roundtrip";
 import {
   journal,
   readJson,
@@ -97,6 +98,78 @@ test("proof writes serialize concurrent settlement and SDK events", async () => 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("a reconciled failed proof stays in history when a new run begins", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-workflow-"));
+  const path = join(directory, "proof.json");
+  try {
+    const previous = proof("failed", [
+      { stage: "submit_prepare", quote: PublicKey.unique().toBase58() },
+      { stage: "failure", error: "oracle race" },
+      { stage: "reconciled", pendingOrders: 0, activeQuoteCount: 0 },
+    ]);
+    await writeJson(path, previous);
+    const current = await journal(path);
+    assert.equal(current.proof.status, "running");
+    assert.equal(current.proof.previousRuns?.at(-1)?.status, "failed");
+    assert.deepEqual(
+      current.proof.previousRuns?.at(-1)?.results,
+      previous.results,
+    );
+    previous.results.push({ stage: "reserve_requested", nonce: "124" });
+    await writeJson(path, previous);
+    await assert.rejects(journal(path), /needs recovery or reconciliation/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("resuming an interrupted proof preserves its operation IDs and evidence", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-workflow-"));
+  const path = join(directory, "proof.json");
+  try {
+    const previous = proof("failed", [
+      {
+        stage: "trade_open_requested",
+        order: PublicKey.unique().toBase58(),
+        nonce: "123",
+      },
+      { stage: "trade_open_filled", order: PublicKey.unique().toBase58() },
+      { stage: "failure", error: "external service interrupted" },
+    ]);
+    await writeJson(path, previous);
+    const current = await journal(path, true);
+    assert.equal(current.proof.status, "running");
+    assert.equal(current.proof.testedAt, previous.testedAt);
+    assert.deepEqual(current.proof.results, previous.results);
+    await current.record({ stage: "resume" });
+    assert.equal((await readJson<Proof>(path)).results.length, 4);
+    current.proof.status = "complete";
+    await current.save();
+    await assert.rejects(journal(path, true), /no interrupted proof/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("round-trip funding covers the required buffer and deposits only the shortfall", () => {
+  assert.deepEqual(fundingAmounts(3_040_000n, 0n, 0n), {
+    allocation: 3_040_000n,
+    deposit: 3_040_000n,
+  });
+  assert.deepEqual(fundingAmounts(3_040_000n, 0n, 3_000_000n), {
+    allocation: 3_040_000n,
+    deposit: 40_000n,
+  });
+  assert.deepEqual(fundingAmounts(3_040_000n, 0n, 5_000_000n), {
+    allocation: 3_040_000n,
+    deposit: 0n,
+  });
+  assert.deepEqual(fundingAmounts(3_040_000n, 4_000_000n, 0n), {
+    allocation: 0n,
+    deposit: 0n,
+  });
 });
 
 test("errors hide HTTP and WebSocket RPC credentials", () => {
