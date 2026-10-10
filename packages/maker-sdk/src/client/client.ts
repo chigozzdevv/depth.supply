@@ -21,6 +21,7 @@ import { DepthRecovery } from "@depthhq/sdk/recovery";
 import type { FillSnapshot, PositionSnapshot } from "@depthhq/sdk/views";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "@/chain/random";
+import { MakerAccess } from "@/hedge/access";
 import {
   DepthClient,
   DepthProvider,
@@ -91,6 +92,7 @@ function stateName(value: Record<string, unknown>): string {
 }
 
 export class MakerClient {
+  readonly hedges: MakerAccess;
   readonly provider: anchor.AnchorProvider;
   readonly program: anchor.Program;
   readonly position: ReturnType<MakerClient["positionActions"]>;
@@ -134,6 +136,7 @@ export class MakerClient {
   }
 
   private constructor(readonly options: ResolvedMakerOptions) {
+    this.hedges = new MakerAccess(options);
     this.provider = new DepthProvider(options.connection, options.wallet, {
       commitment: "confirmed",
       preflightCommitment: "confirmed",

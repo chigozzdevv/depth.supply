@@ -19,3 +19,5 @@ export type {
 } from "@/client/types";
 
 export type { FillPage } from "@/fill/history";
+export { MakerAccess } from "@/hedge/access";
+export type { MakerHedgeView } from "@/hedge/access";
