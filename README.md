@@ -9,16 +9,18 @@ requirements.
 
 ## Repository
 
-| Directory | Purpose |
-| --- | --- |
-| `contracts/` | Solana program, Arcium computations, and integration tests |
-| `packages/` | Bindings, schemas, and trader and maker SDKs |
-| `server/` | Public API and market workers |
-| `scripts/` | Build automation and devnet verification commands |
-| `keys/` | Local signer keys and recovery custody data, ignored by Git |
+| Directory      | Purpose                                                                |
+| -------------- | ---------------------------------------------------------------------- |
+| `client/`      | Next.js landing page, trader terminal, and maker terminal              |
+| `contracts/`   | Solana program, Arcium computations, and integration tests             |
+| `packages/`    | Bindings, schemas, and trader and maker SDKs                           |
+| `server/`      | Public API and market workers                                          |
+| `scripts/`     | Build automation and devnet verification commands                      |
+| `keys/`        | Local signer keys and recovery custody data, ignored by Git            |
 | `deployments/` | Generated signed manifests and committee configuration, ignored by Git |
-| `artifacts/` | Generated devnet verification records, ignored by Git |
-| `.tools/` | Verified local Arcium binaries, ignored by Git |
+| `dist/`        | Generated SDK release files, ignored by Git                            |
+| `data/`        | Durable worker and devnet workflow checkpoints, ignored by Git         |
+| `.tools/`      | Verified local Arcium binaries, ignored by Git                         |
 
 ## Development
 
@@ -31,6 +33,24 @@ pnpm install --frozen-lockfile
 pnpm --dir contracts install --frozen-lockfile
 pnpm tools:setup
 ```
+
+Build the SDKs and run the API and client in separate terminals:
+
+```sh
+node scripts/build-package.mjs bindings schema sdk maker-sdk
+pnpm --dir server start
+pnpm dev
+```
+
+The client uses Next.js, Tailwind CSS, Lucide icons, Solana Wallet Standard,
+and Lightweight Charts. `/demo/trade` supports funding, encrypted trades,
+position management, and canonical operation receipts. `/demo/maker` supports
+collateral, encrypted quotes, replacements, fills, and delegated quote operators.
+Both interfaces call the public SDK exports and use the same contract flow
+as an integrating app. Build with `pnpm build`, then run
+`pnpm --dir client start`. Client checks are
+`pnpm --dir client lint`, `pnpm --dir client typecheck`, and
+`pnpm --dir client format:check`.
 
 Contract integration tests create their own signer at `keys/localnet/wallet.json`.
 Devnet uses a separate deployer at `keys/devnet/deployer.json` and retains the
@@ -62,8 +82,8 @@ pnpm --dir contracts test
 
 The contract tests use Docker-backed local Solana and Arcium nodes and cover
 fee claims and maker default winddown in separate validator runs. Apps use
-`create_depth` from `@depth/sdk`; makers use `create_depth_maker` from
-`@depth/maker-sdk`. Each client accepts `environment: "devnet"` and a wallet.
+`create_depth` from `@depthhq/sdk`; makers use `create_depth_maker` from
+`@depthhq/maker-sdk`. Each client accepts `environment: "devnet"` and a wallet.
 The maker owner defaults to the connected wallet; a delegated bot sets
 `makerOwner` to the owner's public key. A local validator uses
 `environment: "localnet"`. RPC, service URL, and signed manifest overrides
@@ -96,12 +116,196 @@ pnpm --dir server keeper
 The devnet example uses `keys/devnet/deployer.json` for the keeper. A production
 keeper should use its own funded signer.
 
+The maker worker uses a dedicated operator signer with an owner-approved quote
+and private-view grant. Set `DEPTH_MAKER_OWNER` to the maker's public key and
+`DEPTH_MAKER_KEYPAIR_PATH` to the operator signer, then configure capacity,
+inventory, spread, and refresh limits in the root environment:
+
+```sh
+pnpm maker
+```
+
+It quotes around the pinned oracle, stops when prices or funding are stale,
+and caps capacity by available equity and inventory. It records quote nonces
+before submission and restores quote replacements and finalized fill cursors
+from `data/maker/`. One process may hold a wallet's checkpoint lease. Mount
+that directory on durable storage when hosting the worker; `/healthz` on port
+8789 reports progress. Optional Hyperliquid hedging follows the configured
+maker risk policy. The maker owner can reclaim terminal quote rent with
+`maker.quote.get(quoteId).close()` after replacement publication and attached
+orders have settled.
+
+The operator needs SOL for rent and Arcium computation fees. New quotes stop
+below `DEPTH_MAKER_GAS_RESERVE_LAMPORTS`, which defaults to 50000000 lamports
+(0.05 SOL), preserving a cancellation budget. Replenish the operator's fee
+balance to resume; the worker does not transfer funds from the owner.
+
 The optional Hermes publisher runs separately with `PYTH_ORACLE_MODE=hermes`
 and `PYTH_API_KEY`:
 
 ```sh
 pnpm --dir server publisher
 ```
+
+## App integration and market data
+
+Register an app with `create_depth({ environment, wallet: appOwnerWallet })`,
+call `admin.app.register({ feeBps })`, then obtain `appId` from the confirmed
+registration. Trader clients pass that public ID to `create_depth`; maker
+owners use `create_depth_maker`. `DEPTH_APP_ID` overrides the hosted demo's
+registered devnet app. Localnet requires an explicit registered app ID.
+`DEPTH_ENVIRONMENT` selects devnet or localnet. `DEPTH_SERVICE_URL` selects the
+API used by the Next.js server. The client proxies that service and the
+configured RPC through its own origin, keeping provider credentials on the
+server. External apps can use their own RPC and service URLs as SDK overrides.
+
+Public market data does not require a wallet:
+
+```ts
+import { create_depth_data } from "@depthhq/sdk";
+
+const data = create_depth_data({ environment: "devnet" });
+const market = await data.market("SOL-USD");
+const history = await data.candles("SOL-USD", { interval: "15m", limit: 200 });
+const stop = data.subscribe({
+  marketId: "SOL-USD",
+  interval: "15m",
+  onUpdate: (page) => updateChart(page.items),
+  onError: (error) => showDataError(error),
+});
+```
+
+Chart-only integrations can import the same data client from `@depthhq/sdk/data`
+to keep confidential transaction code out of their initial bundle. The hosted
+interfaces load transaction SDKs when a wallet connects.
+
+Candles are SOL reference prices from Hyperliquid. They do not disclose Depth
+executions, volume, or open interest. The contract's pinned Pyth account
+determines settlement prices. The API validates OHLC values, caches and
+deduplicates upstream requests, supports older-page cursors, and streams updates.
+Cached live prices are explicitly marked stale and expire after five minutes;
+unavailable prices are never replaced with generated candles.
+
+Private account views require explicit wallet approval. The UI holds decrypted
+results and unpublished private trade terms in memory and clears them when the
+wallet changes. `account().pending()` and `account().history()` discover
+canonical receipts from Solana after reconnecting or changing browsers.
+If a trade stops after allocating margin and before submitting its order,
+`trade.unpairedAllocations()` identifies that allocation. Its collateral remains
+in the market and can be inspected and released through the ordinary account
+flow; unpublished private order terms must be supplied again.
+
+Maker fill subscriptions use IndexedDB checkpoints in browsers and atomic
+private files in Node. Checkpoints contain receipt cursors, not decrypted fills.
+
+Activity reads transaction signatures, public transfer amounts, and block times
+from canonical receipts. `depth.history.execution(nonce)` requests authorized
+private fills and reconstructs the prior entry basis, margin, and funding in
+settlement order. Closed execution PnL remains recoverable after a reload
+without persisting private fills or decryption keys in the browser.
+`depth.trade.operation(nonce).pnl()` uses that recovery path for a rediscovered
+trade. A missing archival transaction is reported explicitly.
+
+`pnpm sdk:pack` builds all four SDK packages and writes publishable tarballs
+and their SHA-256 hashes to `dist/sdk/`. Packed dependencies use release
+versions rather than workspace aliases. `pnpm sdk:publish --check` verifies
+the release and npm account; `pnpm sdk:publish` publishes dependencies first
+and verifies registry integrity. It accepts `NPM_TOKEN` from the root `.env.local`
+or the existing npm login. A publishing token needs read and write access to
+the `@depthhq` scope and npm's Bypass 2FA permission. The token is never bundled
+into SDK or client code.
+
+Accepted uploads are recorded in `dist/sdk/publishing.json` while npm
+processes them. Rerun `pnpm sdk:publish` to resume verification without uploading
+the same version twice.
+
+## Hyperliquid maker hedging
+
+The Node maker SDK supports optional SOL inventory hedging on Hyperliquid.
+The maker supplies collateral separately on each venue and approves a dedicated
+Hyperliquid agent wallet. The account must be dedicated to this strategy.
+
+```ts
+import { create_maker_bot, create_hyperliquid, HedgeEngine } from "@depthhq/maker-sdk/node";
+
+const adapter = await create_hyperliquid({
+  network: "testnet",
+  account: hedgeAccountAddress,
+  wallet: approvedAgentWallet,
+});
+const bot = await create_maker_bot({
+  maker,
+  policy: quotePolicy,
+  stateDirectory,
+  hedge: new HedgeEngine(adapter, hedgePolicy),
+});
+
+try {
+  await bot.tick();
+} finally {
+  await bot.close();
+}
+```
+
+`hedgePolicy` defines `ratioBps`, `thresholdNotional`, `maxUnhedgedNotional`,
+`maxOrderNotional`, `batchMs`, `maxUnhedgedMs`, `maxSlippageBps`,
+`maxPriceAgeMs`, `orderTtlMs`, and `maxLeverage`. Notional amounts use micro-USDC.
+The reference policy in `.env.example` is for a small devnet demo and requires
+capital and risk calibration before use with real funds.
+
+Set `HYPERLIQUID_ACCOUNT_ADDRESS`, `HYPERLIQUID_AGENT_PRIVATE_KEY`, and
+`HYPERLIQUID_NETWORK=testnet` in the root `.env.local`. The setup command uses
+`HYPERLIQUID_ACCOUNT_PRIVATE_KEY` to approve the agent and select 1x cross
+leverage after checking funding:
+
+```sh
+pnpm devnet:hedge
+```
+
+The testnet account needs HyperCore USDC. Solana devnet USDC is separate.
+Hyperliquid's [faucet](https://hyperliquid.gitbook.io/hyperliquid-docs/onboarding/testnet-faucet)
+requires a prior mainnet deposit from the same address. An existing funded
+Hyperliquid testnet account can also transfer testnet USDC to it.
+
+Set `DEPTH_MAKER_HEDGE=hyperliquid` and run `pnpm maker`. The worker uses only
+the agent key; production workers should receive only their scoped credentials.
+Solana devnet pairs with Hyperliquid testnet, and Solana mainnet pairs with
+Hyperliquid mainnet. The SDK setup helper also accepts an owner wallet instead
+of a private key. External funding and setup are explicit operations.
+
+Hedges follow finalized aggregate maker inventory. The engine reconciles actual
+fills, batches small changes, uses independent external prices, and persists
+orders before submission. It stops quoting on stale data, excessive exposure,
+or uncertain expired orders. Retries retain the signed nonce and expiry;
+unresolved outcomes require reconciliation. A reversal reduces the prior hedge
+before opening the opposite side. Stopping the worker does not close positions.
+
+One host and one worker per hedge account must share durable `data/maker`
+storage. The account journal survives operator changes and contains no keys.
+Private file permissions protect the saved quote and hedge order terms;
+filesystem synchronization precedes network submission. Multiple hosts need a
+distributed lease before using the same account.
+
+The maker demo's Hedges tab uses `maker.hedges.authorize()` followed by
+`maker.hedges.summary()`. Owner wallet signatures create short-lived sessions.
+Views and session tokens stay in memory and are cleared on wallet changes.
+The public market endpoints do not return maker inventory or hedge mappings.
+
+Hyperliquid hedge activity is public. Linking its account to a maker can reveal
+individual trading clues, and full hedging can reveal aggregate maker inventory.
+Depth's quotes and trader inputs remain encrypted. The authorized maker worker
+can read its maker's views; this is part of the maker's existing access scope.
+Predictable pricing policies can reveal bid/ask prices through inference.
+
+With a funded and approved account, run the combined live proof:
+
+```sh
+pnpm devnet:quote --hedge
+```
+
+The proof checks external margin before Depth writes, opens a 20 USDC Depth
+trade, confirms the aggregate hedge, closes the Depth position, and confirms the
+external unwind while the ordinary settlement keeper processes callbacks.
 
 ## Public circuit hosting
 
@@ -181,7 +385,7 @@ The manifest signer must be the deployed program's upgrade authority. Set
 JSON file on the public service. The service publishes it at
 `/.well-known/depth/<environment>.json`; SDKs verify the signature, network,
 program, MXE, and market configuration against Solana. The Node-only committee
-tools are available from `@depth/sdk/operator`.
+tools are available from `@depthhq/sdk/operator`.
 
 ## Devnet verification
 
@@ -203,15 +407,18 @@ trader with devnet USDC before running the live quote and trading proof:
 ```sh
 pnpm devnet:quote
 pnpm devnet:callbacks
+pnpm devnet:bot
+pnpm devnet:history
 ```
 
 The quote command submits real devnet transactions, validates quote tiers,
 checks oracle reservation protection, and runs deposit, allocation, open,
 close, release, withdrawal, and fee claims through the SDK and settlement
-services. It saves operation IDs and nonces to `artifacts/devnet/quote-proof.json`
+services. It saves operation IDs and nonces to `data/devnet/quote.json`
 and refuses to start another proof over an interrupted mutation. The callback
 command verifies finalized Arcium callbacks and circuit hashes without
-submitting transactions. `pnpm devnet:audit` reads the current deployment.
+submitting transactions. Verification results are printed to the terminal.
+`pnpm devnet:audit` reads the current deployment.
 
 An interrupted trade can be recovered with `depth.trade.flow(clientNonce)`;
 its order and margin allocation are linked by that nonce. A restarted maker

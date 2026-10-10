@@ -19,20 +19,20 @@ clearing until the acceptance checks at the end pass.
 
 ## People and terms
 
-| Term | Meaning |
-| --- | --- |
-| Trader | Opens, manages, and closes a market position. |
-| Maker | Posts collateral and publishes firm prices on both sides of a market. A maker can serve every integrating app. |
-| App | Presents Depth markets to users. It may use the hosted Depth trade interface or build its own interface with the SDK. |
-| Depth account | One wallet's free balance, locked margin, positions, and pending operations inside Depth. |
-| Market | A cash-settled perpetual contract with one settlement mint, oracle feed, and risk policy. |
-| Quote | A maker's signed, time-limited bid and ask for stated size tiers and capacity. |
-| Position | The account's net long or short exposure in one market. A maker has positions under the same rules as a trader. |
-| Clearing vault | A Solana token account controlled by the Depth program. It holds deposited settlement tokens. |
-| Private ledger | Encrypted balances, positions, quote prices, and risk data that Depth updates through Arcium computations. |
-| Operation | One requested action with durable progress and canonical receipts for its submitted steps; preparation alone is not an onchain operation. |
-| Keeper | Anyone who pays to submit an eligible oracle, funding, or liquidation operation. A keeper cannot choose its own risk result. |
-| Insurance fund | Separately accounted collateral that absorbs losses after the distressed account's margin. |
+| Term           | Meaning                                                                                                                                   |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Trader         | Opens, manages, and closes a market position.                                                                                             |
+| Maker          | Posts collateral and publishes firm prices on both sides of a market. A maker can serve every integrating app.                            |
+| App            | Presents Depth markets to users. It may use the hosted Depth trade interface or build its own interface with the SDK.                     |
+| Depth account  | One wallet's free balance, locked margin, positions, and pending operations inside Depth.                                                 |
+| Market         | A cash-settled perpetual contract with one settlement mint, oracle feed, and risk policy.                                                 |
+| Quote          | A maker's signed, time-limited bid and ask for stated size tiers and capacity.                                                            |
+| Position       | The account's net long or short exposure in one market. A maker has positions under the same rules as a trader.                           |
+| Clearing vault | A Solana token account controlled by the Depth program. It holds deposited settlement tokens.                                             |
+| Private ledger | Encrypted balances, positions, quote prices, and risk data that Depth updates through Arcium computations.                                |
+| Operation      | One requested action with durable progress and canonical receipts for its submitted steps; preparation alone is not an onchain operation. |
+| Keeper         | Anyone who pays to submit an eligible oracle, funding, or liquidation operation. A keeper cannot choose its own risk result.              |
+| Insurance fund | Separately accounted collateral that absorbs losses after the distressed account's margin.                                                |
 
 All token amounts are integer base units. Price precision, rounding, time units,
 quote tiers, and risk parameters belong to a versioned market configuration.
@@ -42,13 +42,13 @@ elsewhere in this document are illustrative.
 
 ### First market identity
 
-| Field | Value |
-| --- | --- |
-| Underlying and quote | SOL/USD perpetual |
-| Collateral and settlement | Native USDC on Solana mainnet, mint `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` |
-| Risk oracle | Pyth Core stable SOL/USD feed `0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d` |
-| Pyth receiver | `rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ` on Solana mainnet |
-| Market hours | Continuous while the oracle and clearing system are available |
+| Field                     | Value                                                                                              |
+| ------------------------- | -------------------------------------------------------------------------------------------------- |
+| Underlying and quote      | SOL/USD perpetual                                                                                  |
+| Collateral and settlement | Native USDC on Solana mainnet, mint `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`                 |
+| Risk oracle               | Pyth Core stable SOL/USD feed `0xef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d` |
+| Pyth receiver             | `rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ` on Solana mainnet                                    |
+| Market hours              | Continuous while the oracle and clearing system are available                                      |
 
 The USDC mint is Circle's native Solana mainnet issuance. The Pyth feed ID is
 the SOL/USD identifier in Pyth's receiver SDK, and the receiver address is
@@ -276,13 +276,13 @@ claims against the same vault. Keeper rewards and other explicit
 payouts also transfer tokens. Every accepted update must reconcile
 private claims with the actual vault assets.
 
-| Data | Where it lives during normal operation | Who can read it |
-| --- | --- | --- |
-| Exact maker bid and ask on submission | Client-encrypted input; then MXE-encrypted active quote state | Maker and MXE computation |
-| Trader direction, size, margin, and bounds on submission | Client-encrypted input | Trader and MXE computation; also a custom app that collected the inputs |
-| Open balances, positions, and health | MXE-encrypted Solana state | MXE computation; owner through an authorized re-sealed view |
-| Market, account addresses, quote tiers, capacity envelope, expiry, operation status, and token transfers | Public Solana accounts and transactions | Anyone |
-| Final fill terms | MXE-encrypted receipt and owner-authorized views | Trader and winning maker for their own fill |
+| Data                                                                                                     | Where it lives during normal operation                        | Who can read it                                                         |
+| -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Exact maker bid and ask on submission                                                                    | Client-encrypted input; then MXE-encrypted active quote state | Maker and MXE computation                                               |
+| Trader direction, size, margin, and bounds on submission                                                 | Client-encrypted input                                        | Trader and MXE computation; also a custom app that collected the inputs |
+| Open balances, positions, and health                                                                     | MXE-encrypted Solana state                                    | MXE computation; owner through an authorized re-sealed view             |
+| Market, account addresses, quote tiers, capacity envelope, expiry, operation status, and token transfers | Public Solana accounts and transactions                       | Anyone                                                                  |
+| Final fill terms                                                                                         | MXE-encrypted receipt and owner-authorized views              | Trader and winning maker for their own fill                             |
 
 The cryptographic types behind this boundary are Arcium's
 client-and-MXE encrypted input (Enc<Shared>) and MXE-only encrypted
@@ -294,21 +294,32 @@ primitives, not this trading lifecycle.
 
 Depth's intended protection is about trading data, not wallet anonymity.
 
-| Information | Public observer | Losing maker | Winning maker | Trader |
-| --- | --- | --- | --- | --- |
-| Market, transaction timing, account addresses, and a pending operation | Visible or inferable | Visible or inferable | Visible or inferable | Visible |
-| Trader direction, exact notional, limit, and entry price before selection | Encrypted | Encrypted | Encrypted until its fill | Known |
-| Maker bid and ask prices | Encrypted | Own quote only | Own quote and its fill | Only the executed price after a fill |
-| Open position direction, size, entry, margin, funding, and health | Stored encrypted; metadata may leak clues | No direct view of another position | Knows its own exposure and the paired fill needed to manage it | Authorized view |
-| Deposits, withdrawals, program accounts, and token mint | Generally visible with normal token transfers | Visible | Visible | Visible |
-| Margin-transfer amounts and direction between free and market balances | Public in transfer receipts; the resulting position remains encrypted | Visible | Visible | Visible |
-| A public emergency exit | Reveals the fields needed for onchain settlement | Revealed fields become public | Revealed fields become public | Revealed fields become public |
+| Information                                                               | Public observer                                                       | Losing maker                       | Winning maker                                                  | Trader                               |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------- | ------------------------------------ |
+| Market, transaction timing, account addresses, and a pending operation    | Visible or inferable                                                  | Visible or inferable               | Visible or inferable                                           | Visible                              |
+| Trader direction, exact notional, limit, and entry price before selection | Encrypted                                                             | Encrypted                          | Encrypted until its fill                                       | Known                                |
+| Maker bid and ask prices                                                  | Encrypted                                                             | Own quote only                     | Own quote and its fill                                         | Only the executed price after a fill |
+| Open position direction, size, entry, margin, funding, and health         | Stored encrypted; metadata may leak clues                             | No direct view of another position | Knows its own exposure and the paired fill needed to manage it | Authorized view                      |
+| Deposits, withdrawals, program accounts, and token mint                   | Generally visible with normal token transfers                         | Visible                            | Visible                                                        | Visible                              |
+| Margin-transfer amounts and direction between free and market balances    | Public in transfer receipts; the resulting position remains encrypted | Visible                            | Visible                                                        | Visible                              |
+| A public emergency exit                                                   | Reveals the fields needed for onchain settlement                      | Revealed fields become public      | Revealed fields become public                                  | Revealed fields become public        |
 
 A winning maker must learn its own fill. It can hedge, share, or act on that
 information. Depth cannot promise to stop this. A custom app that collects the
 trade details in its own page already knows them. The hosted Depth interface
 can keep the raw input away from the integrating app if it uses an isolated
 Depth-controlled origin and sends the app only non-sensitive status.
+
+External hedge venues may publish an account's orders, fills, positions, sizes,
+prices, and timing. Observers who link that account to a Depth maker can infer
+individual trades from closely timed hedges, especially with sparse flow.
+Netting reduces direct matching; a known account following a full hedge policy
+can still reveal aggregate maker inventory. The bot uses opaque random external
+order IDs and keeps their journal private. It never copies a Depth receipt ID,
+trader address, private quote price, or trader limit into an external order.
+Quote encryption does not hide prices that an observer can independently
+calculate from a known oracle-and-spread policy. Inventory and execution-aware
+pricing improves the maker's strategy without promising resistance to inference.
 
 Normal Solana token transfers expose addresses and amounts. Margin-transfer
 receipts also expose the amount moved into or out of a market. A movement
@@ -927,8 +938,8 @@ App registration comes first. The owner connects a wallet, registers its fee,
 and receives the app ID from the confirmed registration. Registration also
 prepares the account needed to receive and withdraw app revenue.
 
-~~~ts
-import { create_depth } from "@depth/sdk";
+```ts
+import { create_depth } from "@depthhq/sdk";
 
 const admin = await create_depth({
   environment: "devnet",
@@ -940,7 +951,7 @@ const registration = await admin.app.register({
 });
 
 const { appId } = await registration.confirm();
-~~~
+```
 
 An existing app owner can retrieve its registration through
 `admin.app.summary()`. App IDs are public configuration, not secrets. A client
@@ -962,6 +973,108 @@ An RPC connection, service URL, deployment manifest, and persistence adapter are
 advanced overrides. The normal integration does not construct a Solana
 connection or pass program addresses. Overrides undergo the same validation.
 A public service accelerates discovery; it cannot authorize a balance or fill.
+
+The hosted trader and maker interfaces live at `/demo/trade` and `/demo/maker`.
+They call the public SDK exports, use Wallet Standard signing, and share the
+same account, order, quote, and callback lifecycle as external integrations.
+The Next.js server proxies the configured RPC and public Depth API so provider
+credentials remain on the server. `rpcUrl` and `serviceUrl` are explicit
+deployment overrides; loopback HTTP supports local development while devnet
+still requires a verified signed manifest and matching chain genesis.
+
+Public data is available without a wallet through
+`create_depth_data({ environment, serviceUrl? })`. It provides `markets()`,
+`market(marketId)`, `app(appId)`, paginated `candles(marketId, query)`, and
+`subscribe({ marketId, interval, onUpdate, onError })`. Candle intervals are
+`1m`, `5m`, `15m`, `1h`, `4h`, and `1d`. Responses identify their source,
+fetch time, stale status, and historical cursor. The current reference source
+is Hyperliquid SOL/USD; it is labeled separately from the pinned Pyth
+settlement price and never represents Depth's confidential executions,
+volume, or open interest. The shared market service validates, caches, and
+deduplicates provider requests and marks delayed live prices explicitly.
+
+Canonical `account().pending()` and `account().history()` scans are tied to
+the wallet and work across browser changes. Private views and unpublished
+order terms remain in memory and clear when the wallet changes. A submitted
+order can be resumed from its canonical nonce. If no order was submitted,
+`trade.unpairedAllocations()` locates settled allocations; the collateral
+remains in the market and unpublished trade terms must be supplied again.
+Maker fill checkpoints contain only receipt cursors, using IndexedDB in
+browsers and private atomic files in Node.
+
+`history.execution(nonce)` restores a filled trade's private execution and
+closing PnL through fresh wallet-authorized views. It replays prior fills and
+margin transfers in canonical transaction order, including older deployed
+margin callbacks. Fees and funding use the execution's actual receipt. Private
+fills and view secrets stay in memory. Reloading requires fresh authorization;
+it does not require a saved browser key. If a preceding liquidation prevents
+the exact collateral basis from being recovered, return on collateral is
+unavailable rather than estimated.
+
+Open positions show PnL from the authorized position and a fresh oracle mark.
+The share action opens the PnL card. Activity shows block times, actual
+transaction signatures, public transfer amounts, and authorized execution
+details; resuming a pending receipt retains its canonical nonce.
+
+The Node maker SDK exposes `create_maker_bot({ maker, policy, stateDirectory, hedge })`.
+Its policy limits capacity, inventory notional, spread, price movement, expiry,
+and refresh time. The worker quotes around the pinned oracle, derives capacity
+from authorized equity and current exposure, stops on stale prices, missed
+funding, or a market incident, and links a successor before retiring its prior
+quote. A private atomic checkpoint stores prepared quote terms, their nonce,
+replacement links, and finalized fill cursors. It contains no signer key or
+decrypted fills. A local process lease prevents simultaneous writers; hosted
+deployments use one replica per operator and durable storage. Inventory skew
+uses the maker's authorized net exposure. With the optional Hyperliquid adapter,
+quote tiers also account for executable order-book depth, the account's actual
+taker fee, adverse funding over the configured holding horizon, and a maker
+execution-risk buffer. Quotes outside the market's oracle band stop publication
+instead of being clamped to an unprofitable price. External hedges never reduce
+Depth's collateral or reservation requirements.
+
+The hedge engine batches one maker's aggregate finalized SOL exposure across
+apps, targets its configured hedge percentage, and sizes only the difference
+from confirmed external inventory. Its policy bounds order notional, remaining
+exposure, batching time, slippage, book age, and leverage. Expired batching or
+excessive exposure triggers an order; insufficient margin, stale data, or an
+unresolved submission stops new quotes. Small amounts below venue precision or
+minimum order size remain residual exposure and stop quoting after the waiting
+limit. Targets round toward zero to the venue's quantity step; this unavoidable
+rounding remainder still counts toward the hard exposure limit. A reversal first
+reduces the existing hedge before opening the opposite side. Quote cancellation
+cannot undo admitted trades, and network or finality delays can exceed the
+configured response window.
+
+Hyperliquid orders use IOC, exact decimal quantities, venue-valid prices, opaque
+client IDs, persisted nonces, and signed expiry. The account must be dedicated
+to this SOL strategy and use an approved agent signer. The engine reconciles
+partial fills and order status before sizing another order. An uncertain retry
+uses the same order, nonce, and expiry; an expired unknown order remains blocked
+until reconciliation finds a definitive outcome. Account snapshots older than
+the last confirmed hedge do not authorize another order.
+
+The bot and hedge-account checkpoints are private files with atomic replacement
+and filesystem synchronization. A separate account lease and shared journal
+preserve outstanding orders across operator changes. They contain quote and
+external order terms, nonces, and public receipt cursors; they contain no signer
+or decryption key. All workers using an account must share this durable directory
+and run on one host. Multiple hosts require a distributed lease before sharing
+an account. Shutdown retires quotes and retains the journal; it does not flatten
+either venue's positions.
+
+The maker worker exposes hedge status only after its owner signs a single-use,
+expiring Solana access challenge. The SDK exposes `maker.hedges.authorize()` and
+`maker.hedges.summary()`. Sessions and browser hedge views remain in memory and
+are cleared when the wallet changes. The public API proxies authenticated
+requests to the loopback worker without indexing private exposure. Deployment
+operators running an authorized maker worker can read that maker's private
+views; the integration does not grant access to other makers or traders.
+
+The bot also stops before its operator SOL balance falls below the configured
+gas reserve, retaining funds for quote cancellation and computation fees.
+Its default reserve is 0.05 SOL, with a minimum policy reserve of 0.01 SOL.
+An operator must replenish its own fee balance; the worker cannot draw from
+the maker's collateral or treasury.
 
 The browser and Node builds accept the wallet capabilities they actually need.
 Client construction does not submit transactions or request signatures.
@@ -989,21 +1102,21 @@ decimals for USDC, nine for SOL quantity, and eight for prices. Trade
 
 Account transfers and position reductions also accept explicit amount selectors:
 
-~~~ts
+```ts
 type Amount = bigint | "all" | `${number}%`;
-~~~
+```
 
 Percentage strings such as `"10%"` and `"25%"` must be positive and at most
 100, with at most four decimal places. Parsing and multiplication use integer
 arithmetic, rounding down to the smallest unit. Unsupported precision, zero
 results, and invalid amounts fail before signing.
 
-| Operation | Basis for `"all"` and percentage selectors |
-| --- | --- |
-| `account.withdraw` | The current free balance available for withdrawal. |
-| `account.allocate` or `position.addMargin` | The current free balance available for allocation. |
-| `account.release` or `position.removeMargin` | The amount removable from that market after current obligations and risk checks. |
-| `trade.reduce` | The current absolute SOL position quantity, never the free balance or original entry amount. |
+| Operation                                    | Basis for `"all"` and percentage selectors                                                   |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `account.withdraw`                           | The current free balance available for withdrawal.                                           |
+| `account.allocate` or `position.addMargin`   | The current free balance available for allocation.                                           |
+| `account.release` or `position.removeMargin` | The amount removable from that market after current obligations and risk checks.             |
+| `trade.reduce`                               | The current absolute SOL position quantity, never the free balance or original entry amount. |
 
 An exact `bigint` passed to `trade.reduce` is SOL base quantity; the other
 transfer methods use USDC base units. `trade.close` means the entire current
@@ -1029,7 +1142,7 @@ Preparation returns a reviewable draft without submitting that mutation.
 If preparation needs a fresh authorized private view, that read and its costs
 are disclosed before requesting its signature.
 
-~~~ts
+```ts
 const prepared = await admin.account().withdraw("25%", {
   prepare: true,
 });
@@ -1037,7 +1150,7 @@ const prepared = await admin.account().withdraw("25%", {
 const review = prepared.review;
 const withdrawal = await prepared.submit();
 await withdrawal.confirm();
-~~~
+```
 
 The review includes resolved amounts and units, account and market versions,
 price and fee limits, recipient, expiry, required approvals, and the ordered
@@ -1051,16 +1164,16 @@ the draft before signing and never changes its economic terms silently.
 
 Every submitted mutation returns an operation handle:
 
-| Method | Required behavior |
-| --- | --- |
-| `status()` | Return the latest verified public progress and canonical receipt references. |
-| `subscribe(handler)` | Deliver deduplicated progress, expose reconnect errors, and return an unsubscribe function. |
-| `wait(options?)` | Wait for progress or a terminal outcome; on timeout return the latest verified pending snapshot, or a typed read error if none was obtained. |
-| `confirm(options?)` | Resolve only with a successful typed receipt; throw a typed failure or pending-timeout error otherwise. |
-| `privateResult()` | Obtain an authorized private result when the operation has one, using a fresh view when needed. |
-| `resume()` | Reconcile canonical progress and continue eligible unfinished steps without repeating a completed effect. |
-| `cancel()` | Request cancellation only when the current operation permits it. |
-| `refund()` | Request the canonical refund only when the recorded operation is refundable. |
+| Method               | Required behavior                                                                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status()`           | Return the latest verified public progress and canonical receipt references.                                                                 |
+| `subscribe(handler)` | Deliver deduplicated progress, expose reconnect errors, and return an unsubscribe function.                                                  |
+| `wait(options?)`     | Wait for progress or a terminal outcome; on timeout return the latest verified pending snapshot, or a typed read error if none was obtained. |
+| `confirm(options?)`  | Resolve only with a successful typed receipt; throw a typed failure or pending-timeout error otherwise.                                      |
+| `privateResult()`    | Obtain an authorized private result when the operation has one, using a fresh view when needed.                                              |
+| `resume()`           | Reconcile canonical progress and continue eligible unfinished steps without repeating a completed effect.                                    |
+| `cancel()`           | Request cancellation only when the current operation permits it.                                                                             |
+| `refund()`           | Request the canonical refund only when the recorded operation is refundable.                                                                 |
 
 Timeout overrides are optional. Defaults account for the operation kind and
 Arcium execution. A timeout is not a rejection or proof that funds can be
@@ -1083,8 +1196,8 @@ accounted for and exposes the permitted release path.
 The maker owner funds the account, allocates collateral, and grants a bot
 limited authority. The bot receives its own signer, not the owner's wallet.
 
-~~~ts
-import { create_depth_maker } from "@depth/maker-sdk";
+```ts
+import { create_depth_maker } from "@depthhq/maker-sdk";
 
 const maker = await create_depth_maker({
   environment: "devnet",
@@ -1125,7 +1238,7 @@ const publication = await bot.quote.publish({
 });
 
 const { quoteId } = await publication.confirm();
-~~~
+```
 
 The flat quote applies the same bid and ask to supported tiers within its
 capacity. The SDK loads the market policy, derives the eligible tier envelope,
@@ -1146,8 +1259,8 @@ the SDK does not silently extend a grant.
 
 After the app has obtained its app ID, it connects each trader's wallet.
 
-~~~ts
-import { create_depth } from "@depth/sdk";
+```ts
+import { create_depth } from "@depthhq/sdk";
 
 const depth = await create_depth({
   environment: "devnet",
@@ -1163,7 +1276,7 @@ const pending = await depth.account().pending();
 
 const deposit = await depth.account().deposit(500_000_000n);
 await deposit.confirm();
-~~~
+```
 
 The SDK resolves the settlement token account, prepares the private account if
 needed, submits the deposit, and follows it through private credit. An app
@@ -1177,7 +1290,7 @@ discovery source is an explicit condition, not an empty account.
 
 ### Open and manage a position
 
-~~~ts
+```ts
 const prepared = await depth.trade.submit(
   {
     marketId: "SOL-USD",
@@ -1198,7 +1311,7 @@ await opening.confirm();
 const fill = await opening.privateResult();
 const position = depth.position(fill.positionId);
 const summary = await position.summary();
-~~~
+```
 
 `notional` is the requested USDC execution notional. The encrypted computation
 derives a representable SOL quantity at the selected price, rounding down to
@@ -1216,7 +1329,7 @@ An increase uses `trade.submit` again with the same direction and the
 additional notional. An opposite-direction request must use an explicit
 reduction, close, or reversal; it cannot accidentally reverse the position.
 
-~~~ts
+```ts
 const increase = await depth.trade.submit({
   marketId: "SOL-USD",
   direction: "long",
@@ -1267,7 +1380,7 @@ await released.confirm();
 
 const withdrawal = await depth.account().withdraw("all");
 await withdrawal.confirm();
-~~~
+```
 
 The reversal's `notional` is the final exposure on the new side. The SDK and
 circuit account for closing the old exposure as well; they do not interpret it
@@ -1282,7 +1395,7 @@ remaining collateral is released and withdrawn explicitly.
 
 ### Maker maintenance, fills, and exit
 
-~~~ts
+```ts
 const quote = bot.quote(quoteId);
 const status = await quote.status();
 const capacity = await quote.capacity();
@@ -1297,14 +1410,14 @@ const replacement = await bot.quote.replace({
 });
 
 const { quoteId: nextQuoteId } = await replacement.confirm();
-~~~
+```
 
 Replacement resolves the previous quote's market and preserves commitments
 already accepted against it. Any interval with no active replacement is
 reported. Publication, replacement, cancellation, and capacity release remain
 recoverable operations rather than a sequence the bot must reconstruct.
 
-~~~ts
+```ts
 const page = await bot.fills.list({ marketId: "SOL-USD" });
 const fill = await bot.fills.get(fillId);
 
@@ -1313,7 +1426,7 @@ const unsubscribe = await bot.fills.subscribe({
   onFill: onMakerFill,
   onError: onMakerError,
 });
-~~~
+```
 
 `fillId` comes from a listed fill or event. `onMakerFill` and `onMakerError`
 are the integrating maker's handlers. With view authority, the fill handler
@@ -1334,7 +1447,7 @@ The owner has the same `account()`, `positions.list()`, `position(id)`, and
 when it takes liquidity. Owner private summaries include collateral, exposure,
 reserved quote capacity, funding, fees, and current risk.
 
-~~~ts
+```ts
 const cancellation = await bot.quote(nextQuoteId).cancel();
 await cancellation.confirm();
 
@@ -1352,7 +1465,7 @@ await release.confirm();
 
 const withdrawal = await maker.account().withdraw("all");
 await withdrawal.confirm();
-~~~
+```
 
 The owner can list grants through `operator.list()` and renew through
 `operator.authorize()`. Revocation blocks new operator requests; it does not
@@ -1363,7 +1476,7 @@ amount and does not imply that every obligation has ended.
 
 ### Optional backstop participation
 
-~~~ts
+```ts
 const offering = await maker.backstop.offer({
   marketId: "SOL-USD",
   maxCapacity: 1_000_000_000n,
@@ -1376,7 +1489,7 @@ const status = await offer.status();
 
 const release = await offer.release();
 await release.confirm();
-~~~
+```
 
 Backstop participation is explicit owner authorization. Capacity remains
 reserved while the offer or a committed liquidation requires it. The SDK
@@ -1384,7 +1497,7 @@ cannot bypass the market's liquidation, expiry, or release rules.
 
 ### App administration and revenue
 
-~~~ts
+```ts
 const app = await admin.app.summary();
 const revenue = await admin.account().summary();
 
@@ -1399,7 +1512,7 @@ await deactivation.confirm();
 
 const activation = await admin.app.setActive(true);
 await activation.confirm();
-~~~
+```
 
 The summary distinguishes earned, pending, and credited withdrawable revenue.
 Withdrawal uses the common amount selectors and reports a typed unavailable
@@ -1422,14 +1535,14 @@ the sole recovery path. The SDK must not require the original browser's
 ephemeral encryption secret to recover current balances, positions, or
 retained fills. Stored discovery metadata must not contain private results.
 
-~~~ts
+```ts
 const pending = await depth.account().pending();
 
 for (const item of pending.items) {
   const operation = depth.operation(item.id);
   const state = await operation.status();
 }
-~~~
+```
 
 A pending item can be resumed, cancelled, or refunded only as its canonical
 state permits. The SDK uses a durable root-to-child operation relationship
@@ -1449,7 +1562,7 @@ destination, expiry, and any execution-cost budget. A keeper cannot change
 those terms or obtain general wallet authority. Steps that require a new
 decision or signature remain owner actions.
 
-~~~ts
+```ts
 const recovery = await depth.recovery.status({
   marketId: "SOL-USD",
 });
@@ -1460,7 +1573,7 @@ if (recovery.claimable) {
   });
   await claim.confirm();
 }
-~~~
+```
 
 Recovery distinguishes normal pending-operation recovery from permanent MXE
 failure. Emergency recovery follows the published committee, disclosure, and
@@ -1502,9 +1615,9 @@ cleanup and its costs without silently discarding the only recoverable record.
 The headless SDK works independently of the hosted interface. The separately
 scoped hosted interface may be opened with:
 
-~~~ts
+```ts
 await depth.open({ marketId: "SOL-USD" });
-~~~
+```
 
 An embedded interface uses an isolated Depth-controlled origin, exact origin
 checks, and a versioned message protocol. It shares public progress with the
@@ -1534,7 +1647,7 @@ public read server. Each package owns its bindings, public schemas, or SDK code.
 `contracts/` is the Arcium and Anchor project root; its required internal layout
 remains together.
 
-~~~text
+```text
 depth.supply/
   depth.md
   contracts/                Arcium and Anchor project root
@@ -1550,7 +1663,7 @@ depth.supply/
     src/features/           app, market, quote, operation, recovery, settlement, oracle, risk, fee
     src/shared/             chain access, configuration, and HTTP helpers
   scripts/                  build, deployment, and verification commands
-~~~
+```
 
 The Arcium CLI owns `Arcium.toml` and `encrypted-ixs` within
 `contracts/`. The Anchor/Arcium program owns the canonical market
@@ -1606,15 +1719,15 @@ or a successful encrypted matching demo would not close them.
 
 ## What the tools support, and what Depth must prove
 
-| Area | Verified tool capability | Depth-owned work or open gate |
-| --- | --- | --- |
-| Encrypted input | Arcium's TypeScript client uses X25519 and Rescue to encrypt inputs before submission. | The hosted and headless clients must avoid logging, leaking, or reusing keys and nonces. |
-| Encrypted computation | Arcis supports fixed-size encrypted structs, comparisons, arithmetic, encrypted outputs, and recipient sealing. | Depth must write and test the matching, balance, funding, liquidation, and conservation circuits. |
-| Persistent private state | Arcium shows MXE-encrypted state returned by a computation and stored by a Solana callback. The network does not mutate app state itself. | Depth must design bounded state layouts, version checks, and complete update coverage. |
-| Solana authorization | The Depth program can custody tokens and enforce signatures, PDA ownership, callback authentication, and vault transfers. | It cannot inspect hidden numbers without trusting a valid Arcium result. A public independent proof of every private ledger update is not assumed. |
-| Oracle | Pyth provides verified Solana price updates with feed, freshness, and confidence data. | Depth must admit actual feeds and implement delayed-price, stale-price, and market-hours policy. |
-| Confidential transfers | Token-2022 Confidential Balances hide supported transfer amounts and balances. | It does not hide account addresses. Compatibility with Depth's custody and payout flow must be tested before use. |
-| Liveness | Arcium documents queue expiry, failure reporting, and cluster migration. | Depth must reconcile locks, prove retry safety, and validate emergency exit. |
+| Area                     | Verified tool capability                                                                                                                  | Depth-owned work or open gate                                                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Encrypted input          | Arcium's TypeScript client uses X25519 and Rescue to encrypt inputs before submission.                                                    | The hosted and headless clients must avoid logging, leaking, or reusing keys and nonces.                                                           |
+| Encrypted computation    | Arcis supports fixed-size encrypted structs, comparisons, arithmetic, encrypted outputs, and recipient sealing.                           | Depth must write and test the matching, balance, funding, liquidation, and conservation circuits.                                                  |
+| Persistent private state | Arcium shows MXE-encrypted state returned by a computation and stored by a Solana callback. The network does not mutate app state itself. | Depth must design bounded state layouts, version checks, and complete update coverage.                                                             |
+| Solana authorization     | The Depth program can custody tokens and enforce signatures, PDA ownership, callback authentication, and vault transfers.                 | It cannot inspect hidden numbers without trusting a valid Arcium result. A public independent proof of every private ledger update is not assumed. |
+| Oracle                   | Pyth provides verified Solana price updates with feed, freshness, and confidence data.                                                    | Depth must admit actual feeds and implement delayed-price, stale-price, and market-hours policy.                                                   |
+| Confidential transfers   | Token-2022 Confidential Balances hide supported transfer amounts and balances.                                                            | It does not hide account addresses. Compatibility with Depth's custody and payout flow must be tested before use.                                  |
+| Liveness                 | Arcium documents queue expiry, failure reporting, and cluster migration.                                                                  | Depth must reconcile locks, prove retry safety, and validate emergency exit.                                                                       |
 
 Arcis circuits have fixed shapes. Dynamic collections such as Vec and
 HashMap are not supported inside them. Callback transactions share
