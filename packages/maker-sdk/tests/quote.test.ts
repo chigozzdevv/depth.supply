@@ -3,8 +3,38 @@ import { DEPTH_PROGRAM_ID, marketAccountAddress } from "@depthhq/bindings";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { MakerClient } from "@/client/client";
+import { MakerClient, retryQuote } from "@/client/client";
 import { QuoteHandle } from "@/quote/quote";
+
+test("quote admission retries only a rejected maker-state race within its deadline", async () => {
+  const race = anchor.AnchorError.parse([
+    "Program log: AnchorError thrown in programs/depth/src/instructions/quote.rs:188. Error Code: WrongMarketAccountStatus. Error Number: 6038. Error Message: The market account is in the wrong state.",
+  ])!;
+  assert.ok(race);
+  let attempts = 0;
+  const result = await retryQuote(async () => {
+    if (++attempts === 1) throw race;
+    return "quote";
+  }, Date.now() + 10_000);
+  assert.equal(result, "quote");
+  assert.equal(attempts, 2);
+  attempts = 0;
+  const unknown = new Error("Unknown transaction outcome");
+  await assert.rejects(
+    retryQuote(async () => {
+      attempts++;
+      throw unknown;
+    }, Date.now() + 10_000),
+    (error) => error === unknown,
+  );
+  assert.equal(attempts, 1);
+  await assert.rejects(
+    retryQuote(async () => {
+      throw race;
+    }, Date.now() - 1),
+    (error) => error === race,
+  );
+});
 
 test("maker position handle initializes for the owner", () => {
   const wallet = new anchor.Wallet(Keypair.generate());
@@ -31,10 +61,10 @@ test("maker discovers an interrupted quote from its canonical onchain record", a
       Buffer.from("market"),
       Buffer.from(
         "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
-        "hex"
+        "hex",
       ),
     ],
-    DEPTH_PROGRAM_ID
+    DEPTH_PROGRAM_ID,
   )[0];
   const id = PublicKey.findProgramAddressSync(
     [
@@ -43,13 +73,13 @@ test("maker discovers an interrupted quote from its canonical onchain record", a
       wallet.publicKey.toBuffer(),
       nonce.toArrayLike(Buffer, "le", 8),
     ],
-    DEPTH_PROGRAM_ID
+    DEPTH_PROGRAM_ID,
   )[0];
   let requestedFilters: unknown;
   const connection = new Connection("http://127.0.0.1:8899");
   connection.getProgramAccounts = (async (
     _program: PublicKey,
-    config: Parameters<Connection["getProgramAccounts"]>[1]
+    config: Parameters<Connection["getProgramAccounts"]>[1],
   ) => {
     requestedFilters = typeof config === "object" ? config.filters : undefined;
     return [{ pubkey: id, account: { data: Buffer.alloc(0) } }];
@@ -115,13 +145,13 @@ test("quote activation waits for private validation and stays pending until rese
       name === "MarketAccount"
         ? { status: { [makerReady ? "ready" : "trading"]: {} } }
         : name === "Market"
-        ? {
-            activeQuoteCount: 0,
-            pendingOrders: 0,
-            quotedNotional: new anchor.BN(0),
-            config: { maxMarketNotional: new anchor.BN(10_000) },
-          }
-        : { market: marketAddress, count: 0, entries: [] },
+          ? {
+              activeQuoteCount: 0,
+              pendingOrders: 0,
+              quotedNotional: new anchor.BN(0),
+              config: { maxMarketNotional: new anchor.BN(10_000) },
+            }
+          : { market: marketAddress, count: 0, entries: [] },
     queue: async () => ({}),
     program: {
       methods: {
@@ -155,7 +185,7 @@ test("quote activation waits for private validation and stays pending until rese
   assert.equal((await handle.wait({ timeoutMs: 0 })).status, "active");
   assert.equal(
     (await handle.confirm({ timeoutMs: 0 })).quoteId.toBase58(),
-    id.toBase58()
+    id.toBase58(),
   );
   assert.equal(await handle.capacity(), 750n);
 });
@@ -165,7 +195,7 @@ test("flat quotes use published tiers within capacity", () => {
     flatQuote: (
       input: Record<string, unknown>,
       market: Record<string, unknown>,
-      nonce: bigint
+      nonce: bigint,
     ) => {
       tiers: Array<{ size: bigint; bidE8: bigint; askE8: bigint }>;
       expiresAt: number;
@@ -174,7 +204,7 @@ test("flat quotes use published tiers within capacity", () => {
   const market = {
     config: {
       quoteTiers: [1_000, 10_000, 100_000, 1_000_000].map(
-        (value) => new anchor.BN(value)
+        (value) => new anchor.BN(value),
       ),
       maxQuoteLifetimeSeconds: 120,
     },
@@ -189,17 +219,17 @@ test("flat quotes use published tiers within capacity", () => {
   const quote = client.flatQuote(input, market, 9n);
   assert.deepEqual(
     quote.tiers.map((tier) => tier.size),
-    [1_000n, 10_000n, 100_000n]
+    [1_000n, 10_000n, 100_000n],
   );
   assert.ok(quote.tiers.every((tier) => tier.bidE8 === input.bidE8));
   assert.ok(quote.expiresAt > Math.floor(Date.now() / 1_000));
   assert.throws(
     () => client.flatQuote({ ...input, maxCapacity: 999n }, market, 9n),
-    /below the first quote tier/
+    /below the first quote tier/,
   );
   assert.throws(
     () => client.flatQuote({ ...input, validForSeconds: 121 }, market, 9n),
-    /outside market policy/
+    /outside market policy/,
   );
 });
 
@@ -207,12 +237,14 @@ test("draft market accepts the initial quote required for activation", () => {
   const client = Object.create(MakerClient.prototype) as {
     validateQuote: (
       input: Record<string, unknown>,
-      market: Record<string, unknown>
+      market: Record<string, unknown>,
     ) => void;
   };
   const now = Math.floor(Date.now() / 1_000);
   const quote = {
-    tiers: [{ size: 100_000_000n, bidE8: 19_900_000_000n, askE8: 20_100_000_000n }],
+    tiers: [
+      { size: 100_000_000n, bidE8: 19_900_000_000n, askE8: 20_100_000_000n },
+    ],
     maxCapacity: 100_000_000n,
     expiresAt: now + 60,
   };
@@ -229,11 +261,11 @@ test("draft market accepts the initial quote required for activation", () => {
   };
   assert.doesNotThrow(() => client.validateQuote(quote, market));
   assert.doesNotThrow(() =>
-    client.validateQuote(quote, { ...market, status: { active: {} } })
+    client.validateQuote(quote, { ...market, status: { active: {} } }),
   );
   assert.throws(
     () => client.validateQuote(quote, { ...market, status: { paused: {} } }),
-    /does not accept quotes/
+    /does not accept quotes/,
   );
 });
 
@@ -252,6 +284,8 @@ test("cancellation stops selection before releasing reserved margin", async () =
       capacity: new anchor.BN(1_000),
       attachedOrders: 0,
     }),
+    read: async (name: string) =>
+      name === "Market" ? { pendingOrders: 0 } : { status: { ready: {} } },
     queue: async () => ({}),
     program: {
       methods: {
@@ -281,4 +315,89 @@ test("cancellation stops selection before releasing reserved margin", async () =
   assert.deepEqual(calls, ["stop", "release"]);
   assert.equal(pending.status, "releasing");
   assert.equal(handle.releaseSignature, "release-signature");
+});
+
+test("cancellation reconciles a keeper release and repeated calls", async () => {
+  const maker = PublicKey.unique();
+  let status = "closing";
+  let releases = 0;
+  const client = {
+    options: { maker, wallet: { publicKey: maker } },
+    marketAddress: PublicKey.unique(),
+    protocolAddress: PublicKey.unique(),
+    marketAccount: () => PublicKey.unique(),
+    quoteState: async () => ({
+      status: { [status]: {} },
+      capacity: new anchor.BN(1_000),
+      attachedOrders: 0,
+    }),
+    read: async (name: string) =>
+      name === "Market" ? { pendingOrders: 0 } : { status: { ready: {} } },
+    queue: async () => ({}),
+    program: {
+      methods: {
+        releaseQuote: () => ({
+          accountsPartial: () => ({
+            rpc: async () => {
+              releases += 1;
+              status = "releasing";
+              throw new Error("The quote is in the wrong state");
+            },
+          }),
+        }),
+      },
+    },
+  } as unknown as MakerClient;
+  const handle = new QuoteHandle(PublicKey.unique(), undefined, client);
+  assert.equal((await handle.cancel()).status, "releasing");
+  assert.equal((await handle.cancel()).status, "releasing");
+  status = "cancelled";
+  assert.equal((await handle.cancel()).status, "cancelled");
+  assert.equal(releases, 1);
+});
+
+test("only the owner can reclaim a terminal quote without attached orders", async () => {
+  const maker = PublicKey.unique();
+  let actor = PublicKey.unique();
+  let status = "cancelled";
+  let attachedOrders = 0;
+  let closes = 0;
+  const client = {
+    options: {
+      maker,
+      wallet: {
+        get publicKey() {
+          return actor;
+        },
+      },
+    },
+    quoteState: async () => ({
+      status: { [status]: {} },
+      capacity: new anchor.BN(1_000),
+      attachedOrders,
+    }),
+    program: {
+      methods: {
+        closeQuote: () => ({
+          accountsPartial: () => ({
+            rpc: async () => {
+              closes += 1;
+              return "close-signature";
+            },
+          }),
+        }),
+      },
+    },
+  } as unknown as MakerClient;
+  const handle = new QuoteHandle(PublicKey.unique(), undefined, client);
+  await assert.rejects(() => handle.close(), /Only the maker owner/);
+  actor = maker;
+  status = "active";
+  await assert.rejects(() => handle.close(), /settle its orders/);
+  status = "cancelled";
+  attachedOrders = 1;
+  await assert.rejects(() => handle.close(), /settle its orders/);
+  attachedOrders = 0;
+  assert.equal(await handle.close(), "close-signature");
+  assert.equal(closes, 1);
 });

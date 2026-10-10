@@ -51,3 +51,15 @@ export class BrowserCursorStore {
     }
   }
 }
+
+export function createCursorStore(
+  genesis: string,
+  maker: string,
+  _directory?: string,
+) {
+  if (typeof indexedDB === "undefined")
+    throw new Error(
+      "Durable maker fill checkpoints require IndexedDB in this browser",
+    );
+  return new BrowserCursorStore(genesis, maker);
+}

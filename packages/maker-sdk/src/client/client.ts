@@ -38,7 +38,7 @@ import type {
 import { mxeAccount, queueAccounts } from "@/chain/arcium";
 import { BackstopHandle } from "@/backstop/backstop";
 import { FillHistory } from "@/fill/history";
-import { BrowserCursorStore } from "@/fill/browser";
+import { createCursorStore } from "@/fill/store";
 import { QuoteHandle } from "@/quote/quote";
 import { QuoteReplacement } from "@/quote/replacement";
 import type {
@@ -65,6 +65,25 @@ function u64(value: bigint, name: string): anchor.BN {
 
 function offset(): anchor.BN {
   return new anchor.BN(randomBytes(8), "le");
+}
+
+export async function retryQuote<T>(
+  action: () => Promise<T>,
+  deadline: number,
+): Promise<T> {
+  for (;;) {
+    try {
+      return await action();
+    } catch (error) {
+      if (
+        !(error instanceof anchor.AnchorError) ||
+        error.error.errorCode.code !== "WrongMarketAccountStatus" ||
+        Date.now() >= deadline
+      )
+        throw error;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
 }
 
 function stateName(value: Record<string, unknown>): string {
@@ -128,6 +147,10 @@ export class MakerClient {
   }
 
   static async create(options: MakerOptions): Promise<MakerClient> {
+    const appId =
+      typeof options.appId === "string"
+        ? new PublicKey(options.appId)
+        : options.appId;
     if (
       options.maker &&
       options.makerOwner &&
@@ -139,6 +162,7 @@ export class MakerClient {
       ...options,
       ...(await resolveConnection(options)),
       maker: options.makerOwner ?? options.maker ?? options.wallet.publicKey,
+      appId,
     };
     const client = new MakerClient(resolved);
     await verifyDeployment(client.provider, resolved.deployment);
@@ -186,6 +210,9 @@ export class MakerClient {
 
   private accountActions() {
     const actions = {
+      history: async (
+        options?: Parameters<DepthClient["account"]["history"]>[0],
+      ) => (await this.owned()).account.history(options),
       cancelOpen: () => this.funding.cancelOpenBalance(),
       open: async () => this.funding.openBalance(),
       openMarket: async () => this.funding.openMarket(),
@@ -274,10 +301,14 @@ export class MakerClient {
     ]);
   }
 
-  async read<T>(name: string, address: PublicKey): Promise<T> {
+  async read<T>(
+    name: string,
+    address: PublicKey,
+    commitment: "confirmed" | "finalized" = "confirmed",
+  ): Promise<T> {
     const info = await this.options.connection.getAccountInfo(
       address,
-      "confirmed",
+      commitment,
     );
     if (!info || !info.owner.equals(DEPTH_PROGRAM_ID)) {
       throw new Error(`${name} account is unavailable`);
@@ -423,104 +454,109 @@ export class MakerClient {
       const clientNonce =
         request.clientNonce ??
         BigInt(new anchor.BN(randomBytes(8), "le").toString());
-      const quoteNonce = u64(clientNonce, "clientNonce");
-      const id = pda([
-        Buffer.from("quote"),
-        this.marketAddress.toBuffer(),
-        this.options.maker.toBuffer(),
-        quoteNonce.toArrayLike(Buffer, "le", 8),
-      ]);
-      if (await this.options.connection.getAccountInfo(id, "confirmed")) {
-        const existing = await this.quoteState(id);
-        if (
-          BigInt(existing.capacity.toString()) !== request.maxCapacity ||
-          ("expiresAt" in request &&
-            existing.expiry.toNumber() !== request.expiresAt)
-        ) {
-          throw new Error(
-            "Quote nonce is already bound to different public terms",
-          );
-        }
-        return this.quote.get(id);
-      }
       const readyDeadline = Date.now() + 60_000;
-      for (;;) {
-        const account = await this.read<{ status: Record<string, unknown> }>(
-          "MarketAccount",
-          this.marketAccount(),
-        );
-        if (stateName(account.status) === "ready") break;
-        if (Date.now() >= readyDeadline) {
-          throw new Error("Maker account is processing another operation");
+      return retryQuote(async () => {
+        const quoteNonce = u64(clientNonce, "clientNonce");
+        const id = pda([
+          Buffer.from("quote"),
+          this.marketAddress.toBuffer(),
+          this.options.maker.toBuffer(),
+          quoteNonce.toArrayLike(Buffer, "le", 8),
+        ]);
+        if (await this.options.connection.getAccountInfo(id, "confirmed")) {
+          const existing = await this.quoteState(id);
+          if (
+            BigInt(existing.capacity.toString()) !== request.maxCapacity ||
+            ("expiresAt" in request &&
+              existing.expiry.toNumber() !== request.expiresAt)
+          ) {
+            throw new Error(
+              "Quote nonce is already bound to different public terms",
+            );
+          }
+          return this.quote.get(id);
         }
-        await new Promise((resolve) => setTimeout(resolve, 1_000));
-      }
-      const market = await this.read<MarketState>("Market", this.marketAddress);
-      const input: QuoteInput =
-        "tiers" in request
-          ? request
-          : this.flatQuote(request, market, clientNonce);
-      this.validateQuote(input, market);
-      const grant = await this.grantFor(input.maxCapacity, input.expiresAt);
-      const mxePublicKey = await getMXEPublicKey(
-        this.provider,
-        DEPTH_PROGRAM_ID,
-      );
-      if (!mxePublicKey) throw new Error("MXE public key is unavailable");
-      const secret = x25519.utils.randomSecretKey();
-      const inputKey = x25519.getPublicKey(secret);
-      const inputNonce = randomBytes(16);
-      const cipher = new RescueCipher(
-        x25519.getSharedSecret(secret, mxePublicKey),
-      );
-      const bid = Array.from(
-        { length: 4 },
-        (_, i) => input.tiers[i]?.bidE8 ?? 0n,
-      );
-      const ask = Array.from(
-        { length: 4 },
-        (_, i) => input.tiers[i]?.askE8 ?? 0n,
-      );
-      const reciprocal = (price: bigint) => {
-        if (price === 0n) return 0n;
-        if (price < 100_000_000n)
-          throw new RangeError("SOL quote prices must be at least $1");
-        return (1n << 76n) / price;
-      };
-      const ciphertexts = cipher.encrypt(
-        packQuoteCurve({
-          bid,
-          ask,
-          bidReciprocal: bid.map(reciprocal),
-          askReciprocal: ask.map(reciprocal),
-        }),
-        inputNonce,
-      );
-      const computationOffset = offset();
-      const queue = await this.queue("prepare_quote", computationOffset);
-      const signature = await this.program.methods
-        .submitQuote(
-          computationOffset,
-          quoteNonce,
-          u64(input.maxCapacity, "maxCapacity"),
-          input.tiers.length,
-          new anchor.BN(input.expiresAt),
-          market.revision,
-          market.oracleTimestamp,
-          ciphertexts,
-          Array.from(inputKey),
-          new anchor.BN(inputNonce, "le"),
-        )
-        .accountsPartial({
-          ...queue,
-          payer: this.options.wallet.publicKey,
-          market: this.marketAddress,
-          marketAccount: this.marketAccount(),
-          grant: grant ?? this.program.programId,
-          quote: id,
-        })
-        .rpc({ commitment: "confirmed" });
-      return new QuoteHandle(id, signature, this);
+        for (;;) {
+          const account = await this.read<{ status: Record<string, unknown> }>(
+            "MarketAccount",
+            this.marketAccount(),
+          );
+          if (stateName(account.status) === "ready") break;
+          if (Date.now() >= readyDeadline) {
+            throw new Error("Maker account is processing another operation");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 1_000));
+        }
+        const market = await this.read<MarketState>(
+          "Market",
+          this.marketAddress,
+        );
+        const input: QuoteInput =
+          "tiers" in request
+            ? request
+            : this.flatQuote(request, market, clientNonce);
+        this.validateQuote(input, market);
+        const grant = await this.grantFor(input.maxCapacity, input.expiresAt);
+        const mxePublicKey = await getMXEPublicKey(
+          this.provider,
+          DEPTH_PROGRAM_ID,
+        );
+        if (!mxePublicKey) throw new Error("MXE public key is unavailable");
+        const secret = x25519.utils.randomSecretKey();
+        const inputKey = x25519.getPublicKey(secret);
+        const inputNonce = randomBytes(16);
+        const cipher = new RescueCipher(
+          x25519.getSharedSecret(secret, mxePublicKey),
+        );
+        const bid = Array.from(
+          { length: 4 },
+          (_, i) => input.tiers[i]?.bidE8 ?? 0n,
+        );
+        const ask = Array.from(
+          { length: 4 },
+          (_, i) => input.tiers[i]?.askE8 ?? 0n,
+        );
+        const reciprocal = (price: bigint) => {
+          if (price === 0n) return 0n;
+          if (price < 100_000_000n)
+            throw new RangeError("SOL quote prices must be at least $1");
+          return (1n << 76n) / price;
+        };
+        const ciphertexts = cipher.encrypt(
+          packQuoteCurve({
+            bid,
+            ask,
+            bidReciprocal: bid.map(reciprocal),
+            askReciprocal: ask.map(reciprocal),
+          }),
+          inputNonce,
+        );
+        const computationOffset = offset();
+        const queue = await this.queue("prepare_quote", computationOffset);
+        const signature = await this.program.methods
+          .submitQuote(
+            computationOffset,
+            quoteNonce,
+            u64(input.maxCapacity, "maxCapacity"),
+            input.tiers.length,
+            new anchor.BN(input.expiresAt),
+            market.revision,
+            market.oracleTimestamp,
+            ciphertexts,
+            Array.from(inputKey),
+            new anchor.BN(inputNonce, "le"),
+          )
+          .accountsPartial({
+            ...queue,
+            payer: this.options.wallet.publicKey,
+            market: this.marketAddress,
+            marketAccount: this.marketAccount(),
+            grant: grant ?? this.program.programId,
+            quote: id,
+          })
+          .rpc({ commitment: "confirmed" });
+        return new QuoteHandle(id, signature, this);
+      }, readyDeadline);
     },
     get: (id: PublicKey): QuoteHandle => new QuoteHandle(id, undefined, this),
     list: async (options: { cursor?: string; limit?: number } = {}) => {
@@ -555,7 +591,13 @@ export class MakerClient {
       const ids = accounts
         .map(({ pubkey }) => pubkey)
         .filter((id) => !cursor || id.toBase58() > cursor)
-        .sort((a, b) => a.toBase58().localeCompare(b.toBase58()));
+        .sort((a, b) =>
+          a.toBase58() < b.toBase58()
+            ? -1
+            : a.toBase58() > b.toBase58()
+              ? 1
+              : 0,
+        );
       const selected = ids.slice(0, limit);
       if (selected.length === 0) return { items: [], nextCursor: null };
       const infos = await this.options.connection.getMultipleAccountsInfo(
@@ -758,8 +800,8 @@ export class MakerClient {
       kind === "market"
         ? "view_market"
         : kind === "fill"
-        ? "view_fill"
-        : "view_quote",
+          ? "view_fill"
+          : "view_quote",
       computationOffset,
     );
     const builder =
@@ -770,16 +812,16 @@ export class MakerClient {
             Array.from(publicKey),
           )
         : kind === "fill"
-        ? this.program.methods.requestFillView(
-            computationOffset,
-            viewNonce,
-            Array.from(publicKey),
-          )
-        : this.program.methods.requestQuoteView(
-            computationOffset,
-            viewNonce,
-            Array.from(publicKey),
-          );
+          ? this.program.methods.requestFillView(
+              computationOffset,
+              viewNonce,
+              Array.from(publicKey),
+            )
+          : this.program.methods.requestQuoteView(
+              computationOffset,
+              viewNonce,
+              Array.from(publicKey),
+            );
     const signature = await builder
       .accountsPartial({
         ...queue,
@@ -847,14 +889,11 @@ export class MakerClient {
       if (options.marketId !== SOL_USD_MARKET_ID)
         throw new Error("Only SOL-USD is supported");
       const genesis = await this.options.connection.getGenesisHash();
-      const store =
-        typeof indexedDB === "undefined"
-          ? new (await import("@depthhq/maker-sdk/node")).FillCursorStore(
-              genesis,
-              this.options.maker.toBase58(),
-              this.options.cursorDirectory,
-            )
-          : new BrowserCursorStore(genesis, this.options.maker.toBase58());
+      const store = createCursorStore(
+        genesis,
+        this.options.maker.toBase58(),
+        this.options.cursorDirectory,
+      );
       const cursor = await store.load();
       return new FillHistory(this).subscribe(
         async (fill) => {

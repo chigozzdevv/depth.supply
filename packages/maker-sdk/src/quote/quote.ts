@@ -82,14 +82,14 @@ export class QuoteHandle {
       snapshot.status === "rejected"
         ? "QUOTE_REJECTED"
         : snapshot.status === "cancelled"
-        ? "QUOTE_CANCELLED"
-        : "QUOTE_PENDING",
+          ? "QUOTE_CANCELLED"
+          : "QUOTE_PENDING",
       "confirmation",
       snapshot.status === "rejected"
         ? "Quote was rejected"
         : snapshot.status === "cancelled"
-        ? "Quote was cancelled"
-        : "Quote is not active yet",
+          ? "Quote was cancelled"
+          : "Quote is not active yet",
       snapshot.status !== "rejected" && snapshot.status !== "cancelled",
       "Read the quote status and resume activation if it remains pending",
       this.id.toBase58(),
@@ -220,9 +220,11 @@ export class QuoteHandle {
             ])
             .rpc({ commitment: "confirmed" });
         } catch (error) {
-          const code = (error as {
-            error?: { errorCode?: { code?: string } };
-          }).error?.errorCode?.code;
+          const code = (
+            error as {
+              error?: { errorCode?: { code?: string } };
+            }
+          ).error?.errorCode?.code;
           if (
             (code !== "WrongMarketAccountStatus" &&
               code !== "WrongOrderStatus") ||
@@ -246,52 +248,102 @@ export class QuoteHandle {
 
   async cancel(): Promise<QuoteSnapshot> {
     const snapshot = await this.status();
+    if (
+      ["cancelled", "filled", "rejected", "releasing"].includes(snapshot.status)
+    )
+      return snapshot;
     const actor = this.client.options.wallet.publicKey;
     const grant = actor.equals(this.client.options.maker)
       ? undefined
       : this.client.grantAddress();
     if (snapshot.status === "validating" || snapshot.status === "validated") {
-      await this.client.program.methods
-        .cancelPreparedQuote()
-        .accountsPartial({
-          actor,
-          grant: grant ?? this.client.program.programId,
-          quote: this.id,
-        })
-        .rpc({ commitment: "confirmed" });
-      return this.status();
+      return this.cancelStep(
+        () =>
+          this.client.program.methods
+            .cancelPreparedQuote()
+            .accountsPartial({
+              actor,
+              grant: grant ?? this.client.program.programId,
+              quote: this.id,
+            })
+            .rpc({ commitment: "confirmed" }),
+        ["cancelled", "rejected"],
+      );
     }
     if (snapshot.status === "active" || snapshot.status === "waiting") {
-      await this.client.program.methods
-        .stopQuote()
-        .accountsPartial({
-          actor,
-          market: this.client.marketAddress,
-          quoteQueue: this.client.quoteQueueAddress,
-          grant: grant ?? this.client.program.programId,
-          quote: this.id,
-        })
-        .rpc({ commitment: "confirmed" });
+      await this.cancelStep(
+        () =>
+          this.client.program.methods
+            .stopQuote()
+            .accountsPartial({
+              actor,
+              market: this.client.marketAddress,
+              quoteQueue: this.client.quoteQueueAddress,
+              grant: grant ?? this.client.program.programId,
+              quote: this.id,
+            })
+            .rpc({ commitment: "confirmed" }),
+        ["closing", "releasing", "cancelled", "filled"],
+      );
     } else if (snapshot.status !== "closing") {
       throw new Error("Quote cannot be cancelled in its current state");
     }
     const current = await this.status();
-    if (snapshot.status === "waiting") return current;
+    if (current.status !== "closing") return current;
     if (current.attachedOrders > 0) return current;
+    const [market, makerAccount] = await Promise.all([
+      this.client.read<MarketState>("Market", this.client.marketAddress),
+      this.client.read<{ status: Record<string, unknown> }>(
+        "MarketAccount",
+        this.client.marketAccount(),
+      ),
+    ]);
+    if (market.pendingOrders > 0 || name(makerAccount.status) !== "ready")
+      return current;
     const offset = new anchor.BN(randomBytes(8), "le");
     const queue = await this.client.queue("release_quote", offset);
-    this.releaseSignature = await this.client.program.methods
-      .releaseQuote(offset)
-      .accountsPartial({
-        ...queue,
-        payer: actor,
-        protocol: this.client.protocolAddress,
-        market: this.client.marketAddress,
-        marketAccount: this.client.marketAccount(),
-        grant: grant ?? this.client.program.programId,
-        quote: this.id,
-      })
-      .rpc({ commitment: "confirmed" });
+    return this.cancelStep(async () => {
+      this.releaseSignature = await this.client.program.methods
+        .releaseQuote(offset)
+        .accountsPartial({
+          ...queue,
+          payer: actor,
+          protocol: this.client.protocolAddress,
+          market: this.client.marketAddress,
+          marketAccount: this.client.marketAccount(),
+          grant: grant ?? this.client.program.programId,
+          quote: this.id,
+        })
+        .rpc({ commitment: "confirmed" });
+    }, ["releasing", "cancelled", "filled"]);
+  }
+
+  private async cancelStep(
+    submit: () => Promise<unknown>,
+    completed: string[],
+  ): Promise<QuoteSnapshot> {
+    try {
+      await submit();
+    } catch (error) {
+      const snapshot = await this.status();
+      if (completed.includes(snapshot.status)) return snapshot;
+      throw error;
+    }
     return this.status();
+  }
+
+  async close(): Promise<string> {
+    if (!this.client.options.wallet.publicKey.equals(this.client.options.maker))
+      throw new Error("Only the maker owner can reclaim quote rent");
+    const snapshot = await this.status();
+    if (
+      !["cancelled", "filled", "rejected"].includes(snapshot.status) ||
+      snapshot.attachedOrders > 0
+    )
+      throw new Error("Release the quote and settle its orders before closing");
+    return this.client.program.methods
+      .closeQuote()
+      .accountsPartial({ maker: this.client.options.maker, quote: this.id })
+      .rpc({ commitment: "confirmed" });
   }
 }

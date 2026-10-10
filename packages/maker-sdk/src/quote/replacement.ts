@@ -63,36 +63,16 @@ export class QuoteReplacement {
         next?.status === "active" || next?.status === "filled"
           ? "active"
           : next?.status === "rejected"
-          ? "failed"
-          : next
-          ? "publishing"
-          : stopped
-          ? "ready"
-          : "stopping",
+            ? "failed"
+            : next
+              ? "publishing"
+              : stopped
+                ? "ready"
+                : "stopping",
     };
   }
 
-  async resume(
-    input: QuoteRequest,
-    options: { timeoutMs?: number; pollMs?: number } = {},
-  ): Promise<QuoteHandle> {
-    if (input.clientNonce !== undefined && input.clientNonce !== this.nonce) {
-      throw new Error("Replacement terms use a different client nonce");
-    }
-    const timeoutMs = options.timeoutMs ?? 60_000;
-    const pollMs = options.pollMs ?? 1_000;
-    if (
-      !Number.isSafeInteger(timeoutMs) ||
-      timeoutMs < 0 ||
-      !Number.isSafeInteger(pollMs) ||
-      pollMs < 100
-    ) {
-      throw new RangeError(
-        "Replacement timeout or polling interval is invalid",
-      );
-    }
-    const deadline = Date.now() + timeoutMs;
-    const previous = this.client.quote.get(this.priorId);
+  async begin(): Promise<void> {
     const prior = await this.client.quoteState(this.priorId);
     const recorded =
       prior.replacementNonce == null
@@ -114,6 +94,28 @@ export class QuoteReplacement {
         })
         .rpc({ commitment: "confirmed" });
     }
+  }
+
+  async resume(
+    input: QuoteRequest,
+    options: { timeoutMs?: number; pollMs?: number } = {},
+  ): Promise<QuoteHandle> {
+    if (input.clientNonce !== undefined && input.clientNonce !== this.nonce)
+      throw new Error("Replacement terms use a different client nonce");
+    const timeoutMs = options.timeoutMs ?? 60_000;
+    const pollMs = options.pollMs ?? 1_000;
+    if (
+      !Number.isSafeInteger(timeoutMs) ||
+      timeoutMs < 0 ||
+      !Number.isSafeInteger(pollMs) ||
+      pollMs < 100
+    )
+      throw new RangeError(
+        "Replacement timeout or polling interval is invalid",
+      );
+    const deadline = Date.now() + timeoutMs;
+    const previous = this.client.quote.get(this.priorId);
+    await this.begin();
     for (;;) {
       const snapshot = await previous.status();
       if (["cancelled", "filled"].includes(snapshot.status)) break;

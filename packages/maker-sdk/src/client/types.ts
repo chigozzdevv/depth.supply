@@ -1,18 +1,27 @@
-import type { ConnectionOptions, ResolvedConnection } from "@depthhq/sdk";
+import type {
+  ConnectionOptions,
+  ResolvedConnection,
+  DepthWallet,
+} from "@depthhq/sdk";
 import type * as anchor from "@anchor-lang/core";
 import type { PublicKey } from "@solana/web3.js";
 import { SOL_USD_MARKET_ID } from "@depthhq/bindings";
 
 export type MakerOptions = ConnectionOptions & {
-  wallet: anchor.Wallet;
+  wallet: DepthWallet & {
+    signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
+  };
   maker?: PublicKey;
   makerOwner?: PublicKey;
-  appId?: PublicKey;
+  appId?: PublicKey | string;
   cursorDirectory?: string;
 };
 
 export type ResolvedMakerOptions = ResolvedConnection &
-  Omit<MakerOptions, keyof ConnectionOptions | "maker"> & { maker: PublicKey };
+  Omit<MakerOptions, keyof ConnectionOptions | "maker" | "appId"> & {
+    maker: PublicKey;
+    appId?: PublicKey;
+  };
 
 export type QuoteTier = { size: bigint; bidE8: bigint; askE8: bigint };
 
