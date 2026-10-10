@@ -14,6 +14,15 @@ export { TradeFlow } from "@/trade/flow";
 export type { TradeFlowSnapshot } from "@/trade/flow";
 export { MarketCatalog } from "@/catalog/catalog";
 export type { MarketPolicy, MarketSummary } from "@/catalog/catalog";
+export { MarketData, create_depth_data } from "@/catalog/data";
+export type { DataOptions, CandleQuery } from "@/catalog/data";
+export type {
+  Candle,
+  CandleInterval,
+  CandlePage,
+  PublicMarket,
+  PublicApp,
+} from "@depthhq/schema";
 export { AppAdmin, AppRegistration, AppUpdate } from "@/app/app";
 export { FundingDiscovery } from "@/account/discovery";
 export type { ReceiptDetail } from "@/account/discovery";

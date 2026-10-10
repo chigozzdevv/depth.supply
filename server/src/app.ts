@@ -5,6 +5,8 @@ import { deploymentRoute } from "@/features/deployment/deployment.route";
 import { DeploymentService } from "@/features/deployment/deployment.service";
 import { marketRoute } from "@/features/market/market.route";
 import { MarketService } from "@/features/market/market.service";
+import { CandleService } from "@/features/market/candle.service";
+import { candleRoute } from "@/features/market/candle.route";
 import { operationRoute } from "@/features/operation/operation.route";
 import { OperationService } from "@/features/operation/operation.service";
 import { quoteRoute } from "@/features/quote/quote.route";
@@ -20,6 +22,7 @@ export function buildApp(chain: ChainClient, logger = true): FastifyInstance {
   registerHttp(app);
   deploymentRoute(app, new DeploymentService(deploymentPaths()));
   marketRoute(app, new MarketService(chain));
+  candleRoute(app, new CandleService());
   recoveryRoute(app, new RecoveryService(chain));
   quoteRoute(app, new QuoteService(chain));
   operationRoute(app, new OperationService(chain));
