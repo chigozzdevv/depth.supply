@@ -58,7 +58,7 @@ test("publisher leaves a recently updated verified feed alone", async () => {
   const publisher = new OraclePublisher(
     connection,
     new anchor.Wallet(signer),
-    config
+    config,
   );
   assert.equal(await publisher.advance(), undefined);
 });
@@ -88,7 +88,7 @@ test("oracle refresh preserves pending quote snapshots until expiry", async () =
         options: {
           dataSlice: { offset: number; length: number };
           filters: Array<{ memcmp: { offset: number; bytes: string } }>;
-        }
+        },
       ) => {
         if (options.filters[0].memcmp.bytes !== "quoteRecord") return [];
         assert.deepEqual(options.dataSlice, {
@@ -96,15 +96,15 @@ test("oracle refresh preserves pending quote snapshots until expiry", async () =
           length: 8,
         });
         const marketFilter = options.filters.find(
-          ({ memcmp }) => memcmp.offset === accountOffsets.QuoteRecord.market
+          ({ memcmp }) => memcmp.offset === accountOffsets.QuoteRecord.market,
         );
         assert.equal(marketFilter?.memcmp.bytes, market.toBase58());
         const statusFilter = options.filters.find(
-          ({ memcmp }) => memcmp.offset === accountOffsets.QuoteRecord.status
+          ({ memcmp }) => memcmp.offset === accountOffsets.QuoteRecord.status,
         );
         assert.ok(statusFilter);
         const statusBytes = anchor.utils.bytes.bs58.decode(
-          statusFilter.memcmp.bytes
+          statusFilter.memcmp.bytes,
         );
         assert.equal(statusBytes.length, 1);
         queriedStatuses.add(statusBytes[0]);
@@ -144,7 +144,7 @@ test("oracle refresh preserves pending quote snapshots until expiry", async () =
       enumValues.QuoteStatus.Validating,
       enumValues.QuoteStatus.Validated,
       enumValues.QuoteStatus.Reserving,
-    ])
+    ]),
   );
 
   expiry = now - 1;
@@ -167,4 +167,62 @@ test("oracle refresh preserves pending quote snapshots until expiry", async () =
     assert.equal(await service.advance(), "oracle-signature");
   }
   assert.equal(refreshes, 5);
+});
+
+test("oracle refresh accepts a confirmed competing refresh and preserves other failures", async () => {
+  const now = Math.floor(Date.now() / 1000);
+  const price = priceAccount();
+  price.data.writeBigInt64LE(BigInt(now), 93);
+  const oracle = PublicKey.unique();
+  const stale = anchor.AnchorError.parse([
+    "Program log: AnchorError thrown in programs/depth/src/instructions/market.rs:222. Error Code: StaleOracle. Error Number: 6011. Error Message: The oracle update is stale or from the future.",
+  ])!;
+  assert.ok(stale);
+  let timestamp = now - 1;
+  let selected = oracle;
+  let submitted = false;
+  let error: Error = stale;
+  const chain = {
+    market: PublicKey.unique(),
+    read: async () => ({
+      pendingOrders: 0,
+      status: { active: {} },
+      oracleAccount: submitted ? selected : oracle,
+      oracleTimestamp: new anchor.BN(submitted ? timestamp : now - 1),
+    }),
+    connection: {
+      getAccountInfo: async () => price,
+      getProgramAccounts: async () => [],
+    },
+    program: {
+      coder: {
+        accounts: { memcmp: (name: string) => ({ offset: 0, bytes: name }) },
+      },
+      methods: {
+        refreshOracle: () => ({
+          accountsPartial: () => ({
+            rpc: async () => {
+              submitted = true;
+              throw error;
+            },
+          }),
+        }),
+      },
+    },
+  } as unknown as ChainSigner;
+  const service = new OracleService(chain, oracle);
+  const advance = () => {
+    submitted = false;
+    return service.advance();
+  };
+  await assert.rejects(advance(), (error) => error === stale);
+  timestamp = now;
+  assert.equal(await advance(), undefined);
+  timestamp = now + 1;
+  assert.equal(await advance(), undefined);
+  selected = PublicKey.unique();
+  await assert.rejects(advance(), (error) => error === stale);
+  selected = oracle;
+  error = new Error("RPC unavailable");
+  await assert.rejects(advance(), (failure) => failure === error);
 });

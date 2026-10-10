@@ -42,7 +42,7 @@ process.once("SIGINT", () => {
 process.once("SIGTERM", () => {
   running = false;
 });
-let delayMs = 1_000;
+let delayMs = config.keeperIntervalMs ?? 2000;
 let lastError = "";
 
 while (running) {
@@ -54,23 +54,16 @@ while (running) {
         lastOracle = Date.now();
         if (signature) process.stdout.write(`refresh_oracle ${signature}\n`);
       }
-      for (let index = 0; index < services.length; index++) {
-        const position = (serviceOffset + index) % services.length;
-        const result = await services[position].advance();
-        if (result) {
-          serviceOffset = (position + 1) % services.length;
-          process.stdout.write(`${result.stage} ${result.signature}\n`);
-          break;
-        }
-        if (index === services.length - 1)
-          serviceOffset = (serviceOffset + 1) % services.length;
-      }
+      const service = services[serviceOffset];
+      serviceOffset = (serviceOffset + 1) % services.length;
+      const result = await service.advance();
+      if (result) process.stdout.write(`${result.stage} ${result.signature}\n`);
     }
-    delayMs = 1_000;
+    delayMs = config.keeperIntervalMs ?? 2000;
     lastError = "";
     if (progress) {
       process.stdout.write(
-        `${progress.stage} ${progress.order} ${progress.signature}\n`
+        `${progress.stage} ${progress.order} ${progress.signature}\n`,
       );
     }
   } catch (error) {

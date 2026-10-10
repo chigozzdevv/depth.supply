@@ -43,7 +43,10 @@ export class FundingService {
 
   constructor(private readonly chain: ChainSigner) {
     this.deposits = new ChainScan(chain, "DepositReceipt", [
-      statusFilter(accountOffsets.DepositReceipt.status, enumValues.DepositStatus.Pending),
+      statusFilter(
+        accountOffsets.DepositReceipt.status,
+        enumValues.DepositStatus.Pending,
+      ),
     ]);
     this.transfers = new ChainScan(chain, "MarginTransfer", [
       {
@@ -61,8 +64,8 @@ export class FundingService {
     const depositFirst = this.depositFirst;
     this.depositFirst = !depositFirst;
     return depositFirst
-      ? (await this.credit()) ?? (await this.settle())
-      : (await this.settle()) ?? (await this.credit());
+      ? ((await this.credit()) ?? (await this.settle()))
+      : ((await this.settle()) ?? (await this.credit()));
   }
 
   private async ready(
@@ -70,13 +73,18 @@ export class FundingService {
     address: PublicKey,
     owner: PublicKey,
   ): Promise<boolean> {
-    const info = await this.chain.connection.getAccountInfo(address, "confirmed");
+    const info = await this.chain.connection.getAccountInfo(
+      address,
+      "confirmed",
+    );
     if (!info) return false;
     const state = await this.chain.read<Account>(name, address);
     return state.owner.equals(owner) && "ready" in state.status;
   }
 
-  private async credit(): Promise<{ stage: string; signature: string } | undefined> {
+  private async credit(): Promise<
+    { stage: string; signature: string } | undefined
+  > {
     if (!this.depositQueue.length)
       this.depositQueue = await this.deposits.next<Deposit>();
     while (this.depositQueue.length) {
@@ -93,7 +101,8 @@ export class FundingService {
       )
         continue;
       const balance = balanceAddress(receipt.owner);
-      if (!(await this.ready("BalanceAccount", balance, receipt.owner))) continue;
+      if (!(await this.ready("BalanceAccount", balance, receipt.owner)))
+        continue;
       const offset = new anchor.BN(randomBytes(8), "le");
       const signature = await this.chain.program.methods
         .creditDeposit(offset)
@@ -109,7 +118,9 @@ export class FundingService {
     }
   }
 
-  private async settle(): Promise<{ stage: string; signature: string } | undefined> {
+  private async settle(): Promise<
+    { stage: string; signature: string } | undefined
+  > {
     if (!this.transferQueue.length)
       this.transferQueue = await this.transfers.next<Transfer>();
     while (this.transferQueue.length) {

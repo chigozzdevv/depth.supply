@@ -1,5 +1,9 @@
 import * as anchor from "@anchor-lang/core";
-import { DEPTH_PROGRAM_ID, accountOffsets, enumValues } from "@depthhq/bindings";
+import {
+  DEPTH_PROGRAM_ID,
+  accountOffsets,
+  enumValues,
+} from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import { priceTimestamp } from "@/features/oracle/oracle.price";
 import type { ChainSigner } from "@/shared/chain/chain.signer";
@@ -23,7 +27,9 @@ export class OracleService {
       this.chain.market,
     );
     if (!market.oracleAccount.equals(this.address)) {
-      throw new Error("Configured Pyth account does not match the market oracle");
+      throw new Error(
+        "Configured Pyth account does not match the market oracle",
+      );
     }
     if (market.pendingOrders !== 0 || "settling" in market.status) return;
     const info = await this.chain.connection.getAccountInfo(
@@ -31,16 +37,35 @@ export class OracleService {
       "confirmed",
     );
     if (!info) throw new Error("Configured Pyth price account is missing");
-    if (BigInt(priceTimestamp(info)) <= BigInt(market.oracleTimestamp.toString())) return;
+    const timestamp = BigInt(priceTimestamp(info));
+    if (timestamp <= BigInt(market.oracleTimestamp.toString())) return;
     if (await this.hasSnapshotComputation()) return;
-    return this.chain.program.methods
-      .refreshOracle()
-      .accountsPartial({
-        protocol: this.chain.protocol,
-        market: this.chain.market,
-        priceUpdate: this.address,
-      })
-      .rpc({ commitment: "confirmed" });
+    try {
+      return await this.chain.program.methods
+        .refreshOracle()
+        .accountsPartial({
+          protocol: this.chain.protocol,
+          market: this.chain.market,
+          priceUpdate: this.address,
+        })
+        .rpc({ commitment: "confirmed" });
+    } catch (error) {
+      if (
+        !(error instanceof anchor.AnchorError) ||
+        error.error.errorCode.code !== "StaleOracle"
+      )
+        throw error;
+      const current = await this.chain.read<OracleMarket>(
+        "Market",
+        this.chain.market,
+      );
+      if (
+        !current.oracleAccount.equals(this.address) ||
+        BigInt(current.oracleTimestamp.toString()) < timestamp
+      )
+        throw error;
+      return;
+    }
   }
 
   private async hasSnapshotComputation(): Promise<boolean> {
@@ -102,7 +127,9 @@ export class OracleService {
             {
               memcmp: {
                 offset: check.statusOffset,
-                bytes: anchor.utils.bytes.bs58.encode(Buffer.from([check.status])),
+                bytes: anchor.utils.bytes.bs58.encode(
+                  Buffer.from([check.status]),
+                ),
               },
             },
             ...(check.extra ? [{ memcmp: check.extra }] : []),
@@ -113,7 +140,10 @@ export class OracleService {
         if (account.data.length !== 8) {
           throw new Error("Snapshot computation deadline is unavailable");
         }
-        if (account.data.readBigInt64LE(0) > BigInt(Math.floor(Date.now() / 1_000))) {
+        if (
+          account.data.readBigInt64LE(0) >
+          BigInt(Math.floor(Date.now() / 1_000))
+        ) {
           return true;
         }
       }

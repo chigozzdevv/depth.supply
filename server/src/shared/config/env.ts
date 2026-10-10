@@ -11,6 +11,7 @@ export type KeeperConfig = {
   priceAccount: PublicKey;
   oracleMode: OracleMode;
   oracleIntervalMs: number;
+  keeperIntervalMs?: number;
 };
 export type PublisherConfig = KeeperConfig & {
   apiKey: string;
@@ -65,12 +66,20 @@ export function keeperConfig(
   if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 60000) {
     throw new Error("DEPTH_ORACLE_INTERVAL_MS must be between 1000 and 60000");
   }
+  const keeperIntervalMs = Number(env.DEPTH_KEEPER_INTERVAL_MS ?? "2000");
+  if (
+    !Number.isSafeInteger(keeperIntervalMs) ||
+    keeperIntervalMs < 1000 ||
+    keeperIntervalMs > 30000
+  )
+    throw new Error("DEPTH_KEEPER_INTERVAL_MS must be 1000 to 30000");
   return {
     priceAccount: env.DEPTH_PRICE_ACCOUNT
       ? new PublicKey(env.DEPTH_PRICE_ACCOUNT)
       : SOL_USD_PUSH_ACCOUNT,
     oracleMode: mode,
     oracleIntervalMs: interval,
+    keeperIntervalMs,
     rpcUrl: url,
     keypair: loadSigner("keeper", { env }),
   };
