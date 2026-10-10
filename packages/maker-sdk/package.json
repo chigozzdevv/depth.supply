@@ -1,6 +1,6 @@
 {
   "name": "@depthhq/maker-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publishConfig": {
     "access": "public"
   },
@@ -8,12 +8,14 @@
     "dist"
   ],
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/index.node.js",
+  "browser": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "browser": "./dist/index.js",
+      "default": "./dist/index.node.js"
     },
     "./node": {
       "types": "./dist/node.d.ts",
@@ -30,9 +32,9 @@
     "@arcium-hq/client": "0.13.2",
     "@depthhq/bindings": "workspace:*",
     "@depthhq/sdk": "workspace:*",
+    "@nktkas/hyperliquid": "0.33.3",
     "@solana/web3.js": "1.99.0",
     "buffer": "6.0.3",
-    "@nktkas/hyperliquid": "0.33.3",
     "viem": "2.38.0"
   }
 }

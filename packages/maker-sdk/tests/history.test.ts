@@ -57,7 +57,7 @@ test("fill pagination verifies finalized callback receipts and preserves its RPC
     return [{ signature: "final-signature", slot: 100, err: null, memo: null }];
   };
   connection.getTransaction = async () =>
-    ({ transaction, slot: 100, meta: { err: null } } as never);
+    ({ transaction, slot: 100, meta: { err: null } }) as never;
   connection.getMultipleAccountsInfo = async (ids) => {
     assert.equal(ids[0].toBase58(), order.toBase58());
     return [
@@ -70,7 +70,7 @@ test("fill pagination verifies finalized callback receipts and preserves its RPC
     ];
   };
   program.coder.accounts.decode = () =>
-    ({ maker, market, kind: { trade: {} }, status: { filled: {} } } as never);
+    ({ maker, market, kind: { trade: {} }, status: { filled: {} } }) as never;
   const client = {
     program,
     options: { maker, connection },

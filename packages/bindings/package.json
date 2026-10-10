@@ -1,8 +1,12 @@
 {
   "name": "@depthhq/bindings",
-  "version": "0.1.0",
-  "publishConfig": { "access": "public" },
-  "files": ["dist"],
+  "version": "0.1.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,6 +22,7 @@
   },
   "dependencies": {
     "@arcium-hq/client": "0.13.2",
+    "@types/bn.js": "5.2.0",
     "@solana/web3.js": "1.99.0",
     "buffer": "6.0.3"
   }

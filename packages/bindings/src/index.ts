@@ -1,3 +1,4 @@
+import "@/runtime";
 import { Buffer as BufferPolyfill } from "buffer";
 import { PublicKey } from "@solana/web3.js";
 import type { AccountInfo } from "@solana/web3.js";

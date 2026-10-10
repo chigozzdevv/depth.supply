@@ -13,22 +13,39 @@ if (!address || idl.address !== address) {
 mkdirSync(destination, { recursive: true });
 copyFileSync(
   resolve(source, "idl/depth.json"),
-  resolve(destination, "depth.json")
+  resolve(destination, "depth.json"),
 );
 copyFileSync(
   resolve(source, "types/depth.ts"),
-  resolve(destination, "depth.ts")
+  resolve(destination, "depth.ts"),
 );
 
 const circuits = readFileSync(
   resolve(root, "contracts/build/circuits.ts"),
-  "utf8"
+  "utf8",
 ).replace(/export interface (\w+) \{/g, "export type $1 = {");
-writeFileSync(resolve(destination, "circuits.ts"), circuits);
+const packers = [...circuits.matchAll(/(\w+): createPacker<(\w+), (\w+)>/g)];
+if (!packers.length || !circuits.includes("export const circuits = {"))
+  throw new Error("Arcium's generated packer format changed");
+const portableCircuits = circuits
+  .replace(
+    "import { createPacker } from '@arcium-hq/client';",
+    "import { createPacker } from '@arcium-hq/client';\nimport type { CircuitPacker } from '@/packer';",
+  )
+  .replace(
+    "export const circuits = {",
+    `export const circuits: {\n${packers
+      .map(
+        ([, name, input, output]) =>
+          `  readonly ${name}: CircuitPacker<${input}, ${output}>;`,
+      )
+      .join("\n")}\n} = {`,
+  );
+writeFileSync(resolve(destination, "circuits.ts"), portableCircuits);
 
 const constants = readFileSync(
   resolve(root, "contracts/programs/depth/src/constants.rs"),
-  "utf8"
+  "utf8",
 );
 const computations = [...constants.matchAll(/comp_def_offset\("([^"\n]+)"\)/g)]
   .map((match) => match[1])
@@ -44,8 +61,8 @@ writeFileSync(
   `export const computations = ${JSON.stringify(
     computations,
     null,
-    2
-  )} as const;\n\nexport function computationName(name: string) {\n  const current = computations.find(\n    (value) => value === name || value.replace(/_v\\d+$/, "") === name,\n  );\n  if (!current) throw new Error(\`Unknown Depth computation: \${name}\`);\n  return current;\n}\n`
+    2,
+  )} as const;\n\nexport function computationName(name: string) {\n  const current = computations.find(\n    (value) => value === name || value.replace(/_v\\d+$/, "") === name,\n  );\n  if (!current) throw new Error(\`Unknown Depth computation: \${name}\`);\n  return current;\n}\n`,
 );
 
 const typeByName = new Map(idl.types.map((type) => [type.name, type.type]));
@@ -76,7 +93,7 @@ function span(type) {
       return 1;
   }
   throw new Error(
-    `Expected a fixed-width account field: ${JSON.stringify(type)}`
+    `Expected a fixed-width account field: ${JSON.stringify(type)}`,
   );
 }
 const offsets = {};
@@ -99,7 +116,7 @@ for (const name of [
       const entry = [field.name, offset];
       offset += span(field.type);
       return entry;
-    })
+    }),
   );
 }
 const variants = Object.fromEntries(
@@ -117,24 +134,24 @@ const variants = Object.fromEntries(
           "BackstopStatus",
         ].includes(name) &&
         type.kind === "enum" &&
-        type.variants.every((variant) => !variant.fields?.length)
+        type.variants.every((variant) => !variant.fields?.length),
     )
     .map(([name, type]) => [
       name,
       Object.fromEntries(
-        type.variants.map((variant, index) => [variant.name, index])
+        type.variants.map((variant, index) => [variant.name, index]),
       ),
-    ])
+    ]),
 );
 writeFileSync(
   resolve(destination, "layout.ts"),
   `export const accountOffsets = ${JSON.stringify(
     offsets,
     null,
-    2
+    2,
   )} as const;\nexport const enumValues = ${JSON.stringify(
     variants,
     null,
-    2
-  )} as const;\n`
+    2,
+  )} as const;\n`,
 );

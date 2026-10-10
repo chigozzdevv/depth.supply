@@ -1,8 +1,12 @@
 {
   "name": "@depthhq/sdk",
-  "version": "0.1.0",
-  "publishConfig": { "access": "public" },
-  "files": ["dist"],
+  "version": "0.1.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist"
+  ],
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -10,6 +14,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./data": {
+      "types": "./dist/catalog/data.d.ts",
+      "default": "./dist/catalog/data.js"
     },
     "./views": {
       "types": "./dist/view/view.d.ts",
@@ -38,6 +46,7 @@
     "@arcium-hq/client": "0.13.2",
     "@depthhq/bindings": "workspace:*",
     "@depthhq/schema": "workspace:*",
+    "@noble/ciphers": "1.3.0",
     "@noble/ed25519": "1.7.5",
     "@noble/hashes": "1.8.0",
     "@solana/web3.js": "1.99.0",

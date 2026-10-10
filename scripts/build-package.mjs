@@ -15,8 +15,15 @@ const require = createRequire(import.meta.url);
 const entries = {
   bindings: ["index"],
   schema: ["index"],
-  sdk: ["index", "view/view", "recovery/recovery", "account/funding", "operator"],
-  "maker-sdk": ["index", "node"],
+  sdk: [
+    "index",
+    "catalog/data",
+    "view/view",
+    "recovery/recovery",
+    "account/funding",
+    "operator",
+  ],
+  "maker-sdk": ["index", "index.node", "node"],
 };
 
 function rewriteDeclarations(folder, output) {
@@ -28,7 +35,7 @@ function rewriteDeclarations(folder, output) {
     }
     if (!path.endsWith(".d.ts")) continue;
     const source = readFileSync(path, "utf8");
-    const rewritten = source.replace(
+    const aliased = source.replace(
       /(["'])@\/([^"']+)\1/g,
       (_match, quote, name) => {
         const target = join(output, name);
@@ -36,6 +43,11 @@ function rewriteDeclarations(folder, output) {
         if (!specifier.startsWith(".")) specifier = `./${specifier}`;
         return `${quote}${specifier}${quote}`;
       },
+    );
+    const rewritten = aliased.replace(
+      /(["'])(\.\.?\/[^"']+)\1/g,
+      (_match, quote, name) =>
+        `${quote}${/\.(?:json|[cm]?js)$/.test(name) ? name : `${name}.js`}${quote}`,
     );
     writeFileSync(path, rewritten);
   }
@@ -55,21 +67,16 @@ for (const name of requested) {
     mkdirSync(dirname(file), { recursive: true });
     const target =
       (name === "sdk" && entry === "operator") ||
-      (name === "maker-sdk" && entry === "node")
+      (name === "maker-sdk" && ["node", "index.node"].includes(entry))
         ? "node"
         : "browser";
     execFileSync(
       "bun",
       [
-        "build",
-        join(folder, "src", `${entry}.ts`),
-        "--external=@anchor-lang/*",
-        "--external=@arcium-hq/*",
-        "--external=@depthhq/*",
-        "--external=@solana/*",
-        `--target=${target}`,
-        "--format=esm",
-        `--outfile=${file}`,
+        join(root, "scripts", "bundle.mjs"),
+        join(folder, "src", `${entry === "index.node" ? "index" : entry}.ts`),
+        target,
+        file,
       ],
       { cwd: folder, stdio: "inherit" },
     );
