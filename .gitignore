@@ -7,8 +7,10 @@ coverage/
 .env.*
 !.env.example
 /keys/
+/data/
 /deployments/
-/artifacts/
 /.tools/
 *.log
 .DS_Store
+.next/
+*.tsbuildinfo

@@ -7,6 +7,7 @@
     "start": "bun --env-file=../.env.local src/server.ts",
     "keeper": "bun --env-file=../.env.local src/features/settlement/settlement.worker.ts",
     "publisher": "bun --env-file=../.env.local src/features/oracle/oracle.worker.ts",
+    "maker": "bun --env-file=../.env.local src/features/maker/maker.worker.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun test"
   },
@@ -14,6 +15,7 @@
     "@anchor-lang/core": "1.0.2",
     "@arcium-hq/client": "0.13.2",
     "@depthhq/bindings": "workspace:*",
+    "@depthhq/maker-sdk": "workspace:*",
     "@depthhq/schema": "workspace:*",
     "@depthhq/sdk": "workspace:*",
     "@pythnetwork/hermes-client": "3.1.0",

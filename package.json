@@ -2,10 +2,15 @@
   "name": "depth-workspace",
   "private": true,
   "scripts": {
-    "build": "node scripts/build-package.mjs bindings schema sdk maker-sdk",
+    "dev": "pnpm --filter @depthhq/client dev",
+    "maker": "pnpm --filter @depthhq/server maker",
+    "build": "node scripts/build-package.mjs bindings schema sdk maker-sdk && pnpm --filter @depthhq/client build",
+    "client:build": "pnpm --filter @depthhq/client build",
     "sync:bindings": "node scripts/sync-bindings.mjs",
+    "sdk:pack": "node scripts/pack.mjs",
+    "sdk:publish": "node scripts/publish.mjs",
     "typecheck": "pnpm -r typecheck && tsc --noEmit -p scripts/tsconfig.json",
-    "test": "node --test scripts/paths.test.mjs scripts/signers.test.mjs scripts/toolchain.test.mjs && bun test scripts/devnet/workflow.test.ts && pnpm -r test",
+    "test": "node --test scripts/crypto.test.mjs scripts/paths.test.mjs scripts/publish.test.mjs scripts/signers.test.mjs scripts/toolchain.test.mjs && bun test scripts/devnet/workflow.test.ts && pnpm -r test",
     "tools:setup": "node --env-file-if-exists=.env.local scripts/setup.mjs",
     "keys:setup": "node --env-file-if-exists=.env.local scripts/keys.mjs",
     "devnet:setup": "bun --env-file=.env.local packages/sdk/scripts/setup.ts",
@@ -14,6 +19,9 @@
     "devnet:quote": "bun --env-file=.env.local scripts/devnet/quote.ts",
     "devnet:audit": "bun --env-file=.env.local scripts/devnet/quote.ts --audit",
     "devnet:callbacks": "bun --env-file=.env.local scripts/devnet/callback.ts",
+    "devnet:bot": "bun --env-file=.env.local scripts/devnet/bot.ts",
+    "devnet:hedge": "bun --env-file=.env.local scripts/devnet/hedge.ts",
+    "devnet:history": "bun --env-file=.env.local scripts/devnet/history.ts",
     "scripts:typecheck": "tsc --noEmit -p scripts/tsconfig.json"
   },
   "devDependencies": {
