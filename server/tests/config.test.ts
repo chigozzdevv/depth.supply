@@ -12,7 +12,43 @@ import {
   oracleMode,
   publisherConfig,
   serverConfig,
+  makerConfig,
 } from "@/shared/config/env";
+
+test("maker worker configuration uses a scoped signer and validates its price and inventory limits", () => {
+  const signer = Keypair.generate();
+  const env = {
+    SOLANA_RPC_URL: "https://rpc.example.test",
+    DEPTH_SERVICE_URL: "https://api.example.test",
+    DEPTH_MAKER_OWNER: Keypair.generate().publicKey.toBase58(),
+    DEPTH_MAKER_KEYPAIR: JSON.stringify(Array.from(signer.secretKey)),
+  };
+  const config = makerConfig(env);
+  assert.equal(config.policy.maxCapacity, 100_000_000n);
+  assert.equal(config.policy.gasReserveLamports, 50_000_000n);
+  assert.ok(config.keypair.publicKey.equals(signer.publicKey));
+  assert.ok(!config.keypair.publicKey.equals(config.owner));
+  assert.throws(
+    () => makerConfig({ ...env, DEPTH_MAKER_CAPACITY: "-1" }),
+    /micro-USDC/,
+  );
+  assert.throws(
+    () => makerConfig({ ...env, DEPTH_MAKER_CAPACITY: "2000000000" }),
+    /inventory/,
+  );
+  assert.throws(
+    () => makerConfig({ ...env, DEPTH_MAKER_SPREAD_BPS: "20000" }),
+    /price bounds/,
+  );
+  assert.throws(
+    () => makerConfig({ ...env, DEPTH_MAKER_REFRESH_SECONDS: "121" }),
+    /expiry/,
+  );
+  assert.throws(
+    () => makerConfig({ ...env, DEPTH_MAKER_GAS_RESERVE_LAMPORTS: "999" }),
+    /SOL reserve/,
+  );
+});
 
 test("deployment paths resolve from the repository root", () => {
   const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -24,7 +60,7 @@ test("deployment paths resolve from the repository root", () => {
     {
       devnet: join(root, "deployments/devnet/manifest.json"),
       "mainnet-beta": undefined,
-    }
+    },
   );
 });
 
@@ -40,22 +76,22 @@ test("shared configuration validates RPC URLs and the keeper signer", () => {
   assert.ok(config.keypair.publicKey.equals(keypair.publicKey));
   assert.equal(
     SOL_USD_PUSH_ACCOUNT.toBase58(),
-    "7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE"
+    "7UVimffxr9ow1uXYxsr4LHAcV58mLzhmwaeKvJ1pjLiE",
   );
   assert.ok(
     keeperConfig({
       SOLANA_RPC_URL: "https://rpc.example.test",
       DEPTH_KEEPER_KEYPAIR: JSON.stringify(Array.from(keypair.secretKey)),
-    }).priceAccount.equals(SOL_USD_PUSH_ACCOUNT)
+    }).priceAccount.equals(SOL_USD_PUSH_ACCOUNT),
   );
   assert.equal(
     serverConfig({ SOLANA_RPC_URL: "https://rpc.example.test" }).port,
-    8787
+    8787,
   );
 
   assert.throws(
     () => keeperConfig({ SOLANA_RPC_URL: "file:///tmp/rpc" }),
-    /HTTP or HTTPS/
+    /HTTP or HTTPS/,
   );
   assert.throws(
     () =>
@@ -63,12 +99,12 @@ test("shared configuration validates RPC URLs and the keeper signer", () => {
         SOLANA_RPC_URL: "https://rpc.example.test",
         DEPTH_KEEPER_KEYPAIR: "[]",
       }),
-    /64-byte JSON array/
+    /64-byte JSON array/,
   );
   assert.equal(oracleMode({ PYTH_ORACLE_MODE: "hermes" }), "hermes");
   assert.throws(
     () => oracleMode({ PYTH_ORACLE_MODE: "unknown" }),
-    /sponsored or hermes/
+    /sponsored or hermes/,
   );
 });
 
@@ -90,14 +126,14 @@ test("keeper and publisher can load one signer from a local file", () => {
       keeperConfig({
         ...env,
         DEPTH_KEEPER_KEYPAIR_PATH: relative(root, path),
-      }).keypair.publicKey.equals(signer.publicKey)
+      }).keypair.publicKey.equals(signer.publicKey),
     );
     assert.ok(
       publisherConfig({
         ...env,
         PYTH_ORACLE_MODE: "hermes",
         PYTH_API_KEY: "test-key",
-      }).keypair.publicKey.equals(signer.publicKey)
+      }).keypair.publicKey.equals(signer.publicKey),
     );
     assert.throws(
       () =>
@@ -105,7 +141,7 @@ test("keeper and publisher can load one signer from a local file", () => {
           ...env,
           DEPTH_KEEPER_KEYPAIR: JSON.stringify(Array.from(signer.secretKey)),
         }),
-      /one keeper signer source/
+      /one keeper signer source/,
     );
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -125,21 +161,21 @@ test("publisher configuration requires a Pyth key and a valid shard", () => {
   assert.equal(config.publishAfterSeconds, 75);
   assert.throws(
     () => publisherConfig({ ...env, PYTH_API_KEY: "" }),
-    /PYTH_API_KEY/
+    /PYTH_API_KEY/,
   );
   assert.throws(
     () => publisherConfig({ ...env, PYTH_ORACLE_MODE: "sponsored" }),
-    /PYTH_ORACLE_MODE=hermes/
+    /PYTH_ORACLE_MODE=hermes/,
   );
   assert.ok(
     keeperConfig({
       ...env,
       PYTH_ORACLE_MODE: "sponsored",
       PYTH_API_KEY: "",
-    }).priceAccount.equals(SOL_USD_PUSH_ACCOUNT)
+    }).priceAccount.equals(SOL_USD_PUSH_ACCOUNT),
   );
   assert.throws(
     () => publisherConfig({ ...env, DEPTH_PYTH_SHARD_ID: "65536" }),
-    /16-bit integer/
+    /16-bit integer/,
   );
 });

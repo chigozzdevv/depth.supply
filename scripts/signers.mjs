@@ -27,6 +27,12 @@ const roles = {
     fallback: "keys/devnet/trader.json",
     create: true,
   },
+  maker: {
+    path: "DEPTH_MAKER_KEYPAIR_PATH",
+    inline: "DEPTH_MAKER_KEYPAIR",
+    fallback: "keys/devnet/maker.json",
+    create: true,
+  },
   localnet: { create: true },
   keeper: { path: "DEPTH_KEEPER_KEYPAIR_PATH", inline: "DEPTH_KEEPER_KEYPAIR" },
 };

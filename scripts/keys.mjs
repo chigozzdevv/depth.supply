@@ -8,7 +8,7 @@ if (
   throw new Error("Usage: keys.mjs <devnet|localnet>");
 }
 for (const role of environment === "devnet"
-  ? ["app", "trader"]
+  ? ["app", "trader", "maker"]
   : ["localnet"]) {
   const signer = createSigner(role);
   console.log(`${role}: ${signer.publicKey.toBase58()} (${signerPath(role)})`);

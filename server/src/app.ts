@@ -14,7 +14,9 @@ import { QuoteService } from "@/features/quote/quote.service";
 import { recoveryRoute } from "@/features/recovery/recovery.route";
 import { RecoveryService } from "@/features/recovery/recovery.service";
 import type { ChainClient } from "@/shared/chain/chain.client";
-import { deploymentPaths } from "@/shared/config/env";
+import { deploymentPaths, makerWorkerUrl } from "@/shared/config/env";
+import { makerRoute } from "@/features/maker/maker.route";
+import { MakerProxy } from "@/features/maker/maker.service";
 import { registerHttp } from "@/shared/http/http.plugin";
 
 export function buildApp(chain: ChainClient, logger = true): FastifyInstance {
@@ -27,6 +29,7 @@ export function buildApp(chain: ChainClient, logger = true): FastifyInstance {
   quoteRoute(app, new QuoteService(chain));
   operationRoute(app, new OperationService(chain));
   appRoute(app, new AppService(chain));
+  makerRoute(app, new MakerProxy(makerWorkerUrl()));
 
   return app;
 }

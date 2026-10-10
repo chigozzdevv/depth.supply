@@ -1,0 +1,528 @@
+import { createHash, randomBytes } from "node:crypto";
+import { PublicKey } from "@solana/web3.js";
+import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
+import type { MakerClient } from "@/client/client";
+import { BotStore, type BotState } from "@/bot/store";
+import {
+  botQuote,
+  quoteHealth,
+  validateBotPolicy,
+  type BotMarket,
+  type BotPolicy,
+  type BotPricing,
+} from "@/bot/policy";
+import type { PositionSnapshot } from "@depthhq/sdk";
+import { HedgeEngine } from "@/hedge/engine";
+
+export type BotSnapshot = {
+  phase: "active" | "pending" | "idle" | "stopped";
+  reason?: string;
+  quoteId?: string;
+  fillCount: number;
+};
+const terminal = new Set(["filled", "cancelled", "rejected"]);
+const nonce = () => BigInt(`0x${randomBytes(8).toString("hex")}`);
+
+export class MakerBot {
+  private state?: BotState;
+  private position?: PositionSnapshot;
+  private dirty = true;
+  private busy = false;
+  private stopping = false;
+  private pricing?: BotPricing;
+  private hedgeLease?: BotStore;
+  private pricingDirty = false;
+  private constructor(
+    readonly maker: MakerClient,
+    readonly policy: BotPolicy,
+    readonly store: BotStore,
+    readonly hedge?: HedgeEngine,
+  ) {}
+  static async create(options: {
+    maker: MakerClient;
+    policy: BotPolicy;
+    stateDirectory: string;
+    hedge?: HedgeEngine;
+  }) {
+    validateBotPolicy(options.policy);
+    const client = options.maker;
+    const store = new BotStore(
+      await client.options.connection.getGenesisHash(),
+      client.options.maker.toBase58(),
+      client.options.wallet.publicKey.toBase58(),
+      options.stateDirectory,
+    );
+    await store.acquire();
+    const bot = new MakerBot(client, options.policy, store, options.hedge);
+    try {
+      bot.state = await store.load();
+      if (!options.hedge && bot.state.hedge)
+        throw new Error(
+          "Restore the configured hedge adapter before restarting a previously hedged maker",
+        );
+      if (options.hedge) {
+        if (
+          bot.state.hedge &&
+          bot.state.hedge.identity !== options.hedge.adapter.identity
+        )
+          throw new Error(
+            "Hedge checkpoint belongs to another account or network",
+          );
+        bot.hedgeLease = new BotStore(
+          PublicKey.default.toBase58(),
+          new PublicKey(
+            createHash("sha256")
+              .update(options.hedge.adapter.identity)
+              .digest(),
+          ).toBase58(),
+          PublicKey.default.toBase58(),
+          options.stateDirectory,
+        );
+        await bot.hedgeLease.acquire();
+        const shared = await bot.hedgeLease.load();
+        if (shared.hedge) bot.state.hedge = shared.hedge;
+        bot.state.hedge ??= {
+          identity: options.hedge.adapter.identity,
+          nonce: 0,
+          history: [],
+        };
+        if (bot.state.hedge.identity !== options.hedge.adapter.identity)
+          throw new Error("Shared hedge checkpoint belongs to another account");
+        const depthAccount = `${store.genesis}:${client.marketAccount().toBase58()}`;
+        if (
+          bot.state.hedge.depthAccount &&
+          bot.state.hedge.depthAccount !== depthAccount
+        )
+          throw new Error(
+            "Hedge account is already assigned to another Depth maker or network",
+          );
+        bot.state.hedge.depthAccount = depthAccount;
+        await bot.saveHedge();
+        await store.save(bot.state);
+      }
+      await bot.reconcile();
+      return bot;
+    } catch (error) {
+      await bot.hedgeLease?.release();
+      await store.release();
+      throw error;
+    }
+  }
+  private async saveHedge() {
+    const store = this.hedgeLease!;
+    await store.save({
+      genesis: store.genesis,
+      maker: store.maker,
+      operator: store.operator,
+      fills: {},
+      hedge: this.state!.hedge,
+    });
+    await this.store.save(this.state!);
+  }
+  private async hedgeTick() {
+    if (!this.hedge) return;
+    const account = await this.maker.read<{
+      status: Record<string, unknown>;
+      version: { toString(): string };
+    }>("MarketAccount", this.maker.marketAccount(), "finalized");
+    const confirmed = await this.maker.read<typeof account>(
+      "MarketAccount",
+      this.maker.marketAccount(),
+    );
+    let ready =
+      "ready" in account.status &&
+      "ready" in confirmed.status &&
+      account.version.toString() === confirmed.version.toString();
+    if (
+      ready &&
+      (!this.position ||
+        this.position.version !== BigInt(account.version.toString()) ||
+        this.dirty)
+    ) {
+      const prior = this.position?.version;
+      this.position = await this.maker.position.summary({ timeoutMs: 180_000 });
+      const fresh = await this.maker.read<typeof account>(
+        "MarketAccount",
+        this.maker.marketAccount(),
+        "finalized",
+      );
+      const latest = await this.maker.read<typeof account>(
+        "MarketAccount",
+        this.maker.marketAccount(),
+      );
+      ready =
+        "ready" in fresh.status &&
+        "ready" in latest.status &&
+        fresh.version.toString() === latest.version.toString() &&
+        this.position.status === "ready" &&
+        this.position.version === BigInt(fresh.version.toString());
+      if (ready) {
+        this.pricingDirty ||= prior !== this.position.version || this.dirty;
+        this.dirty = false;
+      }
+    }
+    const snapshot = await this.hedge.tick(
+      this.state!.hedge!,
+      () => this.saveHedge(),
+      ready ? this.position?.position : undefined,
+    );
+    if (snapshot.phase === "pending" || snapshot.phase === "blocked") {
+      await this.cancel(true);
+      return snapshot.reason ?? "hedge reconciliation pending";
+    }
+    const [book, costs] = await Promise.all([
+      this.hedge.adapter.book(),
+      this.hedge.adapter.costs(),
+    ]);
+    if (this.pricing) {
+      const before =
+        this.pricing.book.bids[0].priceE8 + this.pricing.book.asks[0].priceE8;
+      const after = book.bids[0].priceE8 + book.asks[0].priceE8;
+      const change = after > before ? after - before : before - after;
+      this.pricingDirty ||=
+        change * 10_000n >= before * BigInt(this.policy.repriceBps) ||
+        costs.takerFeeBps !== this.pricing.takerFeeBps ||
+        costs.hourlyFundingBps !== this.pricing.hourlyFundingBps;
+    }
+    this.pricing = {
+      book,
+      ...costs,
+      externalPosition: snapshot.externalPosition!,
+      maxPriceAgeMs: this.hedge.policy.maxPriceAgeMs,
+    };
+  }
+  private snapshot(phase: BotSnapshot["phase"], reason?: string): BotSnapshot {
+    return {
+      phase,
+      reason,
+      quoteId: this.state?.quote,
+      fillCount: Object.keys(this.state?.fills ?? {}).length,
+    };
+  }
+  private requestId() {
+    const value = this.state?.request?.clientNonce;
+    if (value === undefined) return;
+    const bytes = Buffer.alloc(8);
+    bytes.writeBigUInt64LE(value);
+    return PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("quote"),
+        this.maker.marketAddress.toBuffer(),
+        this.maker.options.maker.toBuffer(),
+        bytes,
+      ],
+      DEPTH_PROGRAM_ID,
+    )[0];
+  }
+  private async reconcile() {
+    const state = this.state!;
+    let cursor: string | undefined;
+    const managed: string[] = [];
+    do {
+      const page = await this.maker.quote.list({ cursor, limit: 100 });
+      for (const item of page.items) {
+        const quote = await this.maker.quoteState(item.id);
+        if (
+          quote.operator.equals(this.maker.options.wallet.publicKey) &&
+          !terminal.has(Object.keys(quote.status)[0])
+        )
+          managed.push(item.id.toBase58());
+      }
+      cursor = page.nextCursor ?? undefined;
+    } while (cursor);
+    const allowed = new Set(
+      [
+        state.quote,
+        state.replacement?.prior,
+        this.requestId()?.toBase58(),
+      ].filter(Boolean),
+    );
+    for (const id of managed)
+      if (!allowed.has(id)) {
+        const quote = await this.maker.quote.get(new PublicKey(id)).status();
+        if (
+          ["active", "waiting", "validated", "validating", "closing"].includes(
+            quote.status,
+          )
+        )
+          await this.maker.quote.get(new PublicKey(id)).cancel();
+      }
+  }
+  private async fills() {
+    const state = this.state!;
+    let before: string | undefined;
+    let head: string | undefined;
+    const records = new Map<string, { signature: string; slot: number }>();
+    do {
+      const page = await this.maker.fills.list({
+        before,
+        until: state.cursor,
+        limit: 100,
+      });
+      head ??= page.head;
+      for (const fill of page.fills)
+        if (!state.fills[fill.id])
+          records.set(fill.id, { signature: fill.signature, slot: fill.slot });
+      before = page.cursor;
+    } while (before);
+    if (records.size) {
+      for (const [id, value] of records) state.fills[id] = value;
+      this.dirty = true;
+    }
+    if (head) {
+      state.cursor = head;
+      await this.store.save(state);
+    }
+  }
+  private async cancel(preserve = false): Promise<boolean> {
+    const state = this.state!;
+    if (!state.quote) {
+      const request = this.requestId();
+      if (
+        request &&
+        (await this.maker.options.connection.getAccountInfo(
+          request,
+          "confirmed",
+        ))
+      )
+        state.quote = request.toBase58();
+      else {
+        if (
+          state.request &&
+          (preserve ||
+            state.request.expiresAt + 180 > Math.floor(Date.now() / 1000))
+        )
+          return false;
+        state.request = undefined;
+        if (!preserve) state.replacement = undefined;
+        await this.store.save(state);
+        return true;
+      }
+    }
+    const handle = this.maker.quote.get(new PublicKey(state.quote));
+    const quote = await handle.status();
+    if (terminal.has(quote.status)) {
+      state.quote = undefined;
+      state.request = undefined;
+      state.referencePrice = undefined;
+      if (!preserve) state.replacement = undefined;
+      this.dirty = true;
+      await this.store.save(state);
+      return true;
+    }
+    if (
+      ["active", "waiting", "validated", "validating", "closing"].includes(
+        quote.status,
+      )
+    )
+      await handle.cancel();
+    return false;
+  }
+  async tick(): Promise<BotSnapshot> {
+    if (this.busy) throw new Error("Maker bot tick is already running");
+    if (!this.state) throw new Error("Maker bot has been closed");
+    this.busy = true;
+    try {
+      const state = this.state;
+      let [market, lamports] = await Promise.all([
+        this.maker.read<BotMarket>("Market", this.maker.marketAddress),
+        this.maker.options.connection.getBalance(
+          this.maker.options.wallet.publicKey,
+          "confirmed",
+        ),
+      ]);
+      let now = Math.floor(Date.now() / 1000);
+      const reason = this.stopping
+        ? "shutdown"
+        : (quoteHealth(market, now) ??
+          (BigInt(lamports) < (this.policy.gasReserveLamports ?? 50_000_000n)
+            ? "operator SOL reserve"
+            : undefined));
+      if (reason) {
+        if (!this.stopping && this.hedge && state.hedge?.pending)
+          await this.hedge.tick(state.hedge, () => this.saveHedge(), undefined);
+        const stopped = await this.cancel();
+        return this.snapshot(stopped ? "stopped" : "pending", reason);
+      }
+      await this.fills();
+      const hedgeReason = await this.hedgeTick();
+      if (hedgeReason) return this.snapshot("pending", hedgeReason);
+      if (this.hedge) {
+        market = await this.maker.read<BotMarket>(
+          "Market",
+          this.maker.marketAddress,
+        );
+        now = Math.floor(Date.now() / 1000);
+        const changed = quoteHealth(market, now);
+        if (changed) {
+          const stopped = await this.cancel();
+          return this.snapshot(stopped ? "stopped" : "pending", changed);
+        }
+      }
+      if (
+        !state.quote &&
+        this.requestId() &&
+        (await this.maker.options.connection.getAccountInfo(
+          this.requestId()!,
+          "confirmed",
+        ))
+      ) {
+        state.quote = this.requestId()!.toBase58();
+        await this.store.save(state);
+      }
+      if (state.quote) {
+        const handle = this.maker.quote.get(new PublicKey(state.quote));
+        const quote = await handle.status();
+        if (terminal.has(quote.status)) {
+          state.quote = undefined;
+          state.request = undefined;
+          this.dirty = true;
+          await this.store.save(state);
+        } else if (state.replacement) {
+          if (!["cancelled", "filled"].includes(quote.status)) {
+            await this.maker.quote
+              .replacement(
+                new PublicKey(state.replacement.prior),
+                state.replacement.nonce,
+              )
+              .begin();
+            await this.cancel(true);
+            return this.snapshot("pending", "releasing prior quote");
+          }
+        } else if (
+          ["validating", "validated", "waiting", "reserving"].includes(
+            quote.status,
+          )
+        ) {
+          const current = await this.maker.quoteState(handle.id);
+          if (
+            current.expiry.toNumber() <= now &&
+            ["validating", "validated", "waiting"].includes(quote.status)
+          )
+            await this.cancel();
+          else await handle.activate({ timeoutMs: 0 });
+          return this.snapshot("pending", "activating quote");
+        } else if (["closing", "releasing"].includes(quote.status)) {
+          await this.cancel();
+          return this.snapshot("pending", "releasing quote");
+        } else if (quote.status === "active") {
+          const price = BigInt(market.oraclePriceE8.toString());
+          const difference =
+            state.referencePrice === undefined
+              ? undefined
+              : (price > state.referencePrice
+                  ? price - state.referencePrice
+                  : state.referencePrice - price) * 10_000n;
+          const current = await this.maker.quoteState(handle.id);
+          const duration = Math.min(
+            this.policy.lifetimeSeconds,
+            market.config.maxQuoteLifetimeSeconds,
+          );
+          const refresh =
+            current.expiry.toNumber() - now <=
+            duration - Math.min(this.policy.refreshSeconds, duration - 1);
+          if (
+            !this.dirty &&
+            !this.pricingDirty &&
+            !refresh &&
+            difference !== undefined &&
+            difference < BigInt(this.policy.repriceBps) * state.referencePrice!
+          )
+            return this.snapshot("active");
+          state.replacement = { prior: state.quote, nonce: nonce() };
+          this.pricingDirty = false;
+          await this.store.save(state);
+          await this.maker.quote
+            .replacement(handle.id, state.replacement.nonce)
+            .begin();
+          await this.cancel(true);
+          return this.snapshot("pending", "repricing quote");
+        }
+      }
+      if (market.pendingOrders > 0)
+        return this.snapshot("idle", "settlement in progress");
+      const account = await this.maker.read<{
+        status: Record<string, unknown>;
+        version: { toString(): string };
+      }>("MarketAccount", this.maker.marketAccount());
+      if (!("ready" in account.status))
+        return this.snapshot("idle", "maker account busy");
+      if (
+        this.dirty ||
+        !this.position ||
+        this.position.version !== BigInt(account.version.toString())
+      ) {
+        this.position = await this.maker.position.summary({
+          timeoutMs: 180_000,
+        });
+        if (
+          this.position.status !== "ready" ||
+          this.position.version !== BigInt(account.version.toString())
+        )
+          return this.snapshot("idle", "maker view changed");
+        this.dirty = false;
+        return this.snapshot("idle", "maker view refreshed");
+      }
+      if (!state.request) {
+        const request = botQuote(
+          this.policy,
+          market,
+          this.position,
+          state.replacement?.nonce ?? nonce(),
+          now,
+          this.pricing,
+        );
+        if (!request)
+          return this.snapshot("idle", "inventory or collateral limit");
+        state.request = request;
+        this.pricingDirty = false;
+        state.referencePrice = BigInt(market.oraclePriceE8.toString());
+        await this.store.save(state);
+      }
+      const request = state.request;
+      if (request.expiresAt <= now) {
+        state.request = undefined;
+        await this.store.save(state);
+        return this.snapshot("idle", "prepared quote expired");
+      }
+      const handle = state.replacement
+        ? await this.maker.quote
+            .replacement(
+              new PublicKey(state.replacement.prior),
+              state.replacement.nonce,
+            )
+            .resume(request, { timeoutMs: 0 })
+        : await this.maker.quote.publish(request);
+      state.quote = handle.id.toBase58();
+      state.replacement = undefined;
+      await this.store.save(state);
+      await handle.activate({ timeoutMs: 0 });
+      return this.snapshot("pending", "quote submitted");
+    } catch (error) {
+      this.dirty = true;
+      try {
+        await this.cancel(true);
+      } catch (cause) {
+        throw new AggregateError(
+          [error, cause],
+          "Maker bot failed and quote cancellation could not be confirmed",
+        );
+      }
+      throw error;
+    } finally {
+      this.busy = false;
+    }
+  }
+  stop() {
+    this.stopping = true;
+  }
+  async close() {
+    if (this.busy)
+      throw new Error("Wait for the active maker tick before closing");
+    await this.store.release();
+    await this.hedgeLease?.release();
+    this.state = undefined;
+  }
+}
+
+export const create_maker_bot = MakerBot.create;

@@ -4,7 +4,11 @@ export function registerHttp(app: FastifyInstance): void {
   app.addHook("onRequest", async (request, reply) => {
     if (request.headers.origin) {
       reply.header("access-control-allow-origin", "*");
-      reply.header("access-control-allow-methods", "GET, HEAD, OPTIONS");
+      reply.header("access-control-allow-methods", "GET, HEAD, POST, OPTIONS");
+      reply.header(
+        "access-control-allow-headers",
+        "Content-Type, Authorization",
+      );
     }
     reply.header("cache-control", "no-store");
   });

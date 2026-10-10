@@ -6,6 +6,7 @@ export type SignerRole =
   | "buffer"
   | "app"
   | "trader"
+  | "maker"
   | "localnet"
   | "keeper";
 export type SignerOptions = {
