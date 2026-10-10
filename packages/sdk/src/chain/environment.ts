@@ -1,4 +1,4 @@
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { authenticateManifest } from "@/chain/manifest";
 import type { DeploymentPolicy, SignedManifest } from "@/chain/manifest";

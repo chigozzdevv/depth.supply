@@ -8,7 +8,7 @@ import {
   recoveryConfigAddress,
   transferAddress,
   withdrawalAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { randomBytes } from "@/chain/random";
 import { submissionError } from "@/operation/error";
@@ -144,8 +144,8 @@ export class FundingClient {
           ? this.program.methods.cancelFreeDebit
           : this.program.methods.cancelMarketDebit
         : free
-        ? this.program.methods.cancelFreeCredit
-        : this.program.methods.cancelMarketCredit;
+          ? this.program.methods.cancelFreeCredit
+          : this.program.methods.cancelMarketCredit;
     return method()
       .accountsPartial({
         owner: this.owner,

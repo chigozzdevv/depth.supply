@@ -65,7 +65,7 @@ for (const name of requested) {
         join(folder, "src", `${entry}.ts`),
         "--external=@anchor-lang/*",
         "--external=@arcium-hq/*",
-        "--external=@depth/*",
+        "--external=@depthhq/*",
         "--external=@solana/*",
         `--target=${target}`,
         "--format=esm",

@@ -1,4 +1,4 @@
-import { operationSnapshotSchema } from "@depth/schema";
+import { operationSnapshotSchema } from "@depthhq/schema";
 import { addressParam, errorResponse } from "@/shared/http/http.schema";
 
 export const operationGetSchema = {

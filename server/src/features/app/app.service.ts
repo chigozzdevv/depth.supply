@@ -1,5 +1,5 @@
-import { appAddress } from "@depth/bindings";
-import type { PublicApp } from "@depth/schema";
+import { appAddress } from "@depthhq/bindings";
+import type { PublicApp } from "@depthhq/schema";
 import { PublicKey } from "@solana/web3.js";
 import type { ChainClient } from "@/shared/chain/chain.client";
 import { integer } from "@/shared/chain/chain.format";

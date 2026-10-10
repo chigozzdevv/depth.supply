@@ -1,4 +1,4 @@
-import { publicMarketSchema } from "@depth/schema";
+import { publicMarketSchema } from "@depthhq/schema";
 import { errorResponse, marketParam } from "@/shared/http/http.schema";
 
 export const marketListSchema = {

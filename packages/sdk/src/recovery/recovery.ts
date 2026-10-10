@@ -4,7 +4,7 @@ import {
   DEPTH_PROGRAM_ID,
   marketAddress,
   protocolAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 type WinddownState = {

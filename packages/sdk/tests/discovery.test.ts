@@ -3,7 +3,7 @@ import {
   DEPTH_PROGRAM_ID,
   marketAddress,
   transferAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";

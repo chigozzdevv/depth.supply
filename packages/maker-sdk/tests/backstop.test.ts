@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -12,7 +12,8 @@ function fixture(operator = false) {
   const accountAddress = PublicKey.unique();
   const protocolAddress = PublicKey.unique();
   let state = "reserving";
-  const calls: Array<{ name: string; accounts: Record<string, PublicKey> }> = [];
+  const calls: Array<{ name: string; accounts: Record<string, PublicKey> }> =
+    [];
   let offerId: PublicKey;
   const nonce = 41n;
   const client = {
@@ -121,9 +122,15 @@ test("owner offer uses the canonical nonce address and resumes through callback 
   assert.equal(run.calls[0]?.name, "offer");
   await assert.rejects(handle.confirm({ timeoutMs: 0 }), /reserving/);
   run.setState("active");
-  assert.equal((await handle.confirm({ timeoutMs: 0 })).snapshot.margin, 200_000n);
+  assert.equal(
+    (await handle.confirm({ timeoutMs: 0 })).snapshot.margin,
+    200_000n,
+  );
   run.setState("consumed");
-  assert.equal((await handle.confirm({ timeoutMs: 0 })).snapshot.status, "consumed");
+  assert.equal(
+    (await handle.confirm({ timeoutMs: 0 })).snapshot.status,
+    "consumed",
+  );
 });
 
 test("release confirms only after the private callback and closes terminal records", async () => {

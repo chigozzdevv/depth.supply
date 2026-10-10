@@ -6,7 +6,7 @@ import {
   marketAddress,
   transferAddress,
   withdrawalAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 export type PendingKind =

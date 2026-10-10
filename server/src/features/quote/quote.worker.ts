@@ -3,7 +3,7 @@ import {
   DEPTH_PROGRAM_ID,
   accountOffsets,
   quoteQueueAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import { ChainSigner } from "@/shared/chain/chain.signer";
@@ -65,7 +65,7 @@ export class QuoteWorker {
       market.activeQuotes.slice(0, market.activeQuoteCount).map(async (id) => ({
         id,
         quote: await this.chain.read<QuoteState>("QuoteRecord", id),
-      }))
+      })),
     );
     let activeCapacity = 0n;
     for (const { quote } of active) {
@@ -90,7 +90,7 @@ export class QuoteWorker {
           this.chain.market.toBuffer(),
           quote.maker.toBuffer(),
         ],
-        DEPTH_PROGRAM_ID
+        DEPTH_PROGRAM_ID,
       )[0];
       const signature = await this.chain.program.methods
         .releaseQuote(offset)
@@ -165,7 +165,7 @@ export class QuoteWorker {
             quote.maker.toBuffer(),
             quote.operator.toBuffer(),
           ],
-          DEPTH_PROGRAM_ID
+          DEPTH_PROGRAM_ID,
         )[0];
     const marketAccount = PublicKey.findProgramAddressSync(
       [
@@ -173,7 +173,7 @@ export class QuoteWorker {
         this.chain.market.toBuffer(),
         quote.maker.toBuffer(),
       ],
-      DEPTH_PROGRAM_ID
+      DEPTH_PROGRAM_ID,
     )[0];
     const signature = await this.chain.program.methods
       .reserveQuote(offset)
@@ -213,14 +213,14 @@ export class QuoteWorker {
             },
           },
         ],
-      }
+      },
     );
     for (const entry of [...accounts].sort((a, b) =>
-      a.pubkey.toBase58().localeCompare(b.pubkey.toBase58())
+      a.pubkey.toBase58().localeCompare(b.pubkey.toBase58()),
     )) {
       const account = this.chain.program.coder.accounts.decode<QuoteState>(
         "quoteRecord",
-        entry.account.data
+        entry.account.data,
       );
       if (
         status(account.status) === "closing" &&

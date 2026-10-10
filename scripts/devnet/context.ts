@@ -1,6 +1,6 @@
 import * as anchor from "@anchor-lang/core";
-import { createDepthMaker } from "@depth/maker-sdk";
-import type { SignedManifest } from "@depth/sdk";
+import { createDepthMaker } from "@depthhq/maker-sdk";
+import type { SignedManifest } from "@depthhq/sdk";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";

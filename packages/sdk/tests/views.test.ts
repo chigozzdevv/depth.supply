@@ -1,6 +1,6 @@
 import * as anchor from "@anchor-lang/core";
 import { createPacker, RescueCipher, x25519 } from "@arcium-hq/client";
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";

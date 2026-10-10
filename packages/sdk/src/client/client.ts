@@ -22,7 +22,7 @@ import {
   protocolAddress,
   recoveryConfigAddress,
   SOL_USD_MARKET_ID,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "@/chain/random";
 import { verifyDeployment } from "@/chain/manifest";

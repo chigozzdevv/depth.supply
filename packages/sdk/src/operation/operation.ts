@@ -3,8 +3,8 @@ import {
   marketAccountAddress,
   marketAddress,
   SOL_USD_MARKET_ID,
-} from "@depth/bindings";
-import type { OperationSnapshot } from "@depth/schema";
+} from "@depthhq/bindings";
+import type { OperationSnapshot } from "@depthhq/schema";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { DepthError, submissionError } from "@/operation/error";
 import type { OrderState } from "@/client/types";

@@ -5,7 +5,7 @@ import {
   circuits,
   marketAccountAddress,
   marketAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
@@ -28,7 +28,7 @@ describe("trader wire and operation lifecycle", () => {
       deployment: { localnet: true },
     });
     assert.ok(
-      client.position.id.equals(marketAccountAddress(wallet.publicKey))
+      client.position.id.equals(marketAccountAddress(wallet.publicKey)),
     );
   });
 
@@ -50,17 +50,17 @@ describe("trader wire and operation lifecycle", () => {
     };
     const ciphertext = cipher.encrypt(
       circuits.OrderInput.pack(fields),
-      encryptionNonce
+      encryptionNonce,
     );
     assert.deepEqual(
       circuits.OrderInput.unpack(cipher.decrypt(ciphertext, encryptionNonce)),
-      fields
+      fields,
     );
     assert.throws(() => u64(-1n, "notional"));
     assert.throws(() => u64(1.5 as unknown as bigint, "notional"));
     assert.equal(
       u64((1n << 64n) - 1n, "notional").toString(),
-      ((1n << 64n) - 1n).toString()
+      ((1n << 64n) - 1n).toString(),
     );
     assert.throws(() => u64(1n << 64n, "notional"));
   });
@@ -99,7 +99,7 @@ describe("trader wire and operation lifecycle", () => {
     await assert.rejects(
       operation.confirm({ timeoutMs: 0 }),
       (error: unknown) =>
-        error instanceof DepthError && error.code === "ORDER_REJECTED"
+        error instanceof DepthError && error.code === "ORDER_REJECTED",
     );
     owner = PublicKey.unique();
     await assert.rejects(operation.status(), /Order record is unavailable/);
@@ -110,7 +110,7 @@ describe("trader wire and operation lifecycle", () => {
       PublicKey.unique(),
       undefined,
       {} as anchor.Program,
-      {} as Connection
+      {} as Connection,
     );
     operation.status = async () => ({
       id: operation.id.toBase58(),
@@ -126,7 +126,7 @@ describe("trader wire and operation lifecycle", () => {
       operation.confirm({ timeoutMs: 0 }),
       (error: unknown) =>
         error instanceof Error &&
-        error.message === "Trade has not finalized yet"
+        error.message === "Trade has not finalized yet",
     );
   });
 
@@ -184,7 +184,8 @@ describe("trader wire and operation lifecycle", () => {
     await assert.rejects(
       operation.cancel(),
       (error: unknown) =>
-        error instanceof DepthError && error.code === "ORDER_CANCEL_UNAVAILABLE"
+        error instanceof DepthError &&
+        error.code === "ORDER_CANCEL_UNAVAILABLE",
     );
   });
 });
@@ -205,9 +206,12 @@ test("position summary retries a risk check that wins the view submission race",
   let closed = false;
   client.requestMarketView = async () => {
     if (++attempts === 1) {
-      throw Object.assign(new Error("Market account is processing another operation"), {
-        error: { errorCode: { code: "WrongMarketAccountStatus" } },
-      });
+      throw Object.assign(
+        new Error("Market account is processing another operation"),
+        {
+          error: { errorCode: { code: "WrongMarketAccountStatus" } },
+        },
+      );
     }
     return {
       wait: async () => ({
@@ -236,7 +240,7 @@ test("operation polling resumes after a transient RPC failure without submitting
     PublicKey.unique(),
     undefined,
     {} as anchor.Program,
-    {} as Connection
+    {} as Connection,
   );
   let attempts = 0;
   operation.status = async () => {
@@ -252,7 +256,7 @@ test("operation polling resumes after a transient RPC failure without submitting
   };
   assert.equal(
     (await operation.wait({ timeoutMs: 1000, pollMs: 100 })).outcome,
-    "filled"
+    "filled",
   );
   assert.equal(attempts, 2);
 });
@@ -290,7 +294,7 @@ test("private fill result resumes its view and closes it before returning", asyn
     async () => {
       requests += 1;
       return view;
-    }
+    },
   );
   operation.status = async () => ({
     id: id.toBase58(),
@@ -303,18 +307,18 @@ test("private fill result resumes its view and closes it before returning", asyn
   await assert.rejects(
     operation.privateResult({ timeoutMs: 0 }),
     (error: unknown) =>
-      error instanceof DepthError && error.code === "FILL_VIEW_PENDING"
+      error instanceof DepthError && error.code === "FILL_VIEW_PENDING",
   );
   await assert.rejects(
     operation.privateResult(),
     (error: unknown) =>
-      error instanceof DepthError && error.code === "FILL_VIEW_CLEANUP_PENDING"
+      error instanceof DepthError && error.code === "FILL_VIEW_CLEANUP_PENDING",
   );
   assert.equal((await operation.privateResult()).size, 100n);
   assert.ok(
     (await operation.privateResult()).positionId.equals(
-      marketAccountAddress(owner)
-    )
+      marketAccountAddress(owner),
+    ),
   );
   assert.equal((await operation.privateResult()).size, 100n);
   assert.equal(requests, 1);

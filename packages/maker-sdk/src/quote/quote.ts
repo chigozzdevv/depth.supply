@@ -3,7 +3,7 @@ import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "@/chain/random";
 import type { MakerClient } from "@/client/client";
 import type { MarketState, QuoteQueueState } from "@/client/types";
-import { DepthError } from "@depth/sdk";
+import { DepthError } from "@depthhq/sdk";
 
 export type QuoteSnapshot = {
   id: string;

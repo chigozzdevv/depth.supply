@@ -3,7 +3,7 @@ import {
   convertIdlToCamelCase,
   type Idl,
 } from "@anchor-lang/core";
-import { DEPTH_IDL, DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_IDL, DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 export type ChainAccount<T> = { value: T; slot: number };

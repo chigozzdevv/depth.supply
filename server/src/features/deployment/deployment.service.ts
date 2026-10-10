@@ -1,4 +1,4 @@
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { readFile } from "node:fs/promises";
 import { resolvePath } from "@/shared/config/path";
 
@@ -11,7 +11,7 @@ export type PublicEnvironment = keyof typeof genesis;
 
 export class DeploymentService {
   constructor(
-    private readonly paths: Record<PublicEnvironment, string | undefined>
+    private readonly paths: Record<PublicEnvironment, string | undefined>,
   ) {}
 
   async manifest(environment: PublicEnvironment): Promise<unknown> {

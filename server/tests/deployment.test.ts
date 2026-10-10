@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -19,7 +19,7 @@ test("public deployment route serves only the configured matching release", asyn
     new DeploymentService({
       devnet: relative(root, path),
       "mainnet-beta": undefined,
-    })
+    }),
   );
   try {
     const unavailable = await app.inject("/.well-known/depth/devnet.json");
@@ -42,7 +42,7 @@ test("public deployment route serves only the configured matching release", asyn
     await writeFile(path, JSON.stringify(signed));
     assert.equal(
       (await app.inject("/.well-known/depth/devnet.json")).statusCode,
-      500
+      500,
     );
   } finally {
     await app.close();

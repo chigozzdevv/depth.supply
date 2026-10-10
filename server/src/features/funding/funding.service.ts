@@ -6,7 +6,7 @@ import {
   enumValues,
   marketAccountAddress,
   transferAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import { ChainScan } from "@/shared/chain/chain.scan";

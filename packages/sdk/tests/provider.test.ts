@@ -1,4 +1,4 @@
-import { DEPTH_IDL, DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_IDL, DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import {
   ComputeBudgetProgram,
   PublicKey,
@@ -24,7 +24,9 @@ test("encrypted Depth submissions receive compute headroom once", () => {
   applyDepthComputeBudget(transaction);
   assert.equal(transaction.instructions.length, 2);
   assert.ok(
-    transaction.instructions[0].programId.equals(ComputeBudgetProgram.programId),
+    transaction.instructions[0].programId.equals(
+      ComputeBudgetProgram.programId,
+    ),
   );
   assert.equal(transaction.instructions[0].data.readUInt32LE(1), 400_000);
   applyDepthComputeBudget(transaction);

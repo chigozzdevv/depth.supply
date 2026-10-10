@@ -11,7 +11,7 @@ import {
   marketAddress,
   protocolAddress,
   computations,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { verify } from "@noble/ed25519";
 import { sha256 } from "@noble/hashes/sha256";

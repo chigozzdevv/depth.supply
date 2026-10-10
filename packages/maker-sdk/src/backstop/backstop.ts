@@ -1,7 +1,7 @@
 import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
-import { DEPTH_PROGRAM_ID, SOL_USD_MARKET_ID } from "@depth/bindings";
-import { DepthError } from "@depth/sdk";
+import { DEPTH_PROGRAM_ID, SOL_USD_MARKET_ID } from "@depthhq/bindings";
+import { DepthError } from "@depthhq/sdk";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "@/chain/random";
 import type { MakerClient } from "@/client/client";

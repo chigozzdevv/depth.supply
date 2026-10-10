@@ -1,4 +1,4 @@
-import { transferAddress } from "@depth/bindings";
+import { transferAddress } from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import type { TransferHandle } from "@/account/funding";
 import type { DepthClient } from "@/client/client";
@@ -23,7 +23,10 @@ export class TradeFlow {
   readonly id: PublicKey;
   readonly allocationId: PublicKey;
 
-  constructor(readonly client: DepthClient, readonly nonce: bigint) {
+  constructor(
+    readonly client: DepthClient,
+    readonly nonce: bigint,
+  ) {
     if (nonce < 0n || nonce > (1n << 64n) - 1n) {
       throw new RangeError("clientNonce must be an unsigned 64-bit bigint");
     }
@@ -72,8 +75,8 @@ export class TradeFlow {
         receipt.state === "settled"
           ? "allocated"
           : ["rejected", "refunded", "cancelled"].includes(receipt.state)
-          ? "failed"
-          : "allocating",
+            ? "failed"
+            : "allocating",
       allocation: receipt,
     };
   }

@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { balanceAddress, marketAccountAddress } from "@depth/bindings";
+import { balanceAddress, marketAccountAddress } from "@depthhq/bindings";
 import {
   Connection,
   Keypair,

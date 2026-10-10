@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { accountOffsets, enumValues, SOL_USD_FEED_ID } from "@depth/bindings";
+import { accountOffsets, enumValues, SOL_USD_FEED_ID } from "@depthhq/bindings";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";

@@ -5,8 +5,8 @@ import {
   type DepthOperation,
   type BalanceSnapshot,
   type PositionSnapshot,
-} from "@depth/sdk";
-import type { MakerClient, QuoteHandle } from "@depth/maker-sdk";
+} from "@depthhq/sdk";
+import type { MakerClient, QuoteHandle } from "@depthhq/maker-sdk";
 import { PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import {

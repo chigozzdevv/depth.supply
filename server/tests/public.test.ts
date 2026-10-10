@@ -1,4 +1,4 @@
-import { DEPTH_PROGRAM_ID, marketAddress } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID, marketAddress } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -10,7 +10,7 @@ import { QuoteService } from "@/features/quote/quote.service";
 import { RecoveryService } from "@/features/recovery/recovery.service";
 
 function chainWithRead(
-  read: (address: PublicKey, name: string) => Promise<unknown>
+  read: (address: PublicKey, name: string) => Promise<unknown>,
 ): ChainClient {
   const chain = new ChainClient({} as Connection);
   return Object.assign(chain, { read });
@@ -92,27 +92,27 @@ test("market and recovery projections expose only public state", async () => {
             },
           }
         : name === "QuoteQueue"
-        ? { market: marketAddress(), count: 0, entries: [] }
-        : name === "RecoveryConfig"
-        ? {
-            market: marketAddress(),
-            recoveryKey: new Array(32).fill(7),
-            signers: new Array(5).fill(signer),
-            accountCount: 2,
-          }
-        : {
-            market: marketAddress(),
-            priceE8: 20_000_000_000n,
-            fundingIndex: 3n,
-            expectedAccounts: 2,
-            revealedAccounts: 1,
-            paidAccounts: 0,
-            grossPositive: 1_000n,
-            payoutPool: 900n,
-            remainingPool: 900n,
-            finalized: false,
-            recoveryPrivateKey: "must-not-leak",
-          },
+          ? { market: marketAddress(), count: 0, entries: [] }
+          : name === "RecoveryConfig"
+            ? {
+                market: marketAddress(),
+                recoveryKey: new Array(32).fill(7),
+                signers: new Array(5).fill(signer),
+                accountCount: 2,
+              }
+            : {
+                market: marketAddress(),
+                priceE8: 20_000_000_000n,
+                fundingIndex: 3n,
+                expectedAccounts: 2,
+                revealedAccounts: 1,
+                paidAccounts: 0,
+                grossPositive: 1_000n,
+                payoutPool: 900n,
+                remainingPool: 900n,
+                finalized: false,
+                recoveryPrivateKey: "must-not-leak",
+              },
   }));
   const market = await new MarketService(chain).get();
   assert.equal(market?.pending_order, order.toBase58());
@@ -177,20 +177,20 @@ test("Fastify routes validate identifiers and return chain snapshots", async () 
     assert.equal((await app.inject("/v1/markets/BTC-USD")).statusCode, 404);
     assert.equal(
       (await app.inject("/v1/markets/SOL-USD/winddown")).statusCode,
-      404
+      404,
     );
     assert.equal((await app.inject("/v1/quotes/%2F")).statusCode, 400);
     assert.equal(
       (await app.inject({ method: "HEAD", url: "/v1/markets" })).statusCode,
-      200
+      200,
     );
     assert.equal(
       (await app.inject({ method: "OPTIONS", url: "/v1/markets" })).statusCode,
-      204
+      204,
     );
     assert.equal(
       (await app.inject({ method: "POST", url: "/v1/markets" })).statusCode,
-      404
+      404,
     );
   } finally {
     await app.close();
@@ -242,7 +242,7 @@ test("chain reader identifies only Depth account discriminators", async () => {
   } as unknown as Connection;
   const result = await new ChainClient(connection).identify(
     PublicKey.unique(),
-    ["OrderRecord"]
+    ["OrderRecord"],
   );
   assert.equal(result, undefined);
 });

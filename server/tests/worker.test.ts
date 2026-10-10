@@ -1,6 +1,6 @@
 import * as anchor from "@anchor-lang/core";
 import { PublicKey } from "@solana/web3.js";
-import { SOL_USD_FEED_ID } from "@depth/bindings";
+import { SOL_USD_FEED_ID } from "@depthhq/bindings";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { OracleService } from "@/features/oracle/oracle.service";
@@ -41,9 +41,12 @@ test("oracle updates respect the settlement lock and reject unverified feeds", a
         owner: new PublicKey("rec5EKMGg6MxZYaMdyBfgwp4d5rB9T1VQH5pJv5LtFJ"),
         data,
       }),
-      getProgramAccounts: async (_program: PublicKey, options: {
-        filters: Array<{ memcmp: { bytes: string } }>;
-      }) => {
+      getProgramAccounts: async (
+        _program: PublicKey,
+        options: {
+          filters: Array<{ memcmp: { bytes: string } }>;
+        },
+      ) => {
         const deadline = Buffer.alloc(8);
         deadline.writeBigInt64LE(
           BigInt(Math.floor(Date.now() / 1_000) + (expiredSnapshot ? -1 : 60)),
@@ -54,7 +57,9 @@ test("oracle updates respect the settlement lock and reject unverified feeds", a
       },
     },
     program: {
-      coder: { accounts: { memcmp: (name: string) => ({ offset: 0, bytes: name }) } },
+      coder: {
+        accounts: { memcmp: (name: string) => ({ offset: 0, bytes: name }) },
+      },
       methods: {
         refreshOracle: () => ({
           accountsPartial: () => ({
@@ -213,7 +218,7 @@ test("quote worker admits the waiting head only after market capacity is availab
         reserveQuote: () => ({
           accountsPartial: (accounts: { quote: PublicKey }) => ({
             remainingAccounts: (
-              remaining: Array<{ pubkey: PublicKey; isWritable: boolean }>
+              remaining: Array<{ pubkey: PublicKey; isWritable: boolean }>,
             ) => ({
               rpc: async () => {
                 assert.ok(accounts.quote.equals(waiting));
@@ -266,7 +271,10 @@ test("quote worker releases closing collateral using the quote discriminator", a
               capacity: new anchor.BN(500),
             },
     connection: {
-      getProgramAccounts: async (_program: PublicKey, options: { filters: unknown }) => {
+      getProgramAccounts: async (
+        _program: PublicKey,
+        options: { filters: unknown },
+      ) => {
         filters = options.filters;
         return [{ pubkey: closing, account: { data: Buffer.alloc(1) } }];
       },
@@ -300,6 +308,12 @@ test("quote worker releases closing collateral using the quote discriminator", a
     stage: "release_quote",
     signature: "release-signature",
   });
-  assert.equal((filters as Array<{ memcmp: { bytes: string } }>)[0].memcmp.bytes, "quote-discriminator");
-  assert.equal((filters as Array<{ memcmp: { bytes: string } }>)[1].memcmp.bytes, market.toBase58());
+  assert.equal(
+    (filters as Array<{ memcmp: { bytes: string } }>)[0].memcmp.bytes,
+    "quote-discriminator",
+  );
+  assert.equal(
+    (filters as Array<{ memcmp: { bytes: string } }>)[1].memcmp.bytes,
+    market.toBase58(),
+  );
 });

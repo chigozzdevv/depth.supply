@@ -1,5 +1,5 @@
-import { marketAddress, SOL_USD_MARKET_ID } from "@depth/bindings";
-import type { OperationSnapshot } from "@depth/schema";
+import { marketAddress, SOL_USD_MARKET_ID } from "@depthhq/bindings";
+import type { OperationSnapshot } from "@depthhq/schema";
 import { PublicKey } from "@solana/web3.js";
 import type { ChainClient } from "@/shared/chain/chain.client";
 import { variant } from "@/shared/chain/chain.format";
@@ -31,8 +31,8 @@ export class OperationService {
           status === "filled" || status === "cancelled"
             ? "finalized"
             : status === "rejected"
-            ? "rejected"
-            : "queued",
+              ? "rejected"
+              : "queued",
         ...(status === "filled" ? { outcome: "filled" as const } : {}),
         ...(status === "cancelled" ? { outcome: "cancelled" as const } : {}),
       };
@@ -48,8 +48,8 @@ export class OperationService {
           status === "paid" || status === "cancelled"
             ? "finalized"
             : status === "rejected"
-            ? "rejected"
-            : "queued",
+              ? "rejected"
+              : "queued",
         ...(status === "cancelled" ? { outcome: "cancelled" as const } : {}),
       };
     }
@@ -79,8 +79,8 @@ export class OperationService {
         status: ["active", "filled", "cancelled"].includes(status)
           ? "finalized"
           : status === "rejected"
-          ? "rejected"
-          : "queued",
+            ? "rejected"
+            : "queued",
         ...(status === "active" ? { outcome: "active" as const } : {}),
         ...(status === "cancelled" ? { outcome: "cancelled" as const } : {}),
       };
@@ -97,8 +97,8 @@ export class OperationService {
         status === "settled" || status === "refunded"
           ? "finalized"
           : status === "rejected"
-          ? "rejected"
-          : "queued",
+            ? "rejected"
+            : "queued",
       ...(status === "refunded" ? { outcome: "cancelled" as const } : {}),
     };
   }

@@ -15,8 +15,8 @@ import {
   computationName,
   marketAddress,
   protocolAddress,
-} from "@depth/bindings";
-import { DepthProvider } from "@depth/sdk";
+} from "@depthhq/bindings";
+import { DepthProvider } from "@depthhq/sdk";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 type MxeState = { cluster: number; mxeProgramId: PublicKey };
@@ -31,7 +31,10 @@ export class ChainSigner {
     DEPTH_PROGRAM_ID,
   )[0];
 
-  constructor(readonly connection: Connection, readonly wallet: anchor.Wallet) {
+  constructor(
+    readonly connection: Connection,
+    readonly wallet: anchor.Wallet,
+  ) {
     this.provider = new DepthProvider(connection, wallet, {
       commitment: "confirmed",
       preflightCommitment: "confirmed",

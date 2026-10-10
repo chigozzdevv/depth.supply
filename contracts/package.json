@@ -1,5 +1,5 @@
 {
-  "name": "@depth/contracts",
+  "name": "@depthhq/contracts",
   "private": true,
   "scripts": {
     "build": "node --env-file-if-exists=../.env.local scripts/build.mjs",

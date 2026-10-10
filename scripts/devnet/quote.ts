@@ -1,6 +1,6 @@
 import * as anchor from "@anchor-lang/core";
-import { solUsdPublishTime } from "@depth/bindings";
-import type { QuoteHandle } from "@depth/maker-sdk";
+import { solUsdPublishTime } from "@depthhq/bindings";
+import type { QuoteHandle } from "@depthhq/maker-sdk";
 import { PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { OracleService } from "@/server/features/oracle/oracle.service";

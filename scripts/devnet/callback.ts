@@ -5,7 +5,7 @@ import {
   getCompDefAccAddress,
   getCompDefAccOffset,
 } from "@arcium-hq/client";
-import { DEPTH_IDL, DEPTH_PROGRAM_ID, computationName } from "@depth/bindings";
+import { DEPTH_IDL, DEPTH_PROGRAM_ID, computationName } from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { resolvePath } from "@/workspace";

@@ -1,7 +1,7 @@
 import { Buffer } from "buffer";
 import * as anchor from "@anchor-lang/core";
 import { createPacker, RescueCipher, x25519 } from "@arcium-hq/client";
-import { circuits, DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { circuits, DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 export type BalanceSnapshot = {
@@ -142,10 +142,10 @@ export class DepthView {
       this.kind === "balance"
         ? "balanceView"
         : this.kind === "market"
-        ? "marketView"
-        : this.kind === "fill"
-        ? "fillView"
-        : "quoteView",
+          ? "marketView"
+          : this.kind === "fill"
+            ? "fillView"
+            : "quoteView",
       response.value.data,
     );
     if (
@@ -244,10 +244,10 @@ export class DepthView {
       this.kind === "balance"
         ? this.program.methods.closeBalanceView()
         : this.kind === "market"
-        ? this.program.methods.closeMarketView()
-        : this.kind === "fill"
-        ? this.program.methods.closeFillView()
-        : this.program.methods.closeQuoteView();
+          ? this.program.methods.closeMarketView()
+          : this.kind === "fill"
+            ? this.program.methods.closeFillView()
+            : this.program.methods.closeQuoteView();
     return builder
       .accountsPartial({ owner: this.owner, view: this.id })
       .rpc({ commitment: "confirmed" });

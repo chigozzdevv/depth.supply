@@ -1,5 +1,5 @@
 {
-  "name": "@depth/sdk",
+  "name": "@depthhq/sdk",
   "version": "0.1.0",
   "publishConfig": { "access": "public" },
   "files": ["dist"],
@@ -36,8 +36,8 @@
   "dependencies": {
     "@anchor-lang/core": "1.0.2",
     "@arcium-hq/client": "0.13.2",
-    "@depth/bindings": "workspace:*",
-    "@depth/schema": "workspace:*",
+    "@depthhq/bindings": "workspace:*",
+    "@depthhq/schema": "workspace:*",
     "@noble/ed25519": "1.7.5",
     "@noble/hashes": "1.8.0",
     "@solana/web3.js": "1.99.0",

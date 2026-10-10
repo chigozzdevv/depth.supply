@@ -18,7 +18,7 @@ import {
   recoveryConfigAddress,
   SOL_USD_PUSH_ACCOUNT,
   solUsdPublishTime,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import { DepthProvider } from "@/chain/provider";

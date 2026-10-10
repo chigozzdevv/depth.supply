@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { DEPTH_IDL, DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_IDL, DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import {
   Connection,
   Keypair,

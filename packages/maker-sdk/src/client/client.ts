@@ -15,10 +15,10 @@ import {
   quoteQueueAddress,
   protocolAddress,
   SOL_USD_MARKET_ID,
-} from "@depth/bindings";
-import { DepthView } from "@depth/sdk/views";
-import { DepthRecovery } from "@depth/sdk/recovery";
-import type { FillSnapshot, PositionSnapshot } from "@depth/sdk/views";
+} from "@depthhq/bindings";
+import { DepthView } from "@depthhq/sdk/views";
+import { DepthRecovery } from "@depthhq/sdk/recovery";
+import type { FillSnapshot, PositionSnapshot } from "@depthhq/sdk/views";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "@/chain/random";
 import {
@@ -27,14 +27,14 @@ import {
   FundingClient,
   verifyDeployment,
   resolveConnection,
-} from "@depth/sdk";
+} from "@depthhq/sdk";
 import type {
   AmountSelector,
   CloseInput,
   ReductionInput,
   ReverseInput,
   TradeInput,
-} from "@depth/sdk";
+} from "@depthhq/sdk";
 import { mxeAccount, queueAccounts } from "@/chain/arcium";
 import { BackstopHandle } from "@/backstop/backstop";
 import { FillHistory } from "@/fill/history";
@@ -849,7 +849,7 @@ export class MakerClient {
       const genesis = await this.options.connection.getGenesisHash();
       const store =
         typeof indexedDB === "undefined"
-          ? new (await import("@depth/maker-sdk/node")).FillCursorStore(
+          ? new (await import("@depthhq/maker-sdk/node")).FillCursorStore(
               genesis,
               this.options.maker.toBase58(),
               this.options.cursorDirectory,

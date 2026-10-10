@@ -1,4 +1,4 @@
-import { publicQuoteSchema } from "@depth/schema";
+import { publicQuoteSchema } from "@depthhq/schema";
 import { addressParam, errorResponse } from "@/shared/http/http.schema";
 
 export const quoteGetSchema = {

@@ -2,8 +2,8 @@ import {
   marketAddress,
   quoteQueueAddress,
   SOL_USD_MARKET_ID,
-} from "@depth/bindings";
-import type { PublicMarket } from "@depth/schema";
+} from "@depthhq/bindings";
+import type { PublicMarket } from "@depthhq/schema";
 import { PublicKey } from "@solana/web3.js";
 import type { ChainClient } from "@/shared/chain/chain.client";
 import { integer, variant } from "@/shared/chain/chain.format";
@@ -21,7 +21,7 @@ export class MarketService {
       this.chain.read<MarketAccount>(address, "Market"),
       this.chain.read<QuoteQueueAccount>(
         quoteQueueAddress(this.chain.programId),
-        "QuoteQueue"
+        "QuoteQueue",
       ),
     ]);
     if (!account) return undefined;

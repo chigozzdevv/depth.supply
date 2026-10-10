@@ -7,7 +7,7 @@ import {
   recoveryConfigAddress,
   solUsdPublishTime,
   SOL_USD_PUSH_ACCOUNT,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import { Buffer } from "buffer";
 import { mkdir, readFile, writeFile } from "node:fs/promises";

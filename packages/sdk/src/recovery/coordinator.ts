@@ -4,7 +4,7 @@ import {
   accountOffsets,
   marketAccountAddress,
   marketAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import type { GetProgramAccountsFilter } from "@solana/web3.js";
 import { RecoveryWitnessReader } from "@/recovery/witness";

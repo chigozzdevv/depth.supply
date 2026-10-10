@@ -1,1 +1,1 @@
-export { solUsdPublishTime as priceTimestamp } from "@depth/bindings";
+export { solUsdPublishTime as priceTimestamp } from "@depthhq/bindings";

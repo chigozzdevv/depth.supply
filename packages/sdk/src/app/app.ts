@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { appAddress } from "@depth/bindings";
+import { appAddress } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import type { FundingClient } from "@/account/funding";
 import { DepthError, submissionError } from "@/operation/error";

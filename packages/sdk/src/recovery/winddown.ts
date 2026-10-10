@@ -5,7 +5,7 @@ import {
   marketAccountAddress,
   protocolAddress,
   recoveryConfigAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { PublicKey, Transaction } from "@solana/web3.js";
 
 export type ClearingWitness = {
@@ -118,9 +118,8 @@ export class WinddownOperator {
       )
       .transaction();
     transaction.feePayer = this.provider.wallet.publicKey;
-    const block = await this.provider.connection.getLatestBlockhash(
-      "confirmed",
-    );
+    const block =
+      await this.provider.connection.getLatestBlockhash("confirmed");
     transaction.recentBlockhash = block.blockhash;
     transaction.lastValidBlockHeight = block.lastValidBlockHeight;
     return transaction;

@@ -1,7 +1,7 @@
-import type { ConnectionOptions, ResolvedConnection } from "@depth/sdk";
+import type { ConnectionOptions, ResolvedConnection } from "@depthhq/sdk";
 import type * as anchor from "@anchor-lang/core";
 import type { PublicKey } from "@solana/web3.js";
-import { SOL_USD_MARKET_ID } from "@depth/bindings";
+import { SOL_USD_MARKET_ID } from "@depthhq/bindings";
 
 export type MakerOptions = ConnectionOptions & {
   wallet: anchor.Wallet;

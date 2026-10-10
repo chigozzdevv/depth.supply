@@ -7,7 +7,7 @@ import {
   marketAccountAddress,
   marketAddress,
   recoveryConfigAddress,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type {

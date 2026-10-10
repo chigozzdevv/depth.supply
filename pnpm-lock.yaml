@@ -14,13 +14,13 @@ importers:
       '@arcium-hq/client':
         specifier: 0.13.2
         version: 0.13.2(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@5.0.10)
-      '@depth/bindings':
+      '@depthhq/bindings':
         specifier: workspace:*
         version: link:packages/bindings
-      '@depth/maker-sdk':
+      '@depthhq/maker-sdk':
         specifier: workspace:*
         version: link:packages/maker-sdk
-      '@depth/sdk':
+      '@depthhq/sdk':
         specifier: workspace:*
         version: link:packages/sdk
       '@solana/web3.js':
@@ -56,10 +56,10 @@ importers:
       '@arcium-hq/client':
         specifier: 0.13.2
         version: 0.13.2(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@5.0.10)
-      '@depth/bindings':
+      '@depthhq/bindings':
         specifier: workspace:*
         version: link:../bindings
-      '@depth/sdk':
+      '@depthhq/sdk':
         specifier: workspace:*
         version: link:../sdk
       '@solana/web3.js':
@@ -79,10 +79,10 @@ importers:
       '@arcium-hq/client':
         specifier: 0.13.2
         version: 0.13.2(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@5.0.10)
-      '@depth/bindings':
+      '@depthhq/bindings':
         specifier: workspace:*
         version: link:../bindings
-      '@depth/schema':
+      '@depthhq/schema':
         specifier: workspace:*
         version: link:../schema
       '@noble/ed25519':
@@ -106,13 +106,13 @@ importers:
       '@arcium-hq/client':
         specifier: 0.13.2
         version: 0.13.2(bufferutil@4.1.0)(typescript@5.7.3)(utf-8-validate@5.0.10)
-      '@depth/bindings':
+      '@depthhq/bindings':
         specifier: workspace:*
         version: link:../packages/bindings
-      '@depth/schema':
+      '@depthhq/schema':
         specifier: workspace:*
         version: link:../packages/schema
-      '@depth/sdk':
+      '@depthhq/sdk':
         specifier: workspace:*
         version: link:../packages/sdk
       '@pythnetwork/hermes-client':

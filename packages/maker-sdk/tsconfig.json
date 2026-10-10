@@ -12,7 +12,7 @@
     "paths": {
       "@/depth": ["../bindings/src/depth.ts"],
       "@/depth.json": ["../bindings/src/depth.json"],
-      "@depth/maker-sdk/node": ["src/node.ts"],
+      "@depthhq/maker-sdk/node": ["src/node.ts"],
       "@/*": ["src/*"]
     },
     "types": ["node"]

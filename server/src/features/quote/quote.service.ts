@@ -1,5 +1,5 @@
-import { marketAddress, SOL_USD_MARKET_ID } from "@depth/bindings";
-import type { PublicQuote } from "@depth/schema";
+import { marketAddress, SOL_USD_MARKET_ID } from "@depthhq/bindings";
+import type { PublicQuote } from "@depthhq/schema";
 import { PublicKey } from "@solana/web3.js";
 import type { ChainClient } from "@/shared/chain/chain.client";
 import { integer, variant } from "@/shared/chain/chain.format";

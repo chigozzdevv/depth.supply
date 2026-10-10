@@ -1,5 +1,5 @@
 {
-  "name": "@depth/schema",
+  "name": "@depthhq/schema",
   "version": "0.1.0",
   "publishConfig": { "access": "public" },
   "files": ["dist"],

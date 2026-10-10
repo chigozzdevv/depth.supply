@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { accountOffsets, marketAccountAddress } from "@depth/bindings";
+import { accountOffsets, marketAccountAddress } from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import { ChainScan } from "@/shared/chain/chain.scan";

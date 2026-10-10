@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { DEPTH_IDL, DEPTH_PROGRAM_ID, circuits } from "@depth/bindings";
+import { DEPTH_IDL, DEPTH_PROGRAM_ID, circuits } from "@depthhq/bindings";
 import { Connection, Keypair, PublicKey, Transaction } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -11,14 +11,14 @@ function program() {
   const connection = new Connection("http://127.0.0.1:8899", "confirmed");
   return new anchor.Program(
     DEPTH_IDL,
-    new anchor.AnchorProvider(connection, wallet, {})
+    new anchor.AnchorProvider(connection, wallet, {}),
   );
 }
 
 test("the largest four-quote order fits a signed Solana transaction", async () => {
   const client = program();
   const definition = client.idl.instructions.find(
-    (ix) => ix.name === "submitOrder"
+    (ix) => ix.name === "submitOrder",
   )!;
   const accounts: Record<string, PublicKey> = {};
   for (const account of definition.accounts) {
@@ -50,7 +50,7 @@ test("the largest four-quote order fits a signed Solana transaction", async () =
       new anchor.BN(1),
       [Array(32).fill(1), Array(32).fill(2)],
       Array(32).fill(3),
-      new anchor.BN(4)
+      new anchor.BN(4),
     )
     .accountsStrict(accounts)
     .remainingAccounts(
@@ -58,7 +58,7 @@ test("the largest four-quote order fits a signed Solana transaction", async () =
         pubkey: PublicKey.unique(),
         isSigner: false,
         isWritable: index === 6,
-      }))
+      })),
     )
     .instruction();
   const transaction = new Transaction({
@@ -81,7 +81,7 @@ test("SDK receipt reads use the real Anchor coder's normalized account names", a
     client,
     connection,
     owner,
-    async () => ({})
+    async () => ({}),
   );
   const data = await client.coder.accounts.encode("withdrawalReceipt", {
     owner,

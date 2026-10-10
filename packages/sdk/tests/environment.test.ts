@@ -1,5 +1,5 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { createPrivateKey, sign } from "node:crypto";
 import assert from "node:assert/strict";
 import { test } from "node:test";

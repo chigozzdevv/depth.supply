@@ -1,6 +1,6 @@
 import type { FastifyReply } from "fastify";
 import type { FastifyRequest } from "fastify";
-import { SOL_USD_MARKET_ID } from "@depth/bindings";
+import { SOL_USD_MARKET_ID } from "@depthhq/bindings";
 import { found } from "@/shared/http/http.response";
 import type { RecoveryService } from "@/features/recovery/recovery.service";
 

@@ -1,4 +1,4 @@
-import { publicAppSchema } from "@depth/schema";
+import { publicAppSchema } from "@depthhq/schema";
 import { addressParam, errorResponse } from "@/shared/http/http.schema";
 
 export const appGetSchema = {

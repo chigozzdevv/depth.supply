@@ -2,7 +2,7 @@ import {
   DEPTH_PROGRAM_ID,
   quoteQueueAddress,
   SOL_USD_MARKET_ID,
-} from "@depth/bindings";
+} from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import type { DepthClient } from "@/client/client";
 import type { MarketState } from "@/client/types";
@@ -86,7 +86,7 @@ export class MarketCatalog {
     const response =
       await this.client.options.connection.getMultipleAccountsInfoAndContext(
         [this.client.marketAddress, quoteQueueAddress()],
-        "confirmed"
+        "confirmed",
       );
     const [marketInfo, queueInfo] = response.value;
     if (
@@ -96,11 +96,11 @@ export class MarketCatalog {
       throw new Error("Market policy or waiting queue is unavailable");
     const market = this.client.program.coder.accounts.decode<MarketState>(
       "market",
-      marketInfo.data
+      marketInfo.data,
     );
     const queue = this.client.program.coder.accounts.decode<QueueState>(
       "quoteQueue",
-      queueInfo.data
+      queueInfo.data,
     );
     if (
       !queue.market.equals(this.client.marketAddress) ||

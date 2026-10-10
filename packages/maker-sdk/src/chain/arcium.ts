@@ -10,7 +10,7 @@ import {
   getMempoolAccAddress,
   getMXEAccAddress,
 } from "@arcium-hq/client";
-import { computationName, DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { computationName, DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import type { Connection, PublicKey } from "@solana/web3.js";
 
 type MxeState = { cluster: number; mxeProgramId: PublicKey };

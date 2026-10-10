@@ -1,5 +1,5 @@
 import { Keypair, PublicKey } from "@solana/web3.js";
-import { SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
+import { SOL_USD_PUSH_ACCOUNT } from "@depthhq/bindings";
 import { settingPath } from "@/shared/config/path";
 import { loadSigner } from "@/workspace/signers";
 

@@ -1,5 +1,5 @@
 import { Keypair } from "@solana/web3.js";
-import { SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
+import { SOL_USD_PUSH_ACCOUNT } from "@depthhq/bindings";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { DEPTH_PROGRAM_ID, appAddress } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID, appAddress } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";

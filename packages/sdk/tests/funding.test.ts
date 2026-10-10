@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { DEPTH_PROGRAM_ID } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -55,7 +55,7 @@ test("deposit lifecycle validates amount, owner, and receipt state before signin
 
   await assert.rejects(
     client.deposit(PublicKey.unique(), 1n << 64n, 9n),
-    /unsigned 64-bit/
+    /unsigned 64-bit/,
   );
   assert.deepEqual(calls, []);
   const handle = await client.deposit(PublicKey.unique(), 50n, 9n);
@@ -63,11 +63,11 @@ test("deposit lifecycle validates amount, owner, and receipt state before signin
   assert.equal(handle.signature, "deposit-signature");
   assert.equal(
     (await client.deposit(PublicKey.unique(), 50n, 9n)).id.toBase58(),
-    handle.id.toBase58()
+    handle.id.toBase58(),
   );
   await assert.rejects(
     client.deposit(PublicKey.unique(), 51n, 9n),
-    /bound to another request/
+    /bound to another request/,
   );
   assert.equal(await handle.status(), "pending");
   assert.equal(await handle.credit(), "credit-signature");
@@ -79,7 +79,7 @@ test("deposit lifecycle validates amount, owner, and receipt state before signin
   other.read = client.read;
   await assert.rejects(
     new DepositHandle(other, handle.nonce).status(),
-    /unavailable/
+    /unavailable/,
   );
 });
 
@@ -129,6 +129,6 @@ test("deposit confirmation reconciles a keeper credit race", async () => {
   const handle = client.depositHandle(42n);
   assert.equal(
     await handle.confirm({ timeoutMs: 500, pollMs: 100 }),
-    "credited"
+    "credited",
   );
 });

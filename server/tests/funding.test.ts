@@ -1,4 +1,8 @@
-import { balanceAddress, depositAddress, transferAddress } from "@depth/bindings";
+import {
+  balanceAddress,
+  depositAddress,
+  transferAddress,
+} from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -22,7 +26,11 @@ test("keeper credits an owner receipt using its own signer exactly once", async 
     },
     read: async (name: string) =>
       name === "DepositReceipt"
-        ? { owner, nonce: integer(7), status: pending ? { pending: {} } : { crediting: {} } }
+        ? {
+            owner,
+            nonce: integer(7),
+            status: pending ? { pending: {} } : { crediting: {} },
+          }
         : { owner, status: { ready: {} } },
     queue: async () => ({}),
     program: {

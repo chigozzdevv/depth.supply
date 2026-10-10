@@ -1,4 +1,4 @@
-import { marketAddress } from "@depth/bindings";
+import { marketAddress } from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";

@@ -1,4 +1,4 @@
-import { SOL_USD_FEED_ID, SOL_USD_PUSH_ACCOUNT } from "@depth/bindings";
+import { SOL_USD_FEED_ID, SOL_USD_PUSH_ACCOUNT } from "@depthhq/bindings";
 import { HermesClient } from "@pythnetwork/hermes-client";
 import { PythSolanaReceiver } from "@pythnetwork/pyth-solana-receiver";
 import type * as anchor from "@anchor-lang/core";
@@ -15,7 +15,7 @@ export class OraclePublisher {
   constructor(
     private readonly connection: Connection,
     wallet: anchor.Wallet,
-    private readonly config: PublisherConfig
+    private readonly config: PublisherConfig,
   ) {
     this.hermes = new HermesClient(config.hermesUrl, {
       accessToken: config.apiKey,
@@ -30,7 +30,7 @@ export class OraclePublisher {
         !config.priceAccount.equals(SOL_USD_PUSH_ACCOUNT))
     ) {
       throw new Error(
-        "Publisher shard does not match the configured price account"
+        "Publisher shard does not match the configured price account",
       );
     }
   }
@@ -45,8 +45,8 @@ export class OraclePublisher {
     const prior = priceTimestamp(
       await this.connection.getAccountInfo(
         this.config.priceAccount,
-        "confirmed"
-      )
+        "confirmed",
+      ),
     );
     const now = Math.floor(Date.now() / 1_000);
     if (prior > now + 10)
@@ -58,7 +58,7 @@ export class OraclePublisher {
       parsed: true,
     });
     const feed = update.parsed?.find(
-      (entry) => entry.id.toLowerCase().replace(/^0x/, "") === FEED_ID.slice(2)
+      (entry) => entry.id.toLowerCase().replace(/^0x/, "") === FEED_ID.slice(2),
     );
     if (
       update.binary.encoding !== "base64" ||
@@ -89,8 +89,8 @@ export class OraclePublisher {
     const publishTime = priceTimestamp(
       await this.connection.getAccountInfo(
         this.config.priceAccount,
-        "confirmed"
-      )
+        "confirmed",
+      ),
     );
     if (publishTime < sourceTime) {
       throw new Error("Pyth price account did not advance after publishing");

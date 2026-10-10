@@ -1,5 +1,5 @@
 {
-  "name": "@depth/server",
+  "name": "@depthhq/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,9 +13,9 @@
   "dependencies": {
     "@anchor-lang/core": "1.0.2",
     "@arcium-hq/client": "0.13.2",
-    "@depth/bindings": "workspace:*",
-    "@depth/schema": "workspace:*",
-    "@depth/sdk": "workspace:*",
+    "@depthhq/bindings": "workspace:*",
+    "@depthhq/schema": "workspace:*",
+    "@depthhq/sdk": "workspace:*",
     "@pythnetwork/hermes-client": "3.1.0",
     "@pythnetwork/pyth-solana-receiver": "0.16.0",
     "@solana/web3.js": "1.99.0",

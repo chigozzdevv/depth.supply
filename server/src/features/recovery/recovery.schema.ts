@@ -1,4 +1,4 @@
-import { publicRecoverySchema, publicWinddownSchema } from "@depth/schema";
+import { publicRecoverySchema, publicWinddownSchema } from "@depthhq/schema";
 import { errorResponse, marketParam } from "@/shared/http/http.schema";
 
 export const recoveryGetSchema = {

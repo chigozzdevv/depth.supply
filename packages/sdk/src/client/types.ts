@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { SOL_USD_MARKET_ID } from "@depth/bindings";
+import { SOL_USD_MARKET_ID } from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import type { AmountSelector } from "@/trade/amount";
 import type {

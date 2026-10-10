@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { DEPTH_PROGRAM_ID, accountOffsets, enumValues } from "@depth/bindings";
+import { DEPTH_PROGRAM_ID, accountOffsets, enumValues } from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import { priceTimestamp } from "@/features/oracle/oracle.price";
 import type { ChainSigner } from "@/shared/chain/chain.signer";
