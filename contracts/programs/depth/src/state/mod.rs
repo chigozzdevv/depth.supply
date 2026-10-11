@@ -716,3 +716,16 @@ mod tests {
         assert_eq!(queue.entries[7], Pubkey::default());
     }
 }
+
+#[account]
+#[derive(InitSpace)]
+pub struct ViewPermit {
+    pub owner: Pubkey,
+    pub market: Pubkey,
+    pub reader: Pubkey,
+    pub view_key: [u8; 32],
+    pub expires_at: i64,
+    pub scopes: u8,
+    pub active: bool,
+    pub bump: u8,
+}

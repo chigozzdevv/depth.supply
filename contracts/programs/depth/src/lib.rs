@@ -25,6 +25,20 @@ pub mod depth {
         app::set_app_fee_handler(ctx, fee_bps, active)
     }
 
+    pub fn authorize_views(
+        ctx: Context<AuthorizeViews>,
+        reader: Pubkey,
+        view_key: [u8; 32],
+        expires_at: i64,
+        scopes: u8,
+    ) -> Result<()> {
+        permission::authorize_views_handler(ctx, reader, view_key, expires_at, scopes)
+    }
+
+    pub fn revoke_views(ctx: Context<RevokeViews>) -> Result<()> {
+        permission::revoke_views_handler(ctx)
+    }
+
     pub fn grant_operator(
         ctx: Context<GrantOperator>,
         max_capacity: u64,

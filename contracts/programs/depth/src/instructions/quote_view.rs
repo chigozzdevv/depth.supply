@@ -6,6 +6,7 @@ use crate::{
     constants::{COMP_DEF_OFFSET_VIEW_QUOTE, SOL_USD_FEED_ID},
     error::ErrorCode,
     instructions::operator::authorize_operator,
+    instructions::permission::{authorize_view, VIEW_QUOTE},
     state::{Market, OperatorGrant, QuoteRecord, QuoteStatus, QuoteView, ViewStatus},
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -109,15 +110,25 @@ pub fn request_quote_view_handler(
     view_key: [u8; 32],
 ) -> Result<()> {
     require!(view_key != [0; 32], ErrorCode::InvalidViewKey);
-    authorize_operator(
-        ctx.accounts.payer.key(),
-        ctx.accounts.quote.maker,
-        ctx.accounts.market.key(),
-        0,
-        Clock::get()?.unix_timestamp,
-        true,
-        ctx.accounts.grant.as_deref(),
-    )?;
+    if let Some(permit) = ctx.remaining_accounts.first() {
+        authorize_view(
+            permit,
+            ctx.accounts.quote.maker,
+            ctx.accounts.market.key(),
+            view_key,
+            VIEW_QUOTE,
+        )?;
+    } else {
+        authorize_operator(
+            ctx.accounts.payer.key(),
+            ctx.accounts.quote.maker,
+            ctx.accounts.market.key(),
+            0,
+            Clock::get()?.unix_timestamp,
+            true,
+            ctx.accounts.grant.as_deref(),
+        )?;
+    }
     require!(
         matches!(
             ctx.accounts.quote.status,

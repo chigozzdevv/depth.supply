@@ -156,6 +156,140 @@ export type Depth = {
       ]
     },
     {
+      "name": "authorizeViews",
+      "discriminator": [
+        22,
+        166,
+        234,
+        190,
+        238,
+        155,
+        128,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "permit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  105,
+                  101,
+                  119,
+                  45,
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "reader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "reader",
+          "type": "pubkey"
+        },
+        {
+          "name": "viewKey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "expiresAt",
+          "type": "i64"
+        },
+        {
+          "name": "scopes",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "beginAllocation",
       "discriminator": [
         171,
@@ -11744,7 +11878,8 @@ export type Depth = {
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "balance.owner",
+                "account": "balanceAccount"
               }
             ]
           }
@@ -13843,6 +13978,59 @@ export type Depth = {
                 "kind": "account",
                 "path": "grant.operator",
                 "account": "operatorGrant"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "revokeViews",
+      "discriminator": [
+        75,
+        3,
+        210,
+        204,
+        123,
+        2,
+        149,
+        91
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "permit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  105,
+                  101,
+                  119,
+                  45,
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "permit.reader",
+                "account": "viewPermit"
               }
             ]
           }
@@ -18384,6 +18572,19 @@ export type Depth = {
       ]
     },
     {
+      "name": "viewPermit",
+      "discriminator": [
+        9,
+        255,
+        84,
+        71,
+        119,
+        242,
+        206,
+        121
+      ]
+    },
+    {
       "name": "winddown",
       "discriminator": [
         212,
@@ -18741,6 +18942,11 @@ export type Depth = {
       "code": 6060,
       "name": "oracleSourceLocked",
       "msg": "The oracle account can change only while the market is draft or paused"
+    },
+    {
+      "code": 6061,
+      "name": "invalidViewPermit",
+      "msg": "The private read permission is invalid"
     }
   ],
   "types": [
@@ -23360,6 +23566,51 @@ export type Depth = {
                 ]
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "viewPermit",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "reader",
+            "type": "pubkey"
+          },
+          {
+            "name": "viewKey",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "expiresAt",
+            "type": "i64"
+          },
+          {
+            "name": "scopes",
+            "type": "u8"
+          },
+          {
+            "name": "active",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }

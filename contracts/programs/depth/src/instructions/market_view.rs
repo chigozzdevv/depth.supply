@@ -6,6 +6,7 @@ use crate::{
     constants::{COMP_DEF_OFFSET_VIEW_MARKET, SOL_USD_FEED_ID},
     error::ErrorCode,
     instructions::operator::authorize_operator,
+    instructions::permission::{authorize_view, VIEW_MARKET},
     state::{Market, MarketAccount, MarketAccountStatus, MarketView, OperatorGrant, ViewStatus},
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -109,15 +110,25 @@ pub fn request_market_view_handler(
     view_key: [u8; 32],
 ) -> Result<()> {
     require!(view_key != [0; 32], ErrorCode::InvalidViewKey);
-    authorize_operator(
-        ctx.accounts.payer.key(),
-        ctx.accounts.market_account.owner,
-        ctx.accounts.market.key(),
-        0,
-        Clock::get()?.unix_timestamp,
-        true,
-        ctx.accounts.grant.as_deref(),
-    )?;
+    if let Some(permit) = ctx.remaining_accounts.first() {
+        authorize_view(
+            permit,
+            ctx.accounts.market_account.owner,
+            ctx.accounts.market.key(),
+            view_key,
+            VIEW_MARKET,
+        )?;
+    } else {
+        authorize_operator(
+            ctx.accounts.payer.key(),
+            ctx.accounts.market_account.owner,
+            ctx.accounts.market.key(),
+            0,
+            Clock::get()?.unix_timestamp,
+            true,
+            ctx.accounts.grant.as_deref(),
+        )?;
+    }
     require!(
         ctx.accounts.market_account.status == MarketAccountStatus::Ready,
         ErrorCode::WrongMarketAccountStatus

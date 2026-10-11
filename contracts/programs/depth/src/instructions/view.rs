@@ -5,6 +5,7 @@ use arcium_client::idl::arcium::types::CallbackAccount;
 use crate::{
     constants::COMP_DEF_OFFSET_VIEW_BALANCE,
     error::ErrorCode,
+    instructions::permission::{authorize_view, VIEW_BALANCE},
     state::{BalanceAccount, BalanceStatus, BalanceView, ViewStatus},
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -16,8 +17,7 @@ pub struct RequestBalanceView<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(
-        constraint = balance.owner == payer.key(),
-        seeds = [b"balance", payer.key().as_ref()],
+        seeds = [b"balance", balance.owner.as_ref()],
         bump = balance.bump,
     )]
     pub balance: Box<Account<'info, BalanceAccount>>,
@@ -135,6 +135,21 @@ pub fn request_balance_view_handler(
     view_key: [u8; 32],
 ) -> Result<()> {
     require!(view_key != [0; 32], ErrorCode::InvalidViewKey);
+    if ctx.accounts.payer.key() != ctx.accounts.balance.owner {
+        authorize_view(
+            ctx.remaining_accounts
+                .first()
+                .ok_or(ErrorCode::Unauthorized)?,
+            ctx.accounts.balance.owner,
+            Pubkey::find_program_address(
+                &[b"market", crate::constants::SOL_USD_FEED_ID.as_ref()],
+                &crate::ID,
+            )
+            .0,
+            view_key,
+            VIEW_BALANCE,
+        )?;
+    }
     require!(
         ctx.accounts.balance.status == BalanceStatus::Ready,
         ErrorCode::WrongBalanceStatus

@@ -124,4 +124,6 @@ pub enum ErrorCode {
     StaleMarketSnapshot,
     #[msg("The oracle account can change only while the market is draft or paused")]
     OracleSourceLocked,
+    #[msg("The private read permission is invalid")]
+    InvalidViewPermit,
 }

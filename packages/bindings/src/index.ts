@@ -161,3 +161,13 @@ export type { EncryptedQuote } from "@/quote";
 
 export { computations, computationName } from "@/computations";
 export { accountOffsets, enumValues } from "@/layout";
+
+export function viewPermitAddress(
+  owner: PublicKey,
+  reader: PublicKey,
+): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [Buffer.from("view-permit"), owner.toBuffer(), reader.toBuffer()],
+    DEPTH_PROGRAM_ID,
+  )[0];
+}

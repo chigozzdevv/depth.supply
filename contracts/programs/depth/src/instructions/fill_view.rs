@@ -6,6 +6,7 @@ use crate::{
     constants::COMP_DEF_OFFSET_VIEW_FILL,
     error::ErrorCode,
     instructions::operator::authorize_operator,
+    instructions::permission::{authorize_view, VIEW_FILL},
     state::{FillView, OperatorGrant, OrderKind, OrderRecord, OrderStatus, ViewStatus},
     ArciumSignerAccount, ID, ID_CONST,
 };
@@ -112,16 +113,31 @@ pub fn request_fill_view_handler(
             && ctx.accounts.order.kind == OrderKind::Trade,
         ErrorCode::WrongOrderStatus
     );
-    if ctx.accounts.payer.key() != ctx.accounts.order.trader {
-        authorize_operator(
-            ctx.accounts.payer.key(),
-            ctx.accounts.order.maker,
+    if let Some(permit) = ctx.remaining_accounts.first() {
+        require!(
+            super::permission::permit_owner(permit)? == ctx.accounts.order.trader
+                || super::permission::permit_owner(permit)? == ctx.accounts.order.maker,
+            ErrorCode::Unauthorized
+        );
+        authorize_view(
+            permit,
+            super::permission::permit_owner(permit)?,
             ctx.accounts.order.market,
-            0,
-            Clock::get()?.unix_timestamp,
-            true,
-            ctx.accounts.grant.as_deref(),
+            view_key,
+            VIEW_FILL,
         )?;
+    } else {
+        if ctx.accounts.payer.key() != ctx.accounts.order.trader {
+            authorize_operator(
+                ctx.accounts.payer.key(),
+                ctx.accounts.order.maker,
+                ctx.accounts.order.market,
+                0,
+                Clock::get()?.unix_timestamp,
+                true,
+                ctx.accounts.grant.as_deref(),
+            )?;
+        }
     }
     let view = &mut ctx.accounts.view;
     view.owner = ctx.accounts.payer.key();

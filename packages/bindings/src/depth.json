@@ -150,6 +150,140 @@
       ]
     },
     {
+      "name": "authorize_views",
+      "discriminator": [
+        22,
+        166,
+        234,
+        190,
+        238,
+        155,
+        128,
+        235
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "permit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  105,
+                  101,
+                  119,
+                  45,
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "reader"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "reader",
+          "type": "pubkey"
+        },
+        {
+          "name": "view_key",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "expires_at",
+          "type": "i64"
+        },
+        {
+          "name": "scopes",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "begin_allocation",
       "discriminator": [
         171,
@@ -11738,7 +11872,8 @@
               },
               {
                 "kind": "account",
-                "path": "payer"
+                "path": "balance.owner",
+                "account": "BalanceAccount"
               }
             ]
           }
@@ -13837,6 +13972,59 @@
                 "kind": "account",
                 "path": "grant.operator",
                 "account": "OperatorGrant"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "revoke_views",
+      "discriminator": [
+        75,
+        3,
+        210,
+        204,
+        123,
+        2,
+        149,
+        91
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true
+        },
+        {
+          "name": "permit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  105,
+                  101,
+                  119,
+                  45,
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "account",
+                "path": "permit.reader",
+                "account": "ViewPermit"
               }
             ]
           }
@@ -18378,6 +18566,19 @@
       ]
     },
     {
+      "name": "ViewPermit",
+      "discriminator": [
+        9,
+        255,
+        84,
+        71,
+        119,
+        242,
+        206,
+        121
+      ]
+    },
+    {
       "name": "Winddown",
       "discriminator": [
         212,
@@ -18735,6 +18936,11 @@
       "code": 6060,
       "name": "OracleSourceLocked",
       "msg": "The oracle account can change only while the market is draft or paused"
+    },
+    {
+      "code": 6061,
+      "name": "InvalidViewPermit",
+      "msg": "The private read permission is invalid"
     }
   ],
   "types": [
@@ -23354,6 +23560,51 @@
                 ]
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ViewPermit",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "reader",
+            "type": "pubkey"
+          },
+          {
+            "name": "view_key",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "scopes",
+            "type": "u8"
+          },
+          {
+            "name": "active",
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
           }
         ]
       }
