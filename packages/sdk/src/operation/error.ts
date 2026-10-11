@@ -1,3 +1,6 @@
+import { AnchorError, ProgramError } from "@anchor-lang/core";
+import { SendTransactionError } from "@solana/web3.js";
+
 export type ErrorStage = "validation" | "submission" | "confirmation";
 
 export class DepthError extends Error {
@@ -16,6 +19,47 @@ export class DepthError extends Error {
 }
 
 export function submissionError(operationId: string, cause: unknown): never {
+  if (cause instanceof DepthError) throw cause;
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const code =
+    cause && typeof cause === "object" && "code" in cause
+      ? cause.code
+      : undefined;
+  if (
+    (code === 4001 && !(cause instanceof ProgramError)) ||
+    /user rejected|user denied|approval rejected|request rejected by the user/i.test(
+      message,
+    )
+  ) {
+    throw new DepthError(
+      "WALLET_REJECTED",
+      "submission",
+      "Wallet approval declined",
+      true,
+      "Check the existing flow before retrying with the same client nonce",
+      operationId,
+      { cause },
+    );
+  }
+  const rejection =
+    cause instanceof AnchorError
+      ? cause.error.errorMessage
+      : cause instanceof ProgramError
+        ? cause.msg
+        : cause instanceof SendTransactionError
+          ? cause.transactionError.message
+          : undefined;
+  if (rejection) {
+    throw new DepthError(
+      "SUBMISSION_REJECTED",
+      "submission",
+      `Transaction rejected: ${rejection}`,
+      true,
+      "Check the existing flow and resolve the rejection before retrying",
+      operationId,
+      { cause },
+    );
+  }
   throw new DepthError(
     "SUBMISSION_UNCONFIRMED",
     "submission",
