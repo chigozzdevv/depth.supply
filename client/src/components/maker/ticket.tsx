@@ -266,7 +266,7 @@ export function QuoteTicket({
             Back to quote
           </button>
         </div>
-      ) : !session.maker && !session.verifying ? (
+      ) : !session.connected ? (
         <WalletButton
           label="Connect maker wallet"
           className="terminal-button primary full"
@@ -275,19 +275,34 @@ export function QuoteTicket({
         <button
           className="terminal-button primary full"
           disabled={
-            Boolean(session.busy) || !session.maker || (!pending && !allowed)
+            Boolean(session.busy) ||
+            session.verifying ||
+            (!session.maker && !session.retry) ||
+            Boolean(session.maker && !pending && !allowed)
           }
-          onClick={() => (pending ? void reconcile() : prepare())}
-          title={!pending && !allowed ? view.reason : undefined}
+          onClick={() =>
+            !session.maker
+              ? session.retry?.()
+              : pending
+                ? void reconcile()
+                : prepare()
+          }
+          title={
+            session.maker && !pending && !allowed ? view.reason : undefined
+          }
         >
-          {pending
-            ? "Resume original quote"
+          {session.verifying
+            ? "Verifying…"
             : !session.maker
-              ? "Connect maker wallet"
-              : prior
-                ? "Review replacement"
-                : "Review quote"}
-          <ArrowUpRight size={14} />
+              ? session.retry
+                ? "Retry connection"
+                : "Wallet unavailable"
+              : pending
+                ? "Resume original quote"
+                : prior
+                  ? "Review replacement"
+                  : "Review quote"}
+          {session.maker && <ArrowUpRight size={14} />}
         </button>
       )}
     </section>

@@ -249,7 +249,7 @@ export function Ticket({ view }: { view: MarketView }) {
             Back to order
           </button>
         </div>
-      ) : !session.trader && !session.verifying ? (
+      ) : !session.connected ? (
         <WalletButton
           label="Connect wallet to trade"
           className="terminal-button primary full"
@@ -259,18 +259,33 @@ export function Ticket({ view }: { view: MarketView }) {
           className="terminal-button primary full"
           disabled={
             Boolean(session.busy) ||
-            !session.trader ||
-            (!unresolved && !view.ready)
+            session.verifying ||
+            (!session.trader && !session.retry) ||
+            Boolean(session.trader && !unresolved && !view.ready)
           }
-          onClick={() => (unresolved ? void reconcile() : prepare())}
-          title={!unresolved && !view.ready ? view.reason : undefined}
+          onClick={() =>
+            !session.trader
+              ? session.retry?.()
+              : unresolved
+                ? void reconcile()
+                : prepare()
+          }
+          title={
+            session.trader && !unresolved && !view.ready
+              ? view.reason
+              : undefined
+          }
         >
-          {unresolved
-            ? "Check pending trade"
+          {session.verifying
+            ? "Verifying…"
             : !session.trader
-              ? "Connect wallet to trade"
-              : `Review ${direction}`}
-          <ArrowUpRight size={14} />
+              ? session.retry
+                ? "Retry connection"
+                : "Wallet unavailable"
+              : unresolved
+                ? "Check pending trade"
+                : `Review ${direction}`}
+          {session.trader && <ArrowUpRight size={14} />}
         </button>
       )}
     </section>

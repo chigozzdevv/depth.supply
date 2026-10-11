@@ -17,9 +17,11 @@ import type { DemoConfig } from "@/shared/config/runtime";
 
 type Session = {
   config: DemoConfig;
+  connected: boolean;
   trader?: DepthClient;
   maker?: MakerClient;
   verifying: boolean;
+  retry?: () => void;
   error: string;
   busy: string;
   message: string;
@@ -44,6 +46,7 @@ export function DepthSession({
 }) {
   const wallet = useWallet();
   const owner = wallet.publicKey?.toBase58() ?? "";
+  const connected = Boolean(owner);
   const scope = useRef(owner);
   useEffect(() => {
     scope.current = owner;
@@ -61,6 +64,7 @@ export function DepthSession({
     message: "",
   });
   const [version, setVersion] = useState(0);
+  const [attempt, setAttempt] = useState(0);
   const locked = useRef(false);
   const signer = useMemo<DepthWallet | undefined>(
     () =>
@@ -124,7 +128,7 @@ export function DepthSession({
       makerSession?.hedges.disconnect();
       makerSession?.automation.disconnect();
     };
-  }, [config, owner, signer, role]);
+  }, [config, owner, signer, role, attempt]);
 
   const current = state.owner === owner && owner ? state : undefined;
   const currentFeedback = feedback.owner === owner ? feedback : undefined;
@@ -160,10 +164,21 @@ export function DepthSession({
     <Context.Provider
       value={{
         config,
-        trader: current?.trader,
-        maker: current?.maker,
+        connected,
+        trader: signer ? current?.trader : undefined,
+        maker: signer ? current?.maker : undefined,
         verifying: Boolean(signer && !current),
-        error: current?.error ?? currentFeedback?.error ?? "",
+        retry: signer
+          ? () => {
+              if (locked.current) return;
+              setState({ owner: "" });
+              setAttempt((value) => value + 1);
+            }
+          : undefined,
+        error:
+          connected && !signer
+            ? "This wallet cannot sign Solana transactions"
+            : (current?.error ?? currentFeedback?.error ?? ""),
         busy: currentFeedback?.busy ?? "",
         message: currentFeedback?.message ?? "",
         version,
