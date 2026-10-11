@@ -10,6 +10,7 @@ import { availableBalance } from "@/shared/depth/snapshot";
 import { decimal, nonce, units } from "@/shared/depth/format";
 import { WalletButton } from "@/components/demo/wallet";
 import { tradeFeeBps, tradeMargin, idleCollateral } from "@/shared/depth/terms";
+import { reconcileTrade } from "@/shared/depth/trade";
 
 export function Ticket({
   view,
@@ -97,16 +98,31 @@ export function Ticket({
     setReview(false);
     setUnresolved(true);
     await session.run("Submitting encrypted trade", async () => {
-      const opening = await sdk.trade
-        .flow(input.clientNonce!)
-        .resume(input, "increase");
-      session.notice("Trade submitted");
-      await opening.confirm();
-      setUnresolved(false);
-      setDraft(null);
-      session.notice(
-        "Trade filled. Read your private account to view the position.",
-      );
+      try {
+        const opening = await sdk.trade
+          .flow(input.clientNonce!)
+          .resume(input, "increase");
+        session.notice("Trade submitted");
+        await opening.confirm();
+        setUnresolved(false);
+        setDraft(null);
+        session.notice("Trade filled");
+      } catch (cause) {
+        try {
+          const recovery = await reconcileTrade(sdk, input.clientNonce!, cause);
+          if (recovery.resolved) {
+            setUnresolved(false);
+            setDraft(null);
+            if (recovery.status.order?.outcome === "filled") {
+              session.notice("Trade filled");
+              return;
+            }
+          }
+        } catch {
+          // Keep the original nonce when reconciliation is unavailable.
+        }
+        throw cause;
+      }
     });
   }
   async function reconcile() {
@@ -116,15 +132,14 @@ export function Ticket({
     await session.run(
       "Checking trade continuation",
       async () => {
-        const status = await sdk.trade.flow(input.clientNonce!).status();
-        if (
-          status.phase === "unstarted" ||
-          status.phase === "failed" ||
-          status.order?.status === "finalized"
-        ) {
+        const { status, resolved, message } = await reconcileTrade(
+          sdk,
+          input.clientNonce!,
+        );
+        if (resolved) {
           setUnresolved(false);
           setDraft(null);
-          session.notice(`Trade ${status.order?.outcome ?? status.phase}`);
+          session.notice(message);
         } else if (status.phase === "order") {
           await sdk.trade.operation(input.clientNonce!).confirm();
           setUnresolved(false);
@@ -132,9 +147,7 @@ export function Ticket({
           session.notice("Trade filled");
         } else {
           setReview(true);
-          session.notice(
-            "The original trade can continue with its existing margin allocation.",
-          );
+          session.notice(message);
         }
       },
       false,

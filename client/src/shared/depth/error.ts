@@ -1,4 +1,8 @@
+import { DepthError } from "@depthhq/sdk";
+
 export function errorMessage(cause: unknown): string {
+  if (cause instanceof DepthError && cause.code === "SUBMISSION_UNCONFIRMED")
+    return "Submission interrupted. Check the pending operation before retrying.";
   const message = cause instanceof Error ? cause.message : String(cause);
   if (
     /blockhash not found|block height exceeded|blockhash.*expired/i.test(
@@ -13,7 +17,7 @@ export function errorMessage(cause: unknown): string {
   )
     return "Connection interrupted. Please try again.";
   if (/Submission was not confirmed/.test(message))
-    return "Confirmation interrupted. Check the pending operation before retrying.";
+    return "Submission interrupted. Check the pending operation before retrying.";
   if (/user rejected|user denied|approval rejected/i.test(message))
     return "Wallet approval declined.";
   return message.replace(/(?:https?|wss?):\/\/[^\s]+/g, "[endpoint]");
