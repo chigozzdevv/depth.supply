@@ -148,6 +148,12 @@ test("saved transfers are isolated by wallet and reject corrupted requests", () 
 test("wallet and RPC errors use plain text without leaking provider URLs", () => {
   assert.equal(
     errorMessage(
+      new Error("Transaction simulation failed: Blockhash not found"),
+    ),
+    "Wallet request expired. Please try again.",
+  );
+  assert.equal(
+    errorMessage(
       new Error('503 Service Unavailable: {"error":"rpc_unavailable"}'),
     ),
     "Connection interrupted. Please try again.",

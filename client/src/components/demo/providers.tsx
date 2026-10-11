@@ -7,6 +7,7 @@ import {
 } from "@solana/wallet-adapter-react";
 import { DepthSession } from "@/shared/depth/session";
 import type { DemoConfig } from "@/shared/config/runtime";
+import { errorMessage } from "@/shared/depth/error";
 
 export function Providers({
   config,
@@ -28,11 +29,11 @@ export function Providers({
         wallets={[]}
         autoConnect
         localStorageKey="depth:wallet"
-        onError={(error) => setWalletError(error.message)}
+        onError={(error) => setWalletError(errorMessage(error))}
       >
         <DepthSession config={config} role={role}>
           {walletError && (
-            <div role="alert" className="terminal-notice">
+            <div role="alert" className="terminal-toast">
               <span>{walletError}</span>
               <button onClick={() => setWalletError("")}>Dismiss</button>
             </div>
