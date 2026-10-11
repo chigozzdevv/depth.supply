@@ -51,7 +51,7 @@ export class QuoteHandle {
         throw new Error(
           `Quote balance view ${view.id.toBase58()} is still pending`,
         );
-      await view.close();
+      await view.deferClose();
       this.balanceView = undefined;
       if (
         snapshot.status === "ready" &&

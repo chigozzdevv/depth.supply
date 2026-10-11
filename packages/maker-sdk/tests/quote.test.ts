@@ -139,7 +139,7 @@ test("quote activation waits for private validation and stays pending until rese
     }),
     requestQuoteView: async () => ({
       wait: async () => ({ status: "ready", remainingCapacity: 750n }),
-      close: async () => "close-signature",
+      deferClose: async () => {},
     }),
     read: async (name: string) =>
       name === "MarketAccount"

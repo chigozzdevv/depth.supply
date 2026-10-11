@@ -116,6 +116,9 @@ export class MakerClient {
       connection: this.options.connection,
       wallet: this.options.wallet,
       appId: this.options.appId,
+      environment: this.options.environment,
+      privateViews: this.options.privateViews,
+      settlement: this.options.settlement,
     });
     return this.ownerClient;
   }
@@ -126,6 +129,10 @@ export class MakerClient {
       this.options.connection,
       this.options.maker,
       (name, offset) => this.queue(name, offset),
+      this.options.settlement ??
+        (this.options.environment && this.options.environment !== "localnet"
+          ? "keeper"
+          : "wallet"),
     );
   }
 
@@ -867,9 +874,11 @@ export class MakerClient {
       summary: async (
         options: { timeoutMs: number; pollMs?: number } = { timeoutMs: 30_000 },
       ): Promise<PositionSnapshot> => {
+        if (this.options.wallet.publicKey.equals(this.options.maker))
+          return (await this.owned()).position.summary(options);
         const view = await this.requestMarketView();
         const result = (await view.wait(options)) as PositionSnapshot;
-        if (result.status !== "pending") await view.close();
+        if (result.status !== "pending") await view.deferClose();
         return result;
       },
     };
@@ -925,7 +934,7 @@ export class MakerClient {
     ): Promise<FillSnapshot> => {
       const view = await this.requestFillView(order);
       const result = (await view.wait(options)) as FillSnapshot;
-      if (result.status !== "pending") await view.close();
+      if (result.status !== "pending") await view.deferClose();
       return result;
     },
   };
