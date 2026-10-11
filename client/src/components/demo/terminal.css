@@ -482,6 +482,21 @@
   color: var(--terminal-muted);
   font-size: 12px;
 }
+.field-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.margin-balance {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.balance-retry {
+  color: var(--terminal-accent);
+  font-size: 11px;
+}
 .input-unit {
   display: flex;
   align-items: center;

@@ -1,5 +1,16 @@
 import type { PublicMarket, PublicApp } from "@depthhq/sdk";
 
+export function tradeMargin(
+  amount: bigint,
+  available: bigint | undefined,
+): bigint {
+  if (amount <= 0n) throw new Error("Enter a positive USDC margin");
+  if (available === undefined)
+    throw new Error("Wait for your account balance or retry the account read");
+  if (amount > available) throw new Error("Margin exceeds your available USDC");
+  return amount;
+}
+
 export function tradeFeeBps(
   market: Pick<PublicMarket, "fee_bps" | "insurance_fee_bps">,
   app: Pick<PublicApp, "fee_bps">,

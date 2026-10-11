@@ -1,16 +1,26 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useId, useState, type CSSProperties } from "react";
 import { ArrowUpRight } from "lucide-react";
 import type { TradeInput } from "@depthhq/sdk";
 import { useDepth } from "@/shared/depth/session";
 import type { MarketView } from "@/shared/depth/market";
+import type { AccountView } from "@/shared/depth/account";
+import { availableBalance } from "@/shared/depth/snapshot";
 import { decimal, nonce, units } from "@/shared/depth/format";
 import { WalletButton } from "@/components/demo/wallet";
-import { tradeFeeBps } from "@/shared/depth/terms";
+import { tradeFeeBps, tradeMargin } from "@/shared/depth/terms";
 
-export function Ticket({ view }: { view: MarketView }) {
+export function Ticket({
+  view,
+  account,
+}: {
+  view: MarketView;
+  account: AccountView;
+}) {
   const session = useDepth();
+  const marginId = useId();
+  const available = availableBalance(account);
   const [direction, setDirection] = useState<"long" | "short">("long");
   const [margin, setMargin] = useState("");
   const [leverage, setLeverage] = useState(3);
@@ -42,7 +52,7 @@ export function Ticket({ view }: { view: MarketView }) {
     try {
       if (!view.ready || !session.trader || maxFee === undefined)
         throw new Error(view.reason || "Connect your wallet first");
-      const amount = units(margin);
+      const amount = tradeMargin(units(margin), available);
       const slippageBps = Number(units(slippage, 2));
       if (amount <= 0n || maxFee <= 0n)
         throw new Error("Enter a positive USDC margin");
@@ -68,6 +78,15 @@ export function Ticket({ view }: { view: MarketView }) {
   }
   async function submit() {
     if (!session.trader || !draft) return;
+    if (!unresolved) {
+      try {
+        tradeMargin(draft.margin, available);
+      } catch (cause) {
+        setError((cause as Error).message);
+        setReview(false);
+        return;
+      }
+    }
     const sdk = session.trader;
     const input = draft;
     setReview(false);
@@ -137,10 +156,27 @@ export function Ticket({ view }: { view: MarketView }) {
           </button>
         ))}
       </div>
-      <label className="field-label">
-        Additional margin
+      <div className="field-label">
+        <div className="field-heading">
+          <label htmlFor={marginId}>Additional margin</label>
+          {session.connected &&
+            (account.error ? (
+              <button
+                className="balance-retry"
+                disabled={Boolean(session.busy)}
+                onClick={() => void account.read()}
+              >
+                Retry balance
+              </button>
+            ) : (
+              <span className="margin-balance" aria-live="polite">
+                Available: {decimal(available)} USDC
+              </span>
+            ))}
+        </div>
         <div className="input-unit">
           <input
+            id={marginId}
             value={margin}
             disabled={unresolved}
             placeholder="0.00"
@@ -152,7 +188,7 @@ export function Ticket({ view }: { view: MarketView }) {
           />
           <span>USDC</span>
         </div>
-      </label>
+      </div>
       <div className="leverage-label">
         <span>Leverage</span>
         <strong>{selectedLeverage}×</strong>
@@ -218,6 +254,11 @@ export function Ticket({ view }: { view: MarketView }) {
       {error && (
         <p role="alert" className="form-error">
           {error}
+        </p>
+      )}
+      {account.error && (
+        <p role="alert" className="form-error">
+          {account.error}
         </p>
       )}
       {review ? (

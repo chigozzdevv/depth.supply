@@ -55,7 +55,7 @@ function Screen() {
           />
         </div>
         <div className="trade-ticket">
-          <Ticket view={view} />
+          <Ticket view={view} account={account} />
         </div>
         <div className="trade-records">
           <Records account={account} view={view} />

@@ -57,10 +57,19 @@ const view = {
   },
   app: { fee_bps: 1 },
 } as unknown as MarketView;
+const account = {
+  balance: { status: "ready", amount: 125_000_000n },
+  loaded: true,
+  empty: false,
+  outdated: false,
+  checking: false,
+  error: "",
+  read: async () => {},
+} as unknown as AccountView;
 
 function buttons(): string[] {
   return [
-    renderToStaticMarkup(<Ticket view={view} />),
+    renderToStaticMarkup(<Ticket view={view} account={account} />),
     renderToStaticMarkup(<QuoteTicket view={view} quotes={[]} />),
   ].map(
     (html) =>
@@ -157,8 +166,33 @@ test("funds show a proven empty account without requesting balance decryption", 
       account={{ ...account, empty: false, loaded: false, balance: undefined }}
     />,
   );
-  assert.match(privateAccount, /aria-label="Reveal balances"/);
+  assert.match(privateAccount, /aria-label="Refresh balances"/);
   assert.match(privateAccount, /Decrypt balances with wallet approval/);
+  assert.doesNotMatch(privateAccount, /Reveal/);
+});
+
+test("trade availability uses a fresh private balance and never substitutes zero for unknown data", () => {
+  session = { connected: true, verifying: false, busy: "", trader: {} };
+  const render = (value: AccountView) =>
+    renderToStaticMarkup(<Ticket view={view} account={value} />);
+  assert.match(render(account), /Available: 125\.00 USDC/);
+  assert.match(render({ ...account, outdated: true }), /Available: — USDC/);
+  assert.match(render({ ...account, checking: true }), /Available: — USDC/);
+  const failed = render({
+    ...account,
+    error: "Wallet approval rejected",
+    loaded: false,
+    balance: undefined,
+  });
+  assert.match(failed, /Retry balance/);
+  assert.match(failed, /Wallet approval rejected/);
+  assert.doesNotMatch(failed, /Available: 0\.00/);
+  const empty = render({
+    ...account,
+    empty: true,
+    balance: { status: "uninitialized", amount: 0n } as AccountView["balance"],
+  });
+  assert.match(empty, /Available: 0\.00 USDC/);
 });
 
 test("connected account records do not ask the wallet to connect again", () => {

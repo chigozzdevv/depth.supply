@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { tradeFeeBps } from "@/shared/depth/terms";
+import { tradeFeeBps, tradeMargin } from "@/shared/depth/terms";
 
 test("the trader pays the base fee plus app fee with insurance already included", () => {
   const market = { fee_bps: 5, insurance_fee_bps: 1 };
@@ -12,4 +12,13 @@ test("the trader pays the base fee plus app fee with insurance already included"
     () => tradeFeeBps({ fee_bps: 5, insurance_fee_bps: 6 }, { fee_bps: 1 }),
     /Invalid/,
   );
+});
+
+test("additional margin must fit the known free balance with exact micro-USDC precision", () => {
+  assert.equal(tradeMargin(125_000_000n, 125_000_000n), 125_000_000n);
+  assert.equal(tradeMargin(1n, 1n), 1n);
+  assert.throws(() => tradeMargin(125_000_001n, 125_000_000n), /exceeds/);
+  assert.throws(() => tradeMargin(1n, 0n), /exceeds/);
+  assert.throws(() => tradeMargin(0n, 125_000_000n), /positive/);
+  assert.throws(() => tradeMargin(1n, undefined), /account balance/);
 });
