@@ -807,7 +807,7 @@
   color: var(--terminal-sell);
 }
 .position-controls input,
-.operator-form > input {
+.operator-form .field-label > input {
   min-width: 120px;
   padding: 10px 12px;
   background: #0c0c0c;
@@ -1265,15 +1265,21 @@
   line-height: 1.6;
 }
 .operator-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px 160px;
+  gap: 16px;
   margin-top: 17px;
 }
-.operator-form > input:first-child {
-  flex: 1;
-  min-width: 230px;
+.operator-form > .field-label {
+  margin-top: 0;
+  align-items: stretch;
+}
+.operator-controls {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 .operator-form label {
   display: flex;
@@ -1447,8 +1453,8 @@
   .records-empty {
     min-height: 130px;
   }
-  .operator-form > input {
-    width: 100%;
+  .operator-form {
+    grid-template-columns: minmax(0, 1fr);
   }
   .operator-form .terminal-button {
     width: 100%;

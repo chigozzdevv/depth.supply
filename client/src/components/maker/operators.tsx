@@ -92,55 +92,73 @@ export function Operators() {
   return (
     <section className="operator-panel" aria-label="Quote operator permissions">
       <p>
-        An operator can publish and cancel quotes within its grant. It cannot
-        move your collateral. Private view access is separately approved.
+        Operators can publish and cancel quotes within their grant; your wallet
+        controls collateral transfers.
       </p>
       <div className="operator-form">
-        <input
-          aria-label="Operator Solana public key"
-          placeholder="Operator public key"
-          value={operator}
-          onChange={(event) => {
-            setOperator(event.target.value);
-            setReview(false);
-          }}
-        />
-        <input
-          aria-label="Operator capacity USDC"
-          placeholder="Capacity in USDC"
-          value={capacity}
-          onChange={(event) => {
-            setCapacity(event.target.value);
-            setReview(false);
-          }}
-        />
-        <input
-          aria-label="Operator grant duration minutes"
-          placeholder="Duration in minutes"
-          value={minutes}
-          onChange={(event) => {
-            setMinutes(event.target.value);
-            setReview(false);
-          }}
-        />
-        <label>
+        <label className="field-label">
+          Operator
           <input
-            type="checkbox"
-            checked={canView}
+            aria-label="Operator Solana public key"
+            placeholder="Solana public key"
+            value={operator}
             onChange={(event) => {
-              setCanView(event.target.checked);
+              setOperator(event.target.value);
               setReview(false);
             }}
           />
-          Allow private views
         </label>
-        <button
-          className="terminal-button"
-          disabled={!session.maker || Boolean(session.busy)}
-          onClick={() => (review ? void authorize() : setReview(true))}
-        >
-          {review ? "Approve grant in wallet" : "Review grant"}
-        </button>
+        <label className="field-label">
+          Capacity
+          <div className="input-unit compact">
+            <input
+              aria-label="Operator capacity USDC"
+              inputMode="decimal"
+              placeholder="0.00"
+              value={capacity}
+              onChange={(event) => {
+                setCapacity(event.target.value);
+                setReview(false);
+              }}
+            />
+            <span>USDC</span>
+          </div>
+        </label>
+        <label className="field-label">
+          Grant duration
+          <div className="input-unit compact">
+            <input
+              aria-label="Operator grant duration minutes"
+              inputMode="numeric"
+              value={minutes}
+              onChange={(event) => {
+                setMinutes(event.target.value);
+                setReview(false);
+              }}
+            />
+            <span>min</span>
+          </div>
+        </label>
+        <div className="operator-controls">
+          <label>
+            <input
+              type="checkbox"
+              checked={canView}
+              onChange={(event) => {
+                setCanView(event.target.checked);
+                setReview(false);
+              }}
+            />
+            Allow private views
+          </label>
+          <button
+            className="terminal-button"
+            disabled={!session.maker || Boolean(session.busy)}
+            onClick={() => (review ? void authorize() : setReview(true))}
+          >
+            {review ? "Approve grant in wallet" : "Review grant"}
+          </button>
+        </div>
       </div>
       {review && (
         <p>
