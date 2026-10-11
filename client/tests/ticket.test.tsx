@@ -11,6 +11,8 @@ let session: {
   connected: boolean;
   verifying: boolean;
   busy: string;
+  local?: boolean;
+  error?: string;
   retry?: () => void;
   trader?: object;
   maker?: object;
@@ -159,7 +161,7 @@ test("funds show a proven empty account without requesting balance decryption", 
   } as unknown as AccountView;
   const html = renderToStaticMarkup(<Funds account={account} />);
   assert.match(html, /0\.00/);
-  assert.match(html, /Review deposit/);
+  assert.match(html, /Retry connection/);
   assert.doesNotMatch(html, /View balances|Reveal balances/);
   const privateAccount = renderToStaticMarkup(
     <Funds
@@ -169,6 +171,34 @@ test("funds show a proven empty account without requesting balance decryption", 
   assert.match(privateAccount, /aria-label="Refresh balances"/);
   assert.match(privateAccount, /Decrypt balances with wallet approval/);
   assert.doesNotMatch(privateAccount, /Reveal/);
+});
+
+test("inline fund operations do not create a strip above the chart", () => {
+  session = {
+    connected: true,
+    verifying: false,
+    busy: "Depositing USDC",
+    local: true,
+  };
+  const local = renderToStaticMarkup(
+    <Shell role="trade" market={<span>SOL / USDC</span>}>
+      {null}
+    </Shell>,
+  );
+  assert.doesNotMatch(local, /Depositing USDC|terminal-toast|terminal-notice/);
+  session = {
+    connected: true,
+    verifying: false,
+    busy: "",
+    error: "Connection interrupted.",
+  };
+  const global = renderToStaticMarkup(
+    <Shell role="trade" market={<span>SOL / USDC</span>}>
+      {null}
+    </Shell>,
+  );
+  assert.match(global, /terminal-toast/);
+  assert.doesNotMatch(global, /terminal-notice/);
 });
 
 test("trade availability uses a fresh private balance and never substitutes zero for unknown data", () => {

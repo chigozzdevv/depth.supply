@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDepth } from "@/shared/depth/session";
 import { AccountReader, type AccountSnapshot } from "@/shared/depth/snapshot";
+import { errorMessage } from "@/shared/depth/error";
 
 export function useAccount() {
   const { trader, load, version, busy } = useDepth();
@@ -67,10 +68,7 @@ export function useAccount() {
             owner,
             version,
             checking: false,
-            error:
-              cause instanceof Error
-                ? cause.message
-                : "Account could not be loaded",
+            error: errorMessage(cause),
           }));
       }
     });

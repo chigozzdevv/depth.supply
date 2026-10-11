@@ -102,6 +102,12 @@ Private snapshots stay in memory, are isolated by wallet, and are unavailable
 for trading while refreshing or outdated. An unchanged canonical balance
 version reuses its decrypted value without another balance view request.
 
+Funds keeps transfer progress and errors inside its dialog. It saves the
+request nonce, action, and amount selector before submission, scoped to the
+wallet, network, and program. Resuming checks the existing onchain receipt
+before submitting the same request; pending receipts can also be discovered
+from another browser. Private account snapshots are not stored in this journal.
+
 ## Configuration and services
 
 Copy [`.env.example`](.env.example) to a root `.env.local` if one does not

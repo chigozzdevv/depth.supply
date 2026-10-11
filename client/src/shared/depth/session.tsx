@@ -19,6 +19,7 @@ import type {
 } from "@depthhq/sdk";
 import type { MakerClient } from "@depthhq/maker-sdk";
 import type { DemoConfig } from "@/shared/config/runtime";
+import { errorMessage } from "@/shared/depth/error";
 
 type Session = {
   config: DemoConfig;
@@ -30,15 +31,17 @@ type Session = {
   error: string;
   busy: string;
   reading: boolean;
+  local: boolean;
   message: string;
   version: number;
   run: (
     label: string,
     action: () => Promise<void>,
-    mutates?: boolean,
+    options?: boolean | { mutates?: boolean; feedback?: "local" },
   ) => Promise<void>;
   load: (action: () => Promise<void>) => Promise<boolean>;
   notice: (message: string) => void;
+  dismiss: () => void;
 };
 const Context = createContext<Session | null>(null);
 
@@ -70,6 +73,7 @@ export function DepthSession({
     error: "",
     message: "",
     reading: false,
+    local: false,
   });
   const [version, setVersion] = useState(0);
   const [attempt, setAttempt] = useState(0);
@@ -192,8 +196,10 @@ export function DepthSession({
     async function run(
       label: string,
       action: () => Promise<void>,
-      mutates = true,
+      options: boolean | { mutates?: boolean; feedback?: "local" } = {},
     ) {
+      const { mutates = true, feedback: destination } =
+        typeof options === "boolean" ? { mutates: options } : options;
       if (locked.current || scope.current !== owner) return;
       const account = owner;
       locked.current = true;
@@ -203,6 +209,7 @@ export function DepthSession({
         error: "",
         message: "",
         reading: false,
+        local: destination === "local",
       });
       try {
         await action();
@@ -210,10 +217,7 @@ export function DepthSession({
         if (scope.current === account)
           setFeedback((value) => ({
             ...value,
-            error:
-              cause instanceof Error
-                ? cause.message
-                : "The operation could not be completed",
+            error: errorMessage(cause),
           }));
       } finally {
         if (mutates && scope.current === account)
@@ -234,6 +238,7 @@ export function DepthSession({
         error: previous.owner === owner ? previous.error : "",
         message: previous.owner === owner ? previous.message : "",
         reading: true,
+        local: previous.owner === owner && previous.local,
       }));
       try {
         await action();
@@ -254,7 +259,7 @@ export function DepthSession({
         maker: signer ? current?.maker : undefined,
         verifying: Boolean(signer && !current && !prepared?.error),
         retry:
-          connected && !signer
+          (connected && !signer) || (!prepared?.error && !current?.error)
             ? undefined
             : () => {
                 if (locked.current) return;
@@ -270,10 +275,15 @@ export function DepthSession({
               ""),
         busy: feedback.busy,
         reading: feedback.reading || feedback.owner !== owner,
+        local: Boolean(
+          currentFeedback?.local && !prepared?.error && !current?.error,
+        ),
         message: currentFeedback?.message ?? "",
         version,
         run,
         load,
+        dismiss: () =>
+          setFeedback((value) => ({ ...value, error: "", message: "" })),
         notice: (message) => {
           if (scope.current === owner)
             setFeedback((value) => ({

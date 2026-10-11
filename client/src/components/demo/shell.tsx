@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Wordmark } from "@/components/ui/wordmark";
 import { WalletButton } from "@/components/demo/wallet";
@@ -53,26 +53,35 @@ export function Shell({
         </div>
       </header>
       <main id="main" className="terminal-container terminal-main">
-        {(session.error ||
-          (session.busy && !session.reading) ||
-          session.message) && (
-          <div
-            className="terminal-notice"
-            role={session.error ? "alert" : "status"}
-          >
-            {session.busy && !session.reading && (
-              <LoaderCircle size={15} className="spin" />
-            )}
-            <span>
-              {session.error ||
-                (!session.reading && session.busy) ||
-                session.message}
-            </span>
-            {session.error && session.retry && !session.busy && (
-              <button onClick={session.retry}>Retry</button>
-            )}
-          </div>
-        )}
+        {!session.local &&
+          (session.error ||
+            (session.busy && !session.reading) ||
+            session.message) && (
+            <div
+              className="terminal-toast"
+              role={session.error ? "alert" : "status"}
+            >
+              {session.busy && !session.reading && (
+                <LoaderCircle size={15} className="spin" />
+              )}
+              <span>
+                {session.error ||
+                  (!session.reading && session.busy) ||
+                  session.message}
+              </span>
+              {session.error && session.retry && !session.busy && (
+                <button onClick={session.retry}>Retry</button>
+              )}
+              {!session.busy && !session.retry && (
+                <button
+                  aria-label="Dismiss notification"
+                  onClick={session.dismiss}
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+          )}
         {children}
       </main>
     </div>

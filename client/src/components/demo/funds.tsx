@@ -1,30 +1,74 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { ArrowDownToLine, X, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, X, RefreshCw, LoaderCircle } from "lucide-react";
 import type { AmountSelector } from "@depthhq/sdk";
 import { useDepth } from "@/shared/depth/session";
 import type { AccountView } from "@/shared/depth/account";
 import { decimal, units } from "@/shared/depth/format";
 import { availableBalance } from "@/shared/depth/snapshot";
+import {
+  FundingStore,
+  discoverFunding,
+  fundingRequest,
+  settleFunding,
+  type FundingAction,
+  type FundingRequest,
+} from "@/shared/depth/funding";
+import { errorMessage } from "@/shared/depth/error";
 
 export function Funds({ account }: { account: AccountView }) {
   const session = useDepth();
-  const [action, setAction] = useState("deposit");
+  const [action, setAction] = useState<FundingAction>("deposit");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
+  const [request, setRequest] = useState<FundingRequest>();
+  const [checking, setChecking] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [complete, setComplete] = useState("");
+  const [processing, setProcessing] = useState(false);
+  const working = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const available = availableBalance(account);
+  async function open() {
+    const sdk = session.trader;
+    if (!sdk || working.current) return;
+    if (!dialog.current?.open) dialog.current?.showModal();
+    setError("");
+    setComplete("");
+    setChecking(true);
+    setChecked(false);
+    try {
+      const store = new FundingStore(localStorage, sdk);
+      const pending = store.read() ?? (await discoverFunding(sdk));
+      if (pending) {
+        store.save(pending);
+        setAction(pending.action);
+        setAmount(
+          typeof pending.amount === "bigint"
+            ? decimal(pending.amount, 6, 6).replaceAll(",", "")
+            : pending.amount,
+        );
+      }
+      setRequest(pending);
+      setChecked(true);
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setChecking(false);
+    }
+  }
   async function submit() {
     const sdk = session.trader;
-    if (!sdk) return;
+    if (!sdk || working.current || checking || !checked || session.busy) return;
     let value: AmountSelector;
     try {
       value =
-        amount === "all" || /^(?:10|25|50|100)%$/.test(amount)
+        request?.amount ??
+        (amount === "all" || /^(?:10|25|50|100)%$/.test(amount)
           ? (amount as AmountSelector)
-          : units(amount);
+          : units(amount));
       if (typeof value === "bigint" && value <= 0n)
         throw new Error("Amount must be positive");
     } catch (cause) {
@@ -35,27 +79,34 @@ export function Funds({ account }: { account: AccountView }) {
       setError("Deposits require an exact USDC amount");
       return;
     }
-    dialog.current?.close();
-    await session.run(
-      `${action === "deposit" ? "Depositing" : action === "withdraw" ? "Withdrawing" : action === "allocate" ? "Allocating" : "Releasing"} USDC`,
-      async () => {
-        const receipt =
-          action === "deposit"
-            ? await sdk.account().deposit(value as bigint)
-            : action === "withdraw"
-              ? await sdk.account().withdraw(value)
-              : action === "allocate"
-                ? await sdk
-                    .account()
-                    .allocate({ marketId: "SOL-USD", amount: value })
-                : await sdk
-                    .account()
-                    .release({ marketId: "SOL-USD", amount: value });
-        session.notice("Transfer submitted");
-        await receipt.confirm();
-        session.notice("Transfer confirmed");
-      },
-    );
+    working.current = true;
+    setProcessing(true);
+    setError("");
+    setComplete("");
+    try {
+      await session.run(
+        `${action === "deposit" ? "Depositing" : action === "withdraw" ? "Withdrawing" : action === "allocate" ? "Allocating" : "Releasing"} USDC`,
+        async () => {
+          try {
+            const store = new FundingStore(localStorage, sdk);
+            const intent = request ?? fundingRequest(action, value);
+            store.save(intent);
+            setRequest(intent);
+            await settleFunding(sdk, intent);
+            store.clear();
+            setRequest(undefined);
+            setAmount("");
+            setComplete("Transfer confirmed.");
+          } catch (cause) {
+            setError(errorMessage(cause));
+          }
+        },
+        { feedback: "local" },
+      );
+    } finally {
+      working.current = false;
+      setProcessing(false);
+    }
   }
   return (
     <>
@@ -64,11 +115,8 @@ export function Funds({ account }: { account: AccountView }) {
           className="funds-trigger"
           aria-label="Funds"
           title="Manage USDC"
-          disabled={Boolean(session.busy)}
-          onClick={() => {
-            setError("");
-            dialog.current?.showModal();
-          }}
+          disabled={Boolean(session.busy) && !session.reading}
+          onClick={() => void open()}
         >
           <ArrowDownToLine aria-hidden="true" size={13} />
           <span>Funds</span>
@@ -140,8 +188,9 @@ export function Funds({ account }: { account: AccountView }) {
           Operation
           <select
             value={action}
+            disabled={Boolean(request) || checking || processing}
             onChange={(event) => {
-              setAction(event.target.value);
+              setAction(event.target.value as FundingAction);
               setError("");
               if (
                 event.target.value === "deposit" &&
@@ -161,6 +210,7 @@ export function Funds({ account }: { account: AccountView }) {
           <div className="input-unit">
             <input
               value={amount}
+              disabled={Boolean(request) || checking || processing}
               placeholder="0.00"
               inputMode="decimal"
               onChange={(event) => {
@@ -171,7 +221,7 @@ export function Funds({ account }: { account: AccountView }) {
             <span>USDC</span>
           </div>
         </label>
-        {action !== "deposit" && (
+        {action !== "deposit" && !request && (
           <div className="amount-presets">
             {["10%", "25%", "50%", "all"].map((value) => (
               <button
@@ -194,18 +244,38 @@ export function Funds({ account }: { account: AccountView }) {
             {error}
           </p>
         )}
+        {complete && (
+          <p role="status" className="funds-result">
+            {complete}
+          </p>
+        )}
         <button
           className="terminal-button primary full"
-          disabled={!session.trader || Boolean(session.busy)}
-          onClick={() => void submit()}
+          disabled={!session.trader || checking || Boolean(session.busy)}
+          onClick={() => void (checked ? submit() : open())}
         >
-          {action === "deposit"
-            ? "Review deposit"
-            : action === "withdraw"
-              ? "Review withdrawal"
-              : action === "allocate"
-                ? "Review allocation"
-                : "Review release"}
+          {processing ? (
+            <>
+              <LoaderCircle size={14} className="spin" />
+              {session.busy}
+            </>
+          ) : checking ? (
+            "Checking transfers…"
+          ) : session.reading ? (
+            "Loading balances…"
+          ) : !checked ? (
+            "Retry connection"
+          ) : request ? (
+            `Resume ${action === "allocate" ? "allocation" : action === "withdraw" ? "withdrawal" : action}`
+          ) : action === "deposit" ? (
+            "Review deposit"
+          ) : action === "withdraw" ? (
+            "Review withdrawal"
+          ) : action === "allocate" ? (
+            "Review allocation"
+          ) : (
+            "Review release"
+          )}
         </button>
       </dialog>
     </>
