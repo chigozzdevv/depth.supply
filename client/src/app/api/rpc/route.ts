@@ -1,3 +1,5 @@
+import { relayRpc } from "@/shared/rpc/relay";
+
 export const runtime = "nodejs";
 const methods = new Set([
   "getGenesisHash",
@@ -38,36 +40,34 @@ export async function POST(request: Request) {
     return Response.json({ error: "rate_limited" }, { status: 429 });
   buckets.set(ip, bucket);
   if (buckets.size > 1000) buckets.delete(buckets.keys().next().value!);
+  let text: string;
+  let payload: { jsonrpc: string; method: string };
   try {
-    const text = await request.text();
+    text = await request.text();
     if (text.length > 100_000)
       return Response.json({ error: "request_too_large" }, { status: 413 });
-    const payload = JSON.parse(text);
+    payload = JSON.parse(text);
     if (
+      !payload ||
       Array.isArray(payload) ||
       payload.jsonrpc !== "2.0" ||
       !methods.has(payload.method)
     ) {
       return Response.json({ error: "invalid_rpc_method" }, { status: 400 });
     }
+  } catch {
+    return Response.json({ error: "invalid_rpc_request" }, { status: 400 });
+  }
+  try {
     const url = process.env.SOLANA_RPC_URL;
     if (!url)
       return Response.json({ error: "rpc_unconfigured" }, { status: 503 });
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: text,
-      signal: AbortSignal.timeout(30_000),
-      cache: "no-store",
-    });
-    if (!response.ok)
-      return Response.json({ error: "rpc_unavailable" }, { status: 503 });
-    return new Response(response.body, {
-      headers: {
-        "content-type": "application/json",
-        "cache-control": "no-store",
-      },
-    });
+    return await relayRpc(
+      url,
+      text,
+      payload.method,
+      AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]),
+    );
   } catch {
     return Response.json({ error: "rpc_unavailable" }, { status: 503 });
   }
