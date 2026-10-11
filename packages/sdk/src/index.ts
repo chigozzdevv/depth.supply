@@ -59,7 +59,8 @@ export type {
   ReverseInput,
   TradeIntent,
 } from "@/client/types";
-export { resolveConnection } from "@/chain/environment";
+export { resolveConnection, prepare_depth } from "@/chain/environment";
+export type { AccountState } from "@/account/state";
 export type {
   ConnectionOptions,
   ResolvedConnection,

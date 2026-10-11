@@ -33,6 +33,7 @@ import { AppAdmin } from "@/app/app";
 import { MarketCatalog } from "@/catalog/catalog";
 import { FundingDiscovery } from "@/account/discovery";
 import { FundingClient } from "@/account/funding";
+import { balanceState } from "@/account/state";
 import { destinationTokenAccount, sourceTokenAccount } from "@/account/token";
 import { releasableMargin } from "@/account/release";
 import { submissionError } from "@/operation/error";
@@ -540,6 +541,13 @@ export class DepthClient {
 
   private accountActions() {
     const actions = {
+      state: () =>
+        balanceState(
+          this.program,
+          this.options.connection,
+          this.options.wallet.publicKey,
+          this.funding.balance,
+        ),
       detail: (item: Parameters<FundingDiscovery["detail"]>[0]) =>
         new FundingDiscovery(
           this.program,
@@ -597,6 +605,9 @@ export class DepthClient {
           timeoutMs: 180_000,
         },
       ): Promise<BalanceSnapshot> => {
+        const state = await actions.state();
+        if (state.status === "uninitialized")
+          return { ...state, status: "uninitialized", amount: 0n };
         const view = await this.requestBalanceView();
         const result = (await view.wait(options)) as BalanceSnapshot;
         if (result.status !== "pending") await view.close();

@@ -5,7 +5,7 @@ import { circuits, DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 
 export type BalanceSnapshot = {
-  status: "pending" | "ready" | "stale";
+  status: "uninitialized" | "pending" | "ready" | "stale";
   id: string;
   version: bigint;
   slot: number;

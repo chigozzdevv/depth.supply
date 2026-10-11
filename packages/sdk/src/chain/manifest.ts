@@ -1,6 +1,7 @@
 import * as anchor from "@anchor-lang/core";
 import {
-  getArciumProgram,
+  ARCIUM_IDL,
+  type ArciumIdlType,
   getCompDefAccAddress,
   getCompDefAccOffset,
   getMXEAccAddress,
@@ -87,7 +88,7 @@ export async function authenticateManifest(
 }
 
 export async function captureDeployment(
-  provider: anchor.AnchorProvider,
+  provider: Pick<anchor.Provider, "connection">,
   version: number,
   expiresAt: number,
 ): Promise<DeploymentManifest> {
@@ -132,7 +133,10 @@ export async function captureDeployment(
   );
   if (!market.settlementMint.equals(protocol.settlementMint))
     throw new Error("Deployment settlement mints disagree");
-  const arcium = getArciumProgram(provider);
+  const arcium = new anchor.Program<ArciumIdlType>(
+    ARCIUM_IDL as ArciumIdlType,
+    provider,
+  );
   const mxeAddress = getMXEAccAddress(DEPTH_PROGRAM_ID);
   const mxe = await arcium.account.mxeAccount.fetch(mxeAddress);
   if (!mxe.mxeProgramId.equals(DEPTH_PROGRAM_ID))
@@ -171,8 +175,17 @@ export async function captureDeployment(
   };
 }
 
+const verified = new WeakMap<
+  Connection,
+  {
+    key: string;
+    expiresAt: number;
+    task: Promise<void>;
+  }
+>();
+
 export async function verifyDeployment(
-  provider: anchor.AnchorProvider,
+  provider: Pick<anchor.Provider, "connection">,
   policy: DeploymentPolicy,
 ): Promise<void> {
   if ("localnet" in policy) {
@@ -183,11 +196,30 @@ export async function verifyDeployment(
   }
   await authenticateManifest(policy.manifest, policy.trustedSigner);
   const expected = policy.manifest.payload;
-  const actual = await captureDeployment(
-    provider,
-    expected.version,
-    expected.expiresAt,
-  );
-  if (!manifestBytes(actual).equals(manifestBytes(expected)))
-    throw new Error("Signed deployment does not match the connected chain");
+  const key = manifestBytes(policy.manifest).toString("base64");
+  const previous = verified.get(provider.connection);
+  if (previous?.key === key && previous.expiresAt > Date.now())
+    return previous.task;
+  const task = (async () => {
+    const actual = await captureDeployment(
+      provider,
+      expected.version,
+      expected.expiresAt,
+    );
+    if (!manifestBytes(actual).equals(manifestBytes(expected)))
+      throw new Error("Signed deployment does not match the connected chain");
+  })();
+  const entry = {
+    key,
+    expiresAt: Math.min(Date.now() + 30_000, expected.expiresAt * 1_000),
+    task,
+  };
+  verified.set(provider.connection, entry);
+  try {
+    await task;
+  } catch (error) {
+    if (verified.get(provider.connection) === entry)
+      verified.delete(provider.connection);
+    throw error;
+  }
 }

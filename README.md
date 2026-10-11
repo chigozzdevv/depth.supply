@@ -89,6 +89,11 @@ The maker owner defaults to the connected wallet; a delegated bot sets
 `environment: "localnet"`. RPC, service URL, and signed manifest overrides
 remain available for custom deployments.
 
+`prepare_depth` verifies the deployment before wallet connection. Account
+discovery needs no signature; reading initialized private balances requires
+wallet approval. A new wallet shows an uninitialized zero balance until its
+first deposit creates the account.
+
 ## Configuration and services
 
 Copy [`.env.example`](.env.example) to a root `.env.local` if one does not

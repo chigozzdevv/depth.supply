@@ -3,7 +3,7 @@ export { endpoint, environments } from "@/chain/network";
 export type { DepthEnvironment } from "@/chain/network";
 import { DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { authenticateManifest } from "@/chain/manifest";
+import { authenticateManifest, verifyDeployment } from "@/chain/manifest";
 import type { DeploymentPolicy, SignedManifest } from "@/chain/manifest";
 import { DepthError } from "@/operation/error";
 import { HttpConnection } from "@/chain/connection";
@@ -146,4 +146,15 @@ export async function resolveConnection(
     if (error instanceof DepthError) throw error;
     throw unavailable("Depth deployment could not be verified", error);
   }
+}
+
+export async function prepare_depth(
+  options: ConnectionOptions,
+): Promise<ResolvedConnection> {
+  const resolved = await resolveConnection(options);
+  await verifyDeployment(
+    { connection: resolved.connection },
+    resolved.deployment,
+  );
+  return resolved;
 }

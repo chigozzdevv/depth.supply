@@ -216,6 +216,7 @@ export class MakerClient {
 
   private accountActions() {
     const actions = {
+      state: async () => (await this.owned()).account.state(),
       history: async (
         options?: Parameters<DepthClient["account"]["history"]>[0],
       ) => (await this.owned()).account.history(options),

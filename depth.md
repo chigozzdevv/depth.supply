@@ -1559,6 +1559,18 @@ it does not block the owner's administration or eligible withdrawals.
 
 ### Discovery, private reads, and recovery
 
+Apps can call `prepare_depth({ environment })` on page load to verify a signed
+deployment without a wallet, then pass its connection options to `create_depth`
+after connection. Identical verification requests on the same connection share
+at most 30 seconds of cached verification, bounded by manifest expiry. Manifest
+authentication and environment authority checks still run when connecting.
+
+`account().state()` discovers account existence, lifecycle status, version,
+and slot without signing or decrypting. A missing account is `uninitialized`;
+its summary reports zero without creating an account. RPC failures, invalid
+owners, and malformed accounts remain errors. Initialized balances require an
+owner-authorized Arcium view, requested explicitly with wallet approval.
+
 `catalog.marketPolicy(marketId)` remains available for advanced risk and
 quoting decisions. Routine trade and quote methods already read and enforce
 the applicable policy. Summaries include units, canonical identifiers,
