@@ -12,41 +12,31 @@ import {
   oracleMode,
   publisherConfig,
   serverConfig,
-  makerConfig,
+  automationConfig,
 } from "@/shared/config/env";
 
-test("maker worker configuration uses a scoped signer and validates its price and inventory limits", () => {
-  const signer = Keypair.generate();
+test("automation configuration uses shared endpoints and vault storage without owner keys", () => {
   const env = {
     SOLANA_RPC_URL: "https://rpc.example.test",
     DEPTH_SERVICE_URL: "https://api.example.test",
-    DEPTH_MAKER_OWNER: Keypair.generate().publicKey.toBase58(),
-    DEPTH_MAKER_KEYPAIR: JSON.stringify(Array.from(signer.secretKey)),
+    DEPTH_AUTOMATION_SECRET: "a".repeat(64),
   };
-  const config = makerConfig(env);
-  assert.equal(config.policy.maxCapacity, 100_000_000n);
-  assert.equal(config.policy.gasReserveLamports, 50_000_000n);
-  assert.ok(config.keypair.publicKey.equals(signer.publicKey));
-  assert.ok(!config.keypair.publicKey.equals(config.owner));
+  const config = automationConfig(env);
+  assert.equal(config.environment, "devnet");
+  assert.equal(config.healthPort, 8789);
+  assert.equal(config.intervalMs, 2000);
+  assert.equal(config.secret, env.DEPTH_AUTOMATION_SECRET);
   assert.throws(
-    () => makerConfig({ ...env, DEPTH_MAKER_CAPACITY: "-1" }),
-    /micro-USDC/,
+    () => automationConfig({ ...env, DEPTH_AUTOMATION_SECRET: "" }),
+    /AUTOMATION_SECRET/,
   );
   assert.throws(
-    () => makerConfig({ ...env, DEPTH_MAKER_CAPACITY: "2000000000" }),
-    /inventory/,
+    () => automationConfig({ ...env, DEPTH_MAKER_INTERVAL_MS: "1" }),
+    /INTERVAL/,
   );
   assert.throws(
-    () => makerConfig({ ...env, DEPTH_MAKER_SPREAD_BPS: "20000" }),
-    /price bounds/,
-  );
-  assert.throws(
-    () => makerConfig({ ...env, DEPTH_MAKER_REFRESH_SECONDS: "121" }),
-    /expiry/,
-  );
-  assert.throws(
-    () => makerConfig({ ...env, DEPTH_MAKER_GAS_RESERVE_LAMPORTS: "999" }),
-    /SOL reserve/,
+    () => automationConfig({ ...env, DEPTH_MAKER_HEALTH_PORT: "-1" }),
+    /port/,
   );
 });
 

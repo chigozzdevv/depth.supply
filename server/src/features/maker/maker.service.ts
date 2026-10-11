@@ -5,8 +5,8 @@ import { WalletAccess } from "@/shared/http/access";
 export class MakerService {
   readonly access: WalletAccess;
   constructor(
-    owner: PublicKey,
-    readonly read: () => MakerHedgeView,
+    owner: PublicKey | undefined,
+    readonly read: (owner: string) => MakerHedgeView,
   ) {
     this.access = new WalletAccess(owner);
   }
@@ -32,7 +32,7 @@ export class MakerProxy {
       signal: AbortSignal.timeout(5000),
       cache: "no-store",
     });
-    if (![200, 401, 403].includes(response.status))
+    if (![200, 400, 401, 403, 409, 503].includes(response.status))
       throw new Error("Maker worker unavailable");
     return { status: response.status, body: await response.json() };
   }

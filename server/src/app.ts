@@ -17,6 +17,7 @@ import type { ChainClient } from "@/shared/chain/chain.client";
 import { deploymentPaths, makerWorkerUrl } from "@/shared/config/env";
 import { makerRoute } from "@/features/maker/maker.route";
 import { MakerProxy } from "@/features/maker/maker.service";
+import { automationRoute } from "@/features/automation/automation.route";
 import { registerHttp } from "@/shared/http/http.plugin";
 
 export function buildApp(chain: ChainClient, logger = true): FastifyInstance {
@@ -30,6 +31,7 @@ export function buildApp(chain: ChainClient, logger = true): FastifyInstance {
   operationRoute(app, new OperationService(chain));
   appRoute(app, new AppService(chain));
   makerRoute(app, new MakerProxy(makerWorkerUrl()));
+  automationRoute(app, new MakerProxy(makerWorkerUrl()));
 
   return app;
 }

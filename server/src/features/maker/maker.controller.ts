@@ -42,9 +42,9 @@ export function makerController(service: MakerService | MakerProxy) {
         );
         return reply.code(result.status).send(result.body);
       }
-      if (!service.access.authorized(request.headers.authorization))
-        return reply.code(401).send({ error: "maker_access_denied" });
-      return service.read();
+      const owner = service.access.wallet(request.headers.authorization);
+      if (!owner) return reply.code(401).send({ error: "maker_access_denied" });
+      return service.read(owner);
     },
   };
 }

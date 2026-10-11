@@ -2,12 +2,7 @@ import { Keypair, PublicKey } from "@solana/web3.js";
 import { SOL_USD_PUSH_ACCOUNT } from "@depthhq/bindings";
 import { settingPath } from "@/shared/config/path";
 import { loadSigner } from "@/workspace/signers";
-import {
-  validateBotPolicy,
-  validateHedgePolicy,
-  type BotPolicy,
-  type HedgePolicy,
-} from "@depthhq/maker-sdk/node";
+import { validateHedgePolicy, type HedgePolicy } from "@depthhq/maker-sdk/node";
 
 export type ServerConfig = { rpcUrl: string; host: string; port: number };
 export type OracleMode = "sponsored" | "hermes";
@@ -28,78 +23,12 @@ export type PublisherConfig = KeeperConfig & {
   healthPort: number;
 };
 
-export type MakerConfig = {
-  rpcUrl: string;
-  environment: "devnet" | "mainnet-beta";
-  serviceUrl: string;
-  keypair: Keypair;
-  owner: PublicKey;
-  policy: BotPolicy;
-  stateDirectory: string;
-  intervalMs: number;
-  healthPort: number;
-  hedge?: {
-    account: `0x${string}`;
-    agentKey: `0x${string}`;
-    network: "testnet" | "mainnet";
-    policy: HedgePolicy;
-  };
+export type HedgeConfig = {
+  account: `0x${string}`;
+  agentKey: `0x${string}`;
+  network: "testnet" | "mainnet";
+  policy: HedgePolicy;
 };
-
-export function makerConfig(env: NodeJS.ProcessEnv = process.env): MakerConfig {
-  const environment = env.DEPTH_ENVIRONMENT ?? "devnet";
-  if (environment !== "devnet" && environment !== "mainnet-beta")
-    throw new Error("Maker bot needs a public Solana environment");
-  if (!env.DEPTH_MAKER_OWNER) throw new Error("DEPTH_MAKER_OWNER is required");
-  const amount = (name: string, fallback: string, unit = "micro-USDC") => {
-    const value = env[name] ?? fallback;
-    if (!/^\d+$/.test(value))
-      throw new Error(`${name} must be an integer in ${unit}`);
-    return BigInt(value);
-  };
-  const policy: BotPolicy = {
-    maxCapacity: amount("DEPTH_MAKER_CAPACITY", "100000000"),
-    maxInventoryNotional: amount("DEPTH_MAKER_INVENTORY_LIMIT", "1000000000"),
-    spreadBps: Number(env.DEPTH_MAKER_SPREAD_BPS ?? "20"),
-    repriceBps: Number(env.DEPTH_MAKER_REPRICE_BPS ?? "10"),
-    lifetimeSeconds: Number(env.DEPTH_MAKER_LIFETIME_SECONDS ?? "120"),
-    refreshSeconds: Number(env.DEPTH_MAKER_REFRESH_SECONDS ?? "60"),
-    gasReserveLamports: amount(
-      "DEPTH_MAKER_GAS_RESERVE_LAMPORTS",
-      "50000000",
-      "lamports",
-    ),
-    inventorySkewBps: Number(env.DEPTH_MAKER_SKEW_BPS ?? "15"),
-    executionCostBps: Number(env.DEPTH_MAKER_COST_BPS ?? "5"),
-    fundingHours: Number(env.DEPTH_MAKER_FUNDING_HOURS ?? "1"),
-  };
-  validateBotPolicy(policy);
-  const intervalMs = Number(env.DEPTH_MAKER_INTERVAL_MS ?? "2000");
-  if (
-    !Number.isSafeInteger(intervalMs) ||
-    intervalMs < 1000 ||
-    intervalMs > 60000
-  )
-    throw new Error("DEPTH_MAKER_INTERVAL_MS must be 1000 to 60000");
-  const healthPort = Number(env.DEPTH_MAKER_HEALTH_PORT ?? "8789");
-  if (!Number.isInteger(healthPort) || healthPort < 1 || healthPort > 65535)
-    throw new Error("DEPTH_MAKER_HEALTH_PORT must be a valid TCP port");
-  return {
-    environment,
-    rpcUrl: rpcUrl(env.SOLANA_RPC_URL, "SOLANA_RPC_URL"),
-    serviceUrl: rpcUrl(
-      env.DEPTH_SERVICE_URL ?? "http://127.0.0.1:8787",
-      "DEPTH_SERVICE_URL",
-    ),
-    keypair: loadSigner("maker", { env }),
-    owner: new PublicKey(env.DEPTH_MAKER_OWNER),
-    policy,
-    stateDirectory: settingPath("DEPTH_MAKER_STATE_PATH", "data/maker", env),
-    intervalMs,
-    healthPort,
-    hedge: hedgeConfig(env),
-  };
-}
 
 export function makerWorkerUrl(env: NodeJS.ProcessEnv = process.env) {
   const port = Number(env.DEPTH_MAKER_HEALTH_PORT ?? "8789");
@@ -107,10 +36,39 @@ export function makerWorkerUrl(env: NodeJS.ProcessEnv = process.env) {
     throw new Error("Invalid maker worker port");
   return `http://127.0.0.1:${port}`;
 }
+export function automationConfig(env: NodeJS.ProcessEnv = process.env) {
+  const environment = env.DEPTH_ENVIRONMENT ?? "devnet";
+  if (environment !== "devnet" && environment !== "mainnet-beta")
+    throw new Error("Automation needs a public Solana environment");
+  const intervalMs = Number(env.DEPTH_MAKER_INTERVAL_MS ?? "2000");
+  if (
+    !Number.isSafeInteger(intervalMs) ||
+    intervalMs < 1000 ||
+    intervalMs > 60000
+  )
+    throw new Error("DEPTH_MAKER_INTERVAL_MS must be 1000 to 60000");
+  const secret = env.DEPTH_AUTOMATION_SECRET ?? "";
+  if (!/^[0-9a-f]{64}$/.test(secret))
+    throw new Error(
+      "DEPTH_AUTOMATION_SECRET must contain 32 random bytes in hexadecimal",
+    );
+  return {
+    environment: environment as "devnet" | "mainnet-beta",
+    secret,
+    rpcUrl: rpcUrl(env.SOLANA_RPC_URL, "SOLANA_RPC_URL"),
+    serviceUrl: rpcUrl(
+      env.DEPTH_SERVICE_URL ?? "http://127.0.0.1:8787",
+      "DEPTH_SERVICE_URL",
+    ),
+    stateDirectory: settingPath("DEPTH_MAKER_STATE_PATH", "data/maker", env),
+    intervalMs,
+    healthPort: Number(new URL(makerWorkerUrl(env)).port),
+  };
+}
 
 export function hedgeConfig(
   env: NodeJS.ProcessEnv = process.env,
-): MakerConfig["hedge"] {
+): HedgeConfig | undefined {
   const mode = env.DEPTH_MAKER_HEDGE ?? "none";
   if (mode === "none") return;
   if (mode !== "hyperliquid")
