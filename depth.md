@@ -1569,8 +1569,8 @@ authentication and environment authority checks still run when connecting.
 `account().state()` discovers account existence, lifecycle status, version,
 and slot without signing or decrypting. A missing account is `uninitialized`;
 its summary reports zero without creating an account. RPC failures, invalid
-owners, and malformed accounts remain errors. Initialized balances require an
-owner-authorized Arcium view with wallet approval. The demo begins account
+owners, and malformed accounts remain errors. Initialized balances require
+an owner-authorized Arcium view. The demo begins account
 loading after connection, then refreshes after account operations. It decrypts
 approved responses locally. The Margin field includes unallocated Depth USDC
 and unreserved market collateral when the account is flat. Wallet tokens are
@@ -1582,14 +1582,15 @@ AES-GCM in IndexedDB using a non-extractable device key. Associated data binds
 the network genesis, program, wallet, account, and view kind. A confirmed
 canonical account must still belong to the wallet, be ready, and have the
 snapshot's version before reuse. Concurrent reads share one authorization.
-Changed versions require a new approved view. Corrupted or unavailable storage
-falls back to a new authorized read; no private result is sent to the server.
+Changed versions require a fresh view. The demo uses `viewAuthorization: "session"`: one owner-signed, revocable permission lasts at most seven days and pins the device X25519 recipient key, market, and read scopes onchain. The service pays for reads after verifying a separate device-signed request; it cannot change the recipient or authorize trades, quotes, or transfers. Request signing and decryption secrets are independently generated and encrypted under the same non-extractable device key. Interrupted reads retain their nonce and reuse the durable sponsored transaction. Corrupted authorization storage fails closed; no plaintext result or decryption secret is sent to the service.
 Snapshots retain their original slot and read time. Device caching does not
 protect against malicious same-origin code or an attacker controlling the
 unlocked device, both of which could use the stored key. Another browser
-requests a fresh authorized view without needing the original device key.
+creates its own read permission without needing the original device key.
 
-Receipt cleanup is deferred to a later owner-signed transaction that fits the
+Sponsored receipts are closed by their service payer after consumption, with a ten-minute cleanup sweep for abandoned terminal receipts. The service retains signed submission bytes before broadcast, reconciles unknown outcomes before retrying, limits each owner to thirty new reads and the sponsor to sixty new reads per hour, and keeps a 0.25 SOL gas reserve. Revocation stops new reads and disables automatic renewal on that device; already queued computations may finish encrypted to the fixed recipient. `depth.views.status()`, `authorize()`, and `revoke()` expose the lifecycle, and the demo wallet dialog exposes Enable and Revoke controls. `viewAuthorization: "wallet"` keeps individually owner-signed reads available.
+
+For individually signed views, receipt cleanup is deferred to a later owner-signed transaction that fits the
 Solana packet limit. Closed receipts are skipped and failed submissions retain
 cleanup work. Explicit low-level view closure remains available. Clients for
 public environments use keeper-paid margin settlement by default; explicit

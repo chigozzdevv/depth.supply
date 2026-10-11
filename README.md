@@ -509,3 +509,9 @@ can inspect `maker.quote.list()` and recover a replacement with
 `maker.quote.replacement(priorQuoteId, replacementNonce)`. The prior quote
 records the successor nonce onchain before it stops. If a successor quote was
 never submitted, the maker supplies fresh quote terms to resume publication.
+
+### Automatic private reads
+
+The demo uses a seven-day, revocable read permission. Arcium encrypts each result to a device key held in encrypted browser storage; the API pays for reads and cannot decrypt their results. Trades and transfers remain wallet-approved. After account setup and the first read grant, an order uses one wallet transaction with existing margin or two when additional margin must be allocated. Arcium callbacks and keeper transactions are separate onchain transactions.
+
+Set `DEPTH_VIEW_RELAY_ENABLED=true` to enable the API sponsor using the existing keeper signer. Its public transaction journal lives under `DEPTH_VIEW_STATE_PATH` (default `data/views`), with bounded read budgets and automatic receipt cleanup. SDK clients select `viewAuthorization: "session"` and can inspect, enable, or revoke access through `depth.views`. Select `viewAuthorization: "wallet"` for individually signed reads. Browser storage is scoped to network, program, and wallet; same-origin code and an unlocked device remain part of its trust boundary.
