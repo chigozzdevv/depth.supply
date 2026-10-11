@@ -1,11 +1,12 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { ArrowDownToLine, X, RefreshCw, LockKeyhole } from "lucide-react";
+import { ArrowDownToLine, X, RefreshCw } from "lucide-react";
 import type { AmountSelector } from "@depthhq/sdk";
 import { useDepth } from "@/shared/depth/session";
 import type { AccountView } from "@/shared/depth/account";
 import { decimal, units } from "@/shared/depth/format";
+import { availableBalance } from "@/shared/depth/snapshot";
 
 export function Funds({ account }: { account: AccountView }) {
   const session = useDepth();
@@ -14,12 +15,7 @@ export function Funds({ account }: { account: AccountView }) {
   const [error, setError] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
-  const available =
-    (account.balance?.status === "ready" ||
-      account.balance?.status === "uninitialized") &&
-    !account.outdated
-      ? account.balance.amount
-      : undefined;
+  const available = availableBalance(account);
   async function submit() {
     const sdk = session.trader;
     if (!sdk) return;
@@ -102,9 +98,14 @@ export function Funds({ account }: { account: AccountView }) {
               <dt>Collateral</dt>
               <dd>
                 {decimal(
-                  account.position?.status === "ready" && !account.outdated
+                  account.position?.status === "ready" &&
+                    !account.outdated &&
+                    !account.checking
                     ? account.position.collateral
-                    : account.empty
+                    : account.loaded &&
+                        !account.position &&
+                        !account.outdated &&
+                        !account.checking
                       ? 0n
                       : undefined,
                 )}{" "}
@@ -115,21 +116,18 @@ export function Funds({ account }: { account: AccountView }) {
           {!account.empty && (
             <button
               className="terminal-button quiet"
-              aria-label={
-                account.loaded ? "Refresh balances" : "Reveal balances"
-              }
+              aria-label={account.error ? "Retry balances" : "Refresh balances"}
               title="Decrypt balances with wallet approval"
               disabled={
                 !session.trader || Boolean(session.busy) || account.checking
               }
               onClick={() => void account.read()}
             >
-              {account.loaded ? (
-                <RefreshCw size={13} />
-              ) : (
-                <LockKeyhole size={13} />
-              )}
-              {account.loaded ? "Refresh" : "Reveal"}
+              <RefreshCw
+                size={13}
+                className={account.checking ? "spin" : undefined}
+              />
+              {account.error ? "Retry" : "Refresh"}
             </button>
           )}
         </div>

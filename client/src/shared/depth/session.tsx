@@ -3,6 +3,7 @@
 import {
   createContext,
   Fragment,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -28,6 +29,7 @@ type Session = {
   retry?: () => void;
   error: string;
   busy: string;
+  reading: boolean;
   message: string;
   version: number;
   run: (
@@ -35,6 +37,7 @@ type Session = {
     action: () => Promise<void>,
     mutates?: boolean,
   ) => Promise<void>;
+  load: (action: () => Promise<void>) => Promise<boolean>;
   notice: (message: string) => void;
 };
 const Context = createContext<Session | null>(null);
@@ -66,6 +69,7 @@ export function DepthSession({
     busy: "",
     error: "",
     message: "",
+    reading: false,
   });
   const [version, setVersion] = useState(0);
   const [attempt, setAttempt] = useState(0);
@@ -83,12 +87,27 @@ export function DepthSession({
       wallet.publicKey && wallet.signTransaction && wallet.signAllTransactions
         ? {
             publicKey: wallet.publicKey,
-            signTransaction: wallet.signTransaction,
-            signAllTransactions: wallet.signAllTransactions,
-            signMessage: wallet.signMessage,
+            signTransaction: async (transaction) => {
+              if (scope.current !== owner)
+                throw new Error("Wallet changed before approval");
+              return wallet.signTransaction!(transaction);
+            },
+            signAllTransactions: async (transactions) => {
+              if (scope.current !== owner)
+                throw new Error("Wallet changed before approval");
+              return wallet.signAllTransactions!(transactions);
+            },
+            signMessage: wallet.signMessage
+              ? async (message: Uint8Array) => {
+                  if (scope.current !== owner)
+                    throw new Error("Wallet changed before approval");
+                  return wallet.signMessage!(message);
+                }
+              : undefined,
           }
         : undefined,
     [
+      owner,
       wallet.publicKey,
       wallet.signTransaction,
       wallet.signAllTransactions,
@@ -169,34 +188,63 @@ export function DepthSession({
 
   const current = state.owner === owner && owner ? state : undefined;
   const currentFeedback = feedback.owner === owner ? feedback : undefined;
-  async function run(
-    label: string,
-    action: () => Promise<void>,
-    mutates = true,
-  ) {
-    if (locked.current) return;
-    const account = owner;
-    locked.current = true;
-    setFeedback({ owner: account, busy: label, error: "", message: "" });
-    try {
-      await action();
-    } catch (cause) {
-      if (scope.current === account)
-        setFeedback((value) => ({
-          ...value,
-          error:
-            cause instanceof Error
-              ? cause.message
-              : "The operation could not be completed",
-        }));
-    } finally {
-      if (mutates && scope.current === account)
-        setVersion((value) => value + 1);
-      locked.current = false;
-      if (scope.current === account)
-        setFeedback((value) => ({ ...value, busy: "" }));
-    }
-  }
+  const run = useCallback(
+    async function run(
+      label: string,
+      action: () => Promise<void>,
+      mutates = true,
+    ) {
+      if (locked.current || scope.current !== owner) return;
+      const account = owner;
+      locked.current = true;
+      setFeedback({
+        owner: account,
+        busy: label,
+        error: "",
+        message: "",
+        reading: false,
+      });
+      try {
+        await action();
+      } catch (cause) {
+        if (scope.current === account)
+          setFeedback((value) => ({
+            ...value,
+            error:
+              cause instanceof Error
+                ? cause.message
+                : "The operation could not be completed",
+          }));
+      } finally {
+        if (mutates && scope.current === account)
+          setVersion((value) => value + 1);
+        locked.current = false;
+        setFeedback((value) => ({ ...value, busy: "", reading: false }));
+      }
+    },
+    [owner],
+  );
+  const load = useCallback(
+    async (action: () => Promise<void>) => {
+      if (locked.current || scope.current !== owner) return false;
+      locked.current = true;
+      setFeedback((previous) => ({
+        owner,
+        busy: "Loading account",
+        error: previous.owner === owner ? previous.error : "",
+        message: previous.owner === owner ? previous.message : "",
+        reading: true,
+      }));
+      try {
+        await action();
+        return true;
+      } finally {
+        locked.current = false;
+        setFeedback((previous) => ({ ...previous, busy: "", reading: false }));
+      }
+    },
+    [owner],
+  );
   return (
     <Context.Provider
       value={{
@@ -220,10 +268,12 @@ export function DepthSession({
               current?.error ??
               currentFeedback?.error ??
               ""),
-        busy: currentFeedback?.busy ?? "",
+        busy: feedback.busy,
+        reading: feedback.reading || feedback.owner !== owner,
         message: currentFeedback?.message ?? "",
         version,
         run,
+        load,
         notice: (message) => {
           if (scope.current === owner)
             setFeedback((value) => ({

@@ -200,6 +200,12 @@ function Details({
         <AccountPrompt>Connect wallet to view positions.</AccountPrompt>
       </div>
     );
+  if (account.checking)
+    return (
+      <div className="records-empty">
+        <p>Loading positions…</p>
+      </div>
+    );
   if (
     !account.loaded ||
     account.outdated ||
@@ -208,12 +214,17 @@ function Details({
   )
     return (
       <div className="records-empty">
+        {account.error && (
+          <p role="alert" className="form-error">
+            {account.error}
+          </p>
+        )}
         <button
           className="terminal-button quiet"
           disabled={Boolean(session.busy)}
           onClick={() => void account.read()}
         >
-          {account.outdated ? "Refresh positions" : "View positions"}
+          {account.error ? "Retry account" : "Refresh positions"}
         </button>
       </div>
     );
