@@ -65,15 +65,16 @@ export function Funds({ account }: { account: AccountView }) {
     <>
       {session.trader && (
         <button
-          className="terminal-button primary funds-trigger"
+          className="funds-trigger"
           aria-label="Funds"
+          title="Manage USDC"
           disabled={Boolean(session.busy)}
           onClick={() => {
             setError("");
             dialog.current?.showModal();
           }}
         >
-          <ArrowDownToLine size={13} />
+          <ArrowDownToLine aria-hidden="true" size={13} />
           <span>Funds</span>
         </button>
       )}

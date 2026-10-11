@@ -220,8 +220,7 @@ function Details({
   if (!position)
     return (
       <div className="records-empty">
-        <h3>No market account yet.</h3>
-        <p>Deposit USDC and submit your first trade to get started.</p>
+        <p>No open positions.</p>
       </div>
     );
   return (

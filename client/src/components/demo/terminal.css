@@ -87,22 +87,27 @@
   justify-self: end;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
-.terminal-wallet {
+.terminal-wallet,
+.funds-trigger {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  min-height: 34px;
-  padding: 0 12px;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
   border: 1px solid var(--terminal-border);
   background: transparent;
   border-radius: 4px;
   color: var(--terminal-text);
   font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
 }
-.terminal-wallet:hover {
+.terminal-wallet:hover,
+.funds-trigger:hover {
   border-color: #ffffff30;
   background: #ffffff05;
 }
@@ -110,10 +115,6 @@
   display: flex;
   align-items: center;
   gap: 10px;
-}
-.terminal-actions .funds-trigger {
-  min-height: 34px;
-  padding: 0 12px;
 }
 .terminal-main {
   padding-block: 6px;
@@ -1390,16 +1391,15 @@
     gap: 6px;
   }
   .terminal-wallet {
-    min-height: 32px;
     padding-inline: 9px;
     font-size: 11px;
   }
   .terminal-wallet svg {
     width: 12px;
   }
-  .terminal-actions .funds-trigger {
-    min-height: 32px;
-    padding: 8px;
+  .funds-trigger {
+    width: 32px;
+    padding: 0;
   }
   .funds-trigger span {
     display: none;
