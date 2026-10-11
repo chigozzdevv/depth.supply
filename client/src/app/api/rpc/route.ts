@@ -22,10 +22,10 @@ const methods = new Set([
 ]);
 const buckets = new Map<string, { count: number; since: number }>();
 export async function POST(request: Request) {
-  if (
-    request.headers.get("origin") &&
-    request.headers.get("origin") !== new URL(request.url).origin
-  ) {
+  const origin = request.headers.get("origin");
+  const target = new URL(request.url);
+  target.host = request.headers.get("host") ?? target.host;
+  if (origin && origin !== target.origin) {
     return Response.json({ error: "origin_mismatch" }, { status: 403 });
   }
   const ip = request.headers.get("x-forwarded-for")?.split(",")[0] ?? "local";
