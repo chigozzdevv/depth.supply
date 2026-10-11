@@ -104,7 +104,10 @@ export function DepthSession({
         if (!cancelled) {
           makerSession = maker;
           setState({ owner, trader, maker });
-        } else maker?.hedges.disconnect();
+        } else {
+          maker?.hedges.disconnect();
+          maker?.automation.disconnect();
+        }
       } catch (cause) {
         if (!cancelled)
           setState({
@@ -119,6 +122,7 @@ export function DepthSession({
     return () => {
       cancelled = true;
       makerSession?.hedges.disconnect();
+      makerSession?.automation.disconnect();
     };
   }, [config, owner, signer, role]);
 

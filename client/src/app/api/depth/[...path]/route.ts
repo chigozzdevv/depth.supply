@@ -8,7 +8,7 @@ export async function GET(
   const { path } = await context.params;
   const pathname = path.join("/");
   if (
-    !/^(v1\/(markets|apps|quotes|operations|recovery)(\/[^.\s]*)?|v1\/maker\/(challenge|hedges)|\.well-known\/depth\/(devnet|localnet)\.json)$/.test(
+    !/^(v1\/(markets|apps|quotes|operations|recovery)(\/[^.\s]*)?|v1\/maker\/(challenge|hedges|automation(?:\/challenge)?)|\.well-known\/depth\/(devnet|localnet)\.json)$/.test(
       pathname,
     )
   ) {
@@ -43,15 +43,25 @@ export async function POST(
   context: { params: Promise<{ path: string[] }> },
 ) {
   const { path } = await context.params;
-  if (path.join("/") !== "v1/maker/session")
+  const pathname = path.join("/");
+  if (
+    !/^v1\/maker\/(session|automation\/(session|configure|start|pause|fund))$/.test(
+      pathname,
+    )
+  )
     return Response.json({ error: "not_found" }, { status: 404 });
   const body = await request.text();
-  if (body.length > 1024)
+  if (body.length > (/\/(configure|fund)$/.test(pathname) ? 4096 : 1024))
     return Response.json({ error: "invalid_request" }, { status: 400 });
   try {
-    const upstream = await fetch(`${serviceUrl()}/v1/maker/session`, {
+    const upstream = await fetch(`${serviceUrl()}/${pathname}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(request.headers.has("authorization")
+          ? { authorization: request.headers.get("authorization")! }
+          : {}),
+      },
       body,
       cache: "no-store",
       signal: AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]),

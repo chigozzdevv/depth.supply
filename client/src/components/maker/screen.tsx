@@ -15,6 +15,7 @@ import { Quotes } from "@/components/maker/quotes";
 import { Fills } from "@/components/maker/fills";
 import { Operators } from "@/components/maker/operators";
 import { Hedges } from "@/components/maker/hedges";
+import { Automation } from "@/components/maker/automation";
 import { useMarket } from "@/shared/depth/market";
 import { useAccount } from "@/shared/depth/account";
 import { useDepth } from "@/shared/depth/session";
@@ -118,26 +119,33 @@ function Screen() {
         <section className="maker-records records-panel">
           <div className="records-heading">
             <div role="tablist" aria-label="Maker records">
-              {["quotes", "fills", "hedges", "account", "operators"].map(
-                (value) => (
-                  <button
-                    role="tab"
-                    aria-selected={tab === value}
-                    key={value}
-                    onClick={() => setTab(value)}
-                  >
-                    {value === "quotes"
-                      ? "Quotes"
-                      : value === "fills"
-                        ? "Fills"
+              {[
+                "quotes",
+                "fills",
+                "automation",
+                "hedges",
+                "account",
+                "operators",
+              ].map((value) => (
+                <button
+                  role="tab"
+                  aria-selected={tab === value}
+                  key={value}
+                  onClick={() => setTab(value)}
+                >
+                  {value === "quotes"
+                    ? "Quotes"
+                    : value === "fills"
+                      ? "Fills"
+                      : value === "automation"
+                        ? "Automation"
                         : value === "hedges"
                           ? "Hedges"
                           : value === "account"
                             ? "Account"
                             : "Operators"}
-                  </button>
-                ),
-              )}
+                </button>
+              ))}
             </div>
           </div>
           {tab === "quotes" ? (
@@ -148,6 +156,8 @@ function Screen() {
             />
           ) : tab === "fills" ? (
             <Fills />
+          ) : tab === "automation" ? (
+            <Automation />
           ) : tab === "hedges" ? (
             <Hedges />
           ) : tab === "account" ? (
