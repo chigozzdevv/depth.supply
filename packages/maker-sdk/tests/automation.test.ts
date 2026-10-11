@@ -84,6 +84,7 @@ test("the public automation flow signs its scope, reviews persisted identities, 
   const original = globalThis.fetch;
   globalThis.fetch = (async (input, init) => {
     const url = new URL(String(input));
+    assert.equal(url.pathname.endsWith("/"), false);
     requests.push(url.pathname);
     if (url.pathname.endsWith("challenge")) {
       const nonce = "a".repeat(64);

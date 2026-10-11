@@ -39,7 +39,7 @@ export class WalletSession {
     if (!this.options.serviceUrl)
       throw new Error("A maker service URL is required");
     const response = await fetch(
-      `${this.options.serviceUrl.replace(/\/$/, "")}/v1/maker/${this.prefix}${path}`,
+      `${this.options.serviceUrl.replace(/\/$/, "")}/v1/maker/${`${this.prefix}${path}`.replace(/\/$/, "")}`,
       {
         ...init,
         cache: "no-store",
