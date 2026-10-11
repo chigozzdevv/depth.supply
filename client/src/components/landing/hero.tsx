@@ -27,7 +27,7 @@ export function Hero() {
           </div>
           <div
             className="hero-ecosystem"
-            aria-label="Built on Solana with confidential computation by Arcium"
+            aria-label="Solana settlement, Arcium confidential computation, and optional Hyperliquid maker hedging"
           >
             <a
               href="https://solana.com/"
@@ -56,6 +56,21 @@ export function Hero() {
                 height={12}
                 alt="Arcium"
                 className="arcium-logo"
+              />
+            </a>
+            <span className="ecosystem-divider" aria-hidden="true" />
+            <a
+              href="https://hyperliquid.xyz/"
+              aria-label="Optional maker hedging on Hyperliquid"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Image
+                src="/brands/hyperliquid.svg"
+                width={96}
+                height={23}
+                alt="Hyperliquid"
+                className="hyperliquid-logo"
               />
             </a>
           </div>
