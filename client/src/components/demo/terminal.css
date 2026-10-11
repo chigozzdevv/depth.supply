@@ -221,12 +221,14 @@
 }
 .funds-summary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 .funds-summary dl {
   display: flex;
+  flex-wrap: wrap;
   gap: 22px;
 }
 .funds-summary dt {
@@ -237,6 +239,11 @@
   margin-top: 6px;
   font-family: var(--font-mono), monospace;
   font-size: 12px;
+  white-space: nowrap;
+}
+.funds-summary .terminal-button {
+  flex-shrink: 0;
+  padding-inline: 0;
 }
 .terminal-button {
   display: inline-flex;
@@ -667,8 +674,8 @@
   font-size: 12px;
   color: var(--terminal-muted);
 }
-.form-error {
-  color: var(--terminal-muted);
+.terminal .form-error {
+  color: var(--terminal-sell);
   font-size: 12px;
   line-height: 1.7;
   margin-block: 14px;
@@ -909,9 +916,12 @@
 }
 .terminal-dialog {
   width: min(430px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
   padding: 26px;
-  background: #171715;
-  border: 1px solid #ffffff1a;
+  overflow-y: auto;
+  background: var(--terminal-background);
+  border: 1px solid var(--terminal-border);
   border-radius: 8px;
   color: var(--terminal-text);
   box-shadow: 0 30px 100px #000a;
@@ -933,14 +943,25 @@
   letter-spacing: -0.025em;
 }
 .dialog-heading > button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
   color: var(--terminal-muted);
-  padding: 5px;
+}
+.dialog-heading > button:hover {
+  color: var(--terminal-text);
+  background: #ffffff0a;
 }
 .terminal-dialog p {
   color: var(--terminal-muted);
   font-size: 12px;
   line-height: 1.8;
   margin-block: 20px;
+}
+.funds-disclosure {
+  font-style: italic;
 }
 .wallet-address {
   overflow-wrap: anywhere;
@@ -1099,7 +1120,7 @@
 }
 .automation-state[data-running="true"] {
   color: var(--terminal-buy);
-  background: #40d9a010;
+  background: color-mix(in srgb, var(--terminal-buy) 6%, transparent);
 }
 .automation-fields,
 .automation-summary {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { ArrowDownToLine, X, RefreshCw } from "lucide-react";
 import type { AmountSelector } from "@depthhq/sdk";
 import { useDepth } from "@/shared/depth/session";
@@ -13,6 +13,7 @@ export function Funds({ account }: { account: AccountView }) {
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   const available =
     account.balance?.status === "ready" && !account.outdated
       ? account.balance.amount
@@ -52,7 +53,7 @@ export function Funds({ account }: { account: AccountView }) {
                 : await sdk
                     .account()
                     .release({ marketId: "SOL-USD", amount: value });
-        session.notice(`Submitted ${receipt.id.toBase58()}`);
+        session.notice("Transfer submitted");
         await receipt.confirm();
         session.notice(
           "Transfer confirmed. Read your private account to see the updated balance.",
@@ -76,9 +77,13 @@ export function Funds({ account }: { account: AccountView }) {
           <span>Funds</span>
         </button>
       )}
-      <dialog ref={dialog} className="terminal-dialog">
+      <dialog
+        ref={dialog}
+        className="terminal-dialog"
+        aria-labelledby={titleId}
+      >
         <div className="dialog-heading">
-          <h2>Manage USDC</h2>
+          <h2 id={titleId}>Manage USDC</h2>
           <button
             aria-label="Close funds dialog"
             onClick={() => dialog.current?.close()}
@@ -108,18 +113,27 @@ export function Funds({ account }: { account: AccountView }) {
           )}
           <button
             className="terminal-button quiet"
+            aria-label={account.loaded ? "Refresh balances" : "View balances"}
             disabled={!session.trader || Boolean(session.busy)}
             onClick={() => void account.read()}
           >
             <RefreshCw size={13} />
-            {account.loaded ? "Refresh balances" : "View balances"}
+            {account.loaded ? "Refresh" : "View balances"}
           </button>
         </div>
         <label className="field-label">
           Operation
           <select
             value={action}
-            onChange={(event) => setAction(event.target.value)}
+            onChange={(event) => {
+              setAction(event.target.value);
+              setError("");
+              if (
+                event.target.value === "deposit" &&
+                /^(?:all|\d+%)$/.test(amount)
+              )
+                setAmount("");
+            }}
           >
             <option value="deposit">Deposit from wallet</option>
             <option value="withdraw">Withdraw to wallet</option>
@@ -134,7 +148,10 @@ export function Funds({ account }: { account: AccountView }) {
               value={amount}
               placeholder="0.00"
               inputMode="decimal"
-              onChange={(event) => setAmount(event.target.value)}
+              onChange={(event) => {
+                setAmount(event.target.value);
+                setError("");
+              }}
             />
             <span>USDC</span>
           </div>
@@ -142,16 +159,20 @@ export function Funds({ account }: { account: AccountView }) {
         {action !== "deposit" && (
           <div className="amount-presets">
             {["10%", "25%", "50%", "all"].map((value) => (
-              <button key={value} onClick={() => setAmount(value)}>
+              <button
+                key={value}
+                onClick={() => {
+                  setAmount(value);
+                  setError("");
+                }}
+              >
                 {value}
               </button>
             ))}
           </div>
         )}
-        <p>
-          Approve the transfer in your wallet. Arcium computations and network
-          fees may require additional approvals. Token and margin transfer
-          amounts are public.
+        <p className="funds-disclosure">
+          Token and margin transfers are public.
         </p>
         {error && (
           <p role="alert" className="form-error">

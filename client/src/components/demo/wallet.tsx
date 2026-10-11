@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletReadyState } from "@solana/wallet-adapter-base";
 import { Wallet, X, ExternalLink } from "lucide-react";
@@ -15,6 +15,7 @@ export function WalletButton({
   const [error, setError] = useState("");
   const requested = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
   useEffect(() => {
     if (open) dialog.current?.showModal();
     else dialog.current?.close();
@@ -38,7 +39,13 @@ export function WalletButton({
   );
   return (
     <>
-      <button className={className} onClick={() => setOpen(true)}>
+      <button
+        className={className}
+        onClick={() => {
+          setError("");
+          setOpen(true);
+        }}
+      >
         <Wallet size={15} />
         {wallet.connecting
           ? "Connecting…"
@@ -49,10 +56,13 @@ export function WalletButton({
       <dialog
         ref={dialog}
         className="terminal-dialog"
+        aria-labelledby={titleId}
         onClose={() => setOpen(false)}
       >
         <div className="dialog-heading">
-          <h2>{wallet.connected ? "Your wallet" : "Connect a wallet"}</h2>
+          <h2 id={titleId}>
+            {wallet.connected ? "Your wallet" : "Connect wallet"}
+          </h2>
           <button
             aria-label="Close wallet dialog"
             onClick={() => setOpen(false)}
@@ -74,7 +84,6 @@ export function WalletButton({
           </>
         ) : (
           <>
-            <p>Use a Solana wallet on devnet. Your keys stay in your wallet.</p>
             <div className="wallet-options">
               {available.map(({ adapter }) => (
                 <button
@@ -100,8 +109,8 @@ export function WalletButton({
             </div>
             {available.length === 0 && (
               <p>
-                No compatible wallet detected. Open this page in your
-                wallet&apos;s browser or enable its browser extension.
+                Open this page in a Solana wallet browser or enable its
+                extension.
               </p>
             )}
           </>

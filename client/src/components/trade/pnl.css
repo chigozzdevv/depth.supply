@@ -1,11 +1,12 @@
 .pnl-dialog {
   width: min(420px, calc(100% - 32px));
   max-height: calc(100dvh - 32px);
+  margin: auto;
   padding: 0;
   overflow-x: hidden;
-  background: #0b0b0b;
-  color: #f5f5f2;
-  border: 1px solid #ffffff1a;
+  background: var(--terminal-background);
+  color: var(--terminal-text);
+  border: 1px solid var(--terminal-border);
   border-radius: 12px;
   box-shadow: 0 20px 60px #0006;
 }
@@ -23,17 +24,18 @@
   width: 32px;
   height: 32px;
   border-radius: 4px;
-  color: #a4a49c;
+  color: var(--terminal-muted);
 }
 .pnl-close:hover {
   background: #ffffff0a;
-  color: #f5f5f2;
+  color: var(--terminal-text);
 }
 .pnl-card {
   padding: 26px 26px 20px;
-  background: #0b0b0b url("/images/pnl.svg") right center / auto 100% no-repeat;
+  background: var(--terminal-background) url("/images/pnl.svg") right center /
+    auto 100% no-repeat;
   font:
-    14px / 1.5 var(--font-geist-sans),
+    14px / 1.5 var(--font-sans),
     sans-serif;
 }
 .pnl-header {
@@ -60,27 +62,27 @@
 .pnl-side {
   padding: 4px 8px;
   border-radius: 4px;
-  color: #68df9b;
-  background: #68df9b1a;
+  color: var(--terminal-buy);
+  background: color-mix(in srgb, var(--terminal-buy) 10%, transparent);
   font:
     12px / 1.4 var(--font-mono),
     monospace;
 }
 .pnl-side[data-side="short"] {
-  color: #ff756c;
-  background: #ff756c1a;
+  color: var(--terminal-sell);
+  background: color-mix(in srgb, var(--terminal-sell) 10%, transparent);
 }
 .pnl-result {
   margin: 34px 0 30px;
 }
 .pnl-label,
 .pnl-prices dt {
-  color: #a4a49c;
+  color: var(--terminal-muted);
   font-size: 12px;
 }
 .pnl-number {
   margin: 8px 0;
-  color: #ff8a3d;
+  color: var(--terminal-accent);
   font-size: clamp(42px, 16vw, 72px);
   font-weight: 400;
   letter-spacing: -4px;
@@ -88,7 +90,7 @@
   overflow-wrap: anywhere;
 }
 .pnl-card[data-loss="true"] .pnl-number {
-  color: #ff756c;
+  color: var(--terminal-sell);
 }
 .pnl-percent {
   margin-left: 1px;
@@ -106,9 +108,9 @@
 }
 .pnl-net-label {
   margin-left: auto;
-  color: #a4a49c;
+  color: var(--terminal-muted);
   font:
-    12px var(--font-geist-sans),
+    12px var(--font-sans),
     sans-serif;
 }
 .pnl-prices {
@@ -131,7 +133,7 @@
     monospace;
 }
 .pnl-prices > svg {
-  color: #a4a49c;
+  color: var(--terminal-muted);
   opacity: 0.65;
 }
 .pnl-footer {
@@ -141,8 +143,8 @@
   flex-wrap: wrap;
   gap: 12px;
   padding-top: 16px;
-  border-top: 1px solid #ffffff1a;
-  color: #a4a49c;
+  border-top: 1px solid var(--terminal-border);
+  color: var(--terminal-muted);
   font-size: 12px;
 }
 .pnl-footer a,
@@ -150,17 +152,17 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #a4a49c;
+  color: var(--terminal-muted);
   font:
     12px var(--font-mono),
     monospace;
 }
 .pnl-footer a:hover {
-  color: #f5f5f2;
+  color: var(--terminal-text);
 }
 .pnl-brand {
   margin-top: 16px;
-  color: #77776f;
+  color: var(--color-subtle);
   font:
     11px var(--font-mono),
     monospace;
@@ -177,13 +179,13 @@
   min-height: 42px;
   padding: 10px 15px;
   border-radius: 5px;
-  background: #ff8a3d;
-  color: #0b0b0b;
+  background: var(--terminal-accent);
+  color: var(--terminal-background);
   font-size: 13px;
   font-weight: 500;
 }
 .pnl-actions > button:hover:not(:disabled) {
-  background: #ffa064;
+  background: var(--terminal-accent-hover);
 }
 .pnl-actions > button:disabled {
   opacity: 0.45;
@@ -191,7 +193,7 @@
 }
 .pnl-error {
   margin: 0 26px 22px;
-  color: #ff756c;
+  color: var(--terminal-sell);
   font-size: 12px;
   line-height: 1.5;
 }
