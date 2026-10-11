@@ -6,7 +6,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 import Fastify from "fastify";
 import { Keypair } from "@solana/web3.js";
-import { automationWire } from "@depthhq/maker-sdk";
+import {
+  automationWire,
+  automationConfig,
+  MakerAutomation,
+  type MakerClient,
+} from "@depthhq/maker-sdk";
 import { AutomationStore } from "@/features/automation/automation.store";
 import { AutomationService } from "@/features/automation/automation.service";
 import {
@@ -54,6 +59,61 @@ const signature = (wallet: Keypair, message: string) =>
       type: "pkcs8",
     }),
   ).toString("base64");
+
+test("the public Maker SDK authenticates and manages automation through the real HTTP routes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-automation-sdk-"));
+  const store = await AutomationStore.open(
+    directory,
+    randomBytes(32).toString("hex"),
+    "devnet",
+  );
+  const app = Fastify();
+  automationRoute(app, new AutomationService(store, () => false));
+  const owner = Keypair.generate();
+  const automation = new MakerAutomation({
+    options: {
+      maker: owner.publicKey,
+      environment: "devnet",
+      serviceUrl: "https://depth.example",
+      wallet: {
+        publicKey: owner.publicKey,
+        signMessage: async (message: Uint8Array) =>
+          Buffer.from(
+            signature(owner, new TextDecoder().decode(message)),
+            "base64",
+          ),
+      },
+    },
+  } as unknown as MakerClient);
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input, init) => {
+    const url = new URL(String(input));
+    const response = await app.inject({
+      method: (init?.method ?? "GET") as "GET" | "POST",
+      url: `${url.pathname}${url.search}`,
+      headers: init?.headers as Record<string, string>,
+      payload: init?.body as string | undefined,
+    });
+    return new Response(response.body, {
+      status: response.statusCode,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  try {
+    await assert.rejects(automation.summary(), /Authorize/);
+    const profile = await automation.configure(automationConfig(config));
+    assert.equal(profile.owner, owner.publicKey.toBase58());
+    assert.equal((await automation.summary())?.operator, profile.operator);
+    assert.equal((await automation.start()).desired, "running");
+    assert.equal((await automation.pause()).phase, "paused");
+    assert.equal((await automation.resume()).desired, "running");
+  } finally {
+    globalThis.fetch = original;
+    await app.close();
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("automation sessions bind each maker and scope, omit credentials, and reject stale changes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "depth-automation-"));
