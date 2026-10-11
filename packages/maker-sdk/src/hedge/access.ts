@@ -18,25 +18,28 @@ export const accessMessage = (
   wallet: string,
   nonce: string,
   expiresAt: number,
+  scope = "Read hedge history",
 ) =>
-  `Depth maker access\nWallet: ${wallet}\nScope: Read hedge history\nNonce: ${nonce}\nExpires: ${expiresAt}`;
+  `Depth maker access\nWallet: ${wallet}\nScope: ${scope}\nNonce: ${nonce}\nExpires: ${expiresAt}`;
 
-export class MakerAccess {
-  private token?: { value: string; expiresAt: number };
+export class WalletSession {
+  protected token?: { value: string; expiresAt: number };
   constructor(
-    private readonly options: {
+    protected readonly options: {
       serviceUrl?: string;
       wallet: {
         publicKey: PublicKey;
         signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
       };
     },
+    private readonly scope = "Read hedge history",
+    private readonly prefix = "",
   ) {}
-  private async request(path: string, init?: RequestInit) {
+  protected async request(path: string, init?: RequestInit) {
     if (!this.options.serviceUrl)
       throw new Error("A maker service URL is required");
     const response = await fetch(
-      `${this.options.serviceUrl.replace(/\/$/, "")}/v1/maker/${path}`,
+      `${this.options.serviceUrl.replace(/\/$/, "")}/v1/maker/${this.prefix}${path}`,
       {
         ...init,
         cache: "no-store",
@@ -47,12 +50,16 @@ export class MakerAccess {
       this.token = undefined;
       throw new Error("Authorize access with your maker wallet");
     }
-    if (!response.ok)
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
       throw new Error(
-        response.status === 403
-          ? "This worker belongs to another maker"
-          : "Maker worker is unavailable",
+        typeof error.message === "string"
+          ? error.message
+          : response.status === 403
+            ? "This worker belongs to another maker"
+            : "Maker worker is unavailable",
       );
+    }
     return response.json();
   }
   async authorize() {
@@ -69,7 +76,12 @@ export class MakerAccess {
       challenge.expiresAt <= Date.now() ||
       challenge.expiresAt > Date.now() + 120_000 ||
       challenge.message !==
-        accessMessage(challenge.wallet, challenge.nonce, challenge.expiresAt)
+        accessMessage(
+          challenge.wallet,
+          challenge.nonce,
+          challenge.expiresAt,
+          this.scope,
+        )
     )
       throw new Error("Maker access challenge is invalid");
     const signature = await wallet.signMessage(
@@ -92,19 +104,31 @@ export class MakerAccess {
       throw new Error("Maker access session is invalid");
     this.token = { value: session.token, expiresAt: session.expiresAt };
   }
+  protected async authorizedRequest(path: string, body?: unknown) {
+    if (!this.token || this.token.expiresAt <= Date.now())
+      await this.authorize();
+    return this.request(path, {
+      method: body === undefined ? "GET" : "POST",
+      headers: {
+        authorization: `Bearer ${this.token!.value}`,
+        "content-type": "application/json",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  }
+  disconnect() {
+    this.token = undefined;
+  }
+}
+export class MakerAccess extends WalletSession {
   async summary(): Promise<MakerHedgeView> {
     if (!this.token || this.token.expiresAt <= Date.now()) {
       this.token = undefined;
       throw new Error("Authorize access with your maker wallet");
     }
     return hedgeView(
-      await this.request("hedges", {
-        headers: { authorization: `Bearer ${this.token.value}` },
-      }),
+      await this.authorizedRequest("hedges"),
       this.options.wallet.publicKey.toBase58(),
     );
-  }
-  disconnect() {
-    this.token = undefined;
   }
 }

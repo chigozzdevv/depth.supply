@@ -121,6 +121,50 @@ function fixture() {
   };
 }
 
+test("pause reconciles existing receipts without resubmitting an unknown hedge or flattening exposure", async () => {
+  const f = fixture();
+  const engine = new HedgeEngine(f.adapter, policy);
+  f.state.pending = {
+    cloid: `0x${"a".repeat(32)}`,
+    nonce: 99999,
+    expiresAt: 103000,
+    buy: true,
+    size: 100000000n,
+    limitPriceE8: 10000000000n,
+    reduceOnly: false,
+  };
+  const pending = f.state.pending;
+  const paused = await engine.tick(
+    f.state,
+    async () => {},
+    undefined,
+    100000,
+    true,
+  );
+  assert.equal(paused.phase, "blocked");
+  assert.equal(f.orders.length, 0);
+  assert.equal(f.state.pending, pending);
+  f.receipts.set(pending.cloid, {
+    status: "filled",
+    filledSize: pending.size,
+    orderId: 7,
+    averagePriceE8: pending.limitPriceE8,
+  });
+  const resolved = await engine.tick(
+    f.state,
+    async () => {},
+    undefined,
+    100100,
+    true,
+  );
+  assert.equal(resolved.phase, "waiting");
+  assert.equal(f.state.pending, undefined);
+  assert.equal(f.state.history.length, 1);
+  assert.equal(f.orders.length, 0);
+  await engine.tick(f.state, async () => {}, 1000000000n, 100200, true);
+  assert.equal(f.orders.length, 0);
+});
+
 test("net exposure is batched across fills and only the confirmed hedge delta is ordered", async () => {
   const f = fixture();
   const engine = new HedgeEngine(f.adapter, policy);

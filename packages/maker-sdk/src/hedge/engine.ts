@@ -25,6 +25,7 @@ export class HedgeEngine {
     save: () => Promise<void>,
     depthPosition: bigint | undefined,
     timestamp?: number,
+    reconcileOnly = false,
   ) {
     if (this.busy) throw new Error("Hedge engine tick is already running");
     if (state.identity !== this.adapter.identity)
@@ -61,6 +62,11 @@ export class HedgeEngine {
         const receipt = await this.adapter.receipt(order);
         now = clock();
         if (receipt.status === "unknown") {
+          if (reconcileOnly)
+            return result(
+              "blocked",
+              "Paused with an unresolved hedge receipt; no order will be resubmitted",
+            );
           if (now >= order.expiresAt)
             return result(
               "blocked",
@@ -90,6 +96,14 @@ export class HedgeEngine {
         state.history = state.history.slice(-100);
         state.pending = undefined;
         await save();
+      }
+      if (reconcileOnly) {
+        const account = await this.adapter.account();
+        return result(
+          "waiting",
+          "Automation paused; existing positions remain open",
+          account.position,
+        );
       }
       if (depthPosition === undefined)
         return result("pending", "Waiting for finalized Depth inventory");

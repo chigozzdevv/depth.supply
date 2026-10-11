@@ -339,10 +339,21 @@ export class MakerBot {
             ? "operator SOL reserve"
             : undefined));
       if (reason) {
+        const stopped = await this.cancel();
+        if (this.stopping && this.hedge && state.hedge)
+          await this.hedge.tick(
+            state.hedge,
+            () => this.saveHedge(),
+            undefined,
+            undefined,
+            true,
+          );
         if (!this.stopping && this.hedge && state.hedge?.pending)
           await this.hedge.tick(state.hedge, () => this.saveHedge(), undefined);
-        const stopped = await this.cancel();
-        return this.snapshot(stopped ? "stopped" : "pending", reason);
+        return this.snapshot(
+          stopped && !state.hedge?.pending ? "stopped" : "pending",
+          reason,
+        );
       }
       await this.fills();
       const hedgeReason = await this.hedgeTick();

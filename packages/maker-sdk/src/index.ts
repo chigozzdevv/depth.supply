@@ -21,3 +21,13 @@ export type {
 export type { FillPage } from "@/fill/history";
 export { MakerAccess } from "@/hedge/access";
 export type { MakerHedgeView } from "@/hedge/access";
+export { MakerAutomation } from "@/automation/automation";
+export {
+  automationConfig,
+  automationWire,
+  automationView,
+} from "@/automation/types";
+export type { AutomationConfig, AutomationView } from "@/automation/types";
+export { setup_hyperliquid } from "@/hedge/setup";
+export { connect_hyperliquid } from "@/hedge/wallet";
+export type { EthereumProvider } from "@/hedge/wallet";
