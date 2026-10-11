@@ -11,7 +11,11 @@ import {
   type ReactNode,
 } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import type { DepthClient, DepthWallet } from "@depthhq/sdk";
+import type {
+  DepthClient,
+  DepthWallet,
+  ResolvedConnection,
+} from "@depthhq/sdk";
 import type { MakerClient } from "@depthhq/maker-sdk";
 import type { DemoConfig } from "@/shared/config/runtime";
 
@@ -65,6 +69,14 @@ export function DepthSession({
   });
   const [version, setVersion] = useState(0);
   const [attempt, setAttempt] = useState(0);
+  const bootKey = `${config.environment}:${config.appId}:${attempt}`;
+  const [boot, setBoot] = useState<{
+    key: string;
+    connection?: ResolvedConnection;
+    error?: string;
+  }>();
+  const prepared = boot?.key === bootKey ? boot : undefined;
+  const connection = prepared?.connection;
   const locked = useRef(false);
   const signer = useMemo<DepthWallet | undefined>(
     () =>
@@ -85,15 +97,40 @@ export function DepthSession({
   );
 
   useEffect(() => {
-    if (!signer) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { prepare_depth } = await import("@depthhq/sdk");
+        const connection = await prepare_depth({
+          environment: config.environment,
+          rpcUrl: `${location.origin}/api/rpc?cluster=${config.environment}`,
+          serviceUrl: `${location.origin}/api/depth`,
+        });
+        if (!cancelled) setBoot({ key: bootKey, connection });
+      } catch (cause) {
+        if (!cancelled)
+          setBoot({
+            key: bootKey,
+            error:
+              cause instanceof Error
+                ? cause.message
+                : "Deployment verification failed",
+          });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bootKey, config.environment]);
+
+  useEffect(() => {
+    if (!signer || !connection) return;
     let cancelled = false;
     let makerSession: MakerClient | undefined;
     const options = {
-      environment: config.environment,
+      ...connection,
       appId: config.appId,
       wallet: signer,
-      rpcUrl: `${location.origin}/api/rpc?cluster=${config.environment}`,
-      serviceUrl: `${location.origin}/api/depth`,
     };
     void (async () => {
       try {
@@ -128,7 +165,7 @@ export function DepthSession({
       makerSession?.hedges.disconnect();
       makerSession?.automation.disconnect();
     };
-  }, [config, owner, signer, role, attempt]);
+  }, [config.appId, connection, owner, signer, role]);
 
   const current = state.owner === owner && owner ? state : undefined;
   const currentFeedback = feedback.owner === owner ? feedback : undefined;
@@ -167,18 +204,22 @@ export function DepthSession({
         connected,
         trader: signer ? current?.trader : undefined,
         maker: signer ? current?.maker : undefined,
-        verifying: Boolean(signer && !current),
-        retry: signer
-          ? () => {
-              if (locked.current) return;
-              setState({ owner: "" });
-              setAttempt((value) => value + 1);
-            }
-          : undefined,
+        verifying: Boolean(signer && !current && !prepared?.error),
+        retry:
+          connected && !signer
+            ? undefined
+            : () => {
+                if (locked.current) return;
+                setState({ owner: "" });
+                setAttempt((value) => value + 1);
+              },
         error:
           connected && !signer
             ? "This wallet cannot sign Solana transactions"
-            : (current?.error ?? currentFeedback?.error ?? ""),
+            : (prepared?.error ??
+              current?.error ??
+              currentFeedback?.error ??
+              ""),
         busy: currentFeedback?.busy ?? "",
         message: currentFeedback?.message ?? "",
         version,

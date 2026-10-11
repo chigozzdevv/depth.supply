@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Share2 } from "lucide-react";
 import { useDepth } from "@/shared/depth/session";
+import { AccountPrompt } from "@/components/demo/prompt";
 import type { AccountView } from "@/shared/depth/account";
 import type { MarketView } from "@/shared/depth/market";
 import { decimal, units } from "@/shared/depth/format";
@@ -196,7 +197,7 @@ function Details({
   if (!session.trader)
     return (
       <div className="records-empty">
-        <p>Connect wallet to view positions.</p>
+        <AccountPrompt>Connect wallet to view positions.</AccountPrompt>
       </div>
     );
   if (

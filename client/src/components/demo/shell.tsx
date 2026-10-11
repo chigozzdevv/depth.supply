@@ -53,24 +53,16 @@ export function Shell({
         </div>
       </header>
       <main id="main" className="terminal-container terminal-main">
-        {(session.error ||
-          session.busy ||
-          session.message ||
-          session.verifying) && (
+        {(session.error || session.busy || session.message) && (
           <div
             className="terminal-notice"
             role={session.error ? "alert" : "status"}
           >
-            {(session.busy || session.verifying) && (
-              <LoaderCircle size={15} className="spin" />
+            {session.busy && <LoaderCircle size={15} className="spin" />}
+            <span>{session.error || session.busy || session.message}</span>
+            {session.error && session.retry && !session.busy && (
+              <button onClick={session.retry}>Retry</button>
             )}
-            <span>
-              {session.error ||
-                session.busy ||
-                (session.verifying
-                  ? "Verifying the Depth deployment…"
-                  : session.message)}
-            </span>
           </div>
         )}
         {children}

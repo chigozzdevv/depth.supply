@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState } from "react";
-import { ArrowDownToLine, X, RefreshCw } from "lucide-react";
+import { ArrowDownToLine, X, RefreshCw, LockKeyhole } from "lucide-react";
 import type { AmountSelector } from "@depthhq/sdk";
 import { useDepth } from "@/shared/depth/session";
 import type { AccountView } from "@/shared/depth/account";
@@ -15,7 +15,9 @@ export function Funds({ account }: { account: AccountView }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   const available =
-    account.balance?.status === "ready" && !account.outdated
+    (account.balance?.status === "ready" ||
+      account.balance?.status === "uninitialized") &&
+    !account.outdated
       ? account.balance.amount
       : undefined;
   async function submit() {
@@ -55,9 +57,7 @@ export function Funds({ account }: { account: AccountView }) {
                     .release({ marketId: "SOL-USD", amount: value });
         session.notice("Transfer submitted");
         await receipt.confirm();
-        session.notice(
-          "Transfer confirmed. Read your private account to see the updated balance.",
-        );
+        session.notice("Transfer confirmed");
       },
     );
   }
@@ -65,7 +65,7 @@ export function Funds({ account }: { account: AccountView }) {
     <>
       {session.trader && (
         <button
-          className="terminal-button funds-trigger"
+          className="terminal-button primary funds-trigger"
           aria-label="Funds"
           disabled={Boolean(session.busy)}
           onClick={() => {
@@ -92,35 +92,51 @@ export function Funds({ account }: { account: AccountView }) {
           </button>
         </div>
         <div className="funds-summary">
-          {account.loaded && (
-            <dl>
-              <div>
-                <dt>Balance</dt>
-                <dd>{decimal(available)} USDC</dd>
-              </div>
-              <div>
-                <dt>Collateral</dt>
-                <dd>
-                  {decimal(
-                    account.position?.status === "ready" && !account.outdated
-                      ? account.position.collateral
+          <dl>
+            <div>
+              <dt>Balance</dt>
+              <dd>{decimal(available)} USDC</dd>
+            </div>
+            <div>
+              <dt>Collateral</dt>
+              <dd>
+                {decimal(
+                  account.position?.status === "ready" && !account.outdated
+                    ? account.position.collateral
+                    : account.empty
+                      ? 0n
                       : undefined,
-                  )}{" "}
-                  USDC
-                </dd>
-              </div>
-            </dl>
+                )}{" "}
+                USDC
+              </dd>
+            </div>
+          </dl>
+          {!account.empty && (
+            <button
+              className="terminal-button quiet"
+              aria-label={
+                account.loaded ? "Refresh balances" : "Reveal balances"
+              }
+              title="Decrypt balances with wallet approval"
+              disabled={
+                !session.trader || Boolean(session.busy) || account.checking
+              }
+              onClick={() => void account.read()}
+            >
+              {account.loaded ? (
+                <RefreshCw size={13} />
+              ) : (
+                <LockKeyhole size={13} />
+              )}
+              {account.loaded ? "Refresh" : "Reveal"}
+            </button>
           )}
-          <button
-            className="terminal-button quiet"
-            aria-label={account.loaded ? "Refresh balances" : "View balances"}
-            disabled={!session.trader || Boolean(session.busy)}
-            onClick={() => void account.read()}
-          >
-            <RefreshCw size={13} />
-            {account.loaded ? "Refresh" : "View balances"}
-          </button>
         </div>
+        {account.error && (
+          <p role="alert" className="form-error">
+            {account.error}
+          </p>
+        )}
         <label className="field-label">
           Operation
           <select
@@ -181,9 +197,16 @@ export function Funds({ account }: { account: AccountView }) {
         )}
         <button
           className="terminal-button primary full"
+          disabled={!session.trader || Boolean(session.busy)}
           onClick={() => void submit()}
         >
-          Review in wallet
+          {action === "deposit"
+            ? "Review deposit"
+            : action === "withdraw"
+              ? "Review withdrawal"
+              : action === "allocate"
+                ? "Review allocation"
+                : "Review release"}
         </button>
       </dialog>
     </>

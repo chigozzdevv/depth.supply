@@ -50,12 +50,8 @@
 .network-pill {
   font-family: var(--font-mono), monospace;
   font-size: 10px;
-  color: var(--terminal-accent);
-  background: color-mix(in srgb, var(--terminal-accent) 5.5%, transparent);
-  border: 1px solid
-    color-mix(in srgb, var(--terminal-accent) 18.8%, transparent);
-  padding: 3px 6px;
-  border-radius: 3px;
+  color: var(--terminal-muted);
+  padding-inline: 4px;
 }
 .terminal-header nav {
   display: flex;
@@ -91,7 +87,7 @@
   justify-self: end;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 .terminal-wallet {
   display: flex;
@@ -100,15 +96,24 @@
   gap: 8px;
   min-height: 34px;
   padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--terminal-accent) 50%, transparent);
-  background: color-mix(in srgb, var(--terminal-accent) 8%, transparent);
+  border: 1px solid var(--terminal-border);
+  background: transparent;
   border-radius: 4px;
   color: var(--terminal-text);
   font-size: 12px;
 }
 .terminal-wallet:hover {
-  border-color: var(--terminal-accent);
-  background: color-mix(in srgb, var(--terminal-accent) 15%, transparent);
+  border-color: #ffffff30;
+  background: #ffffff05;
+}
+.wallet-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.terminal-actions .funds-trigger {
+  min-height: 34px;
+  padding: 0 12px;
 }
 .terminal-main {
   padding-block: 6px;
@@ -225,6 +230,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--terminal-border);
 }
 .funds-summary dl {
   display: flex;
@@ -244,6 +251,7 @@
 .funds-summary .terminal-button {
   flex-shrink: 0;
   padding-inline: 0;
+  font-size: 11px;
 }
 .terminal-button {
   display: inline-flex;
@@ -1375,7 +1383,7 @@
     right: 0;
     bottom: 10px;
     font-size: 9px;
-    padding: 2px 5px;
+    padding: 0;
   }
   .terminal-actions {
     grid-area: actions;
@@ -1389,7 +1397,7 @@
   .terminal-wallet svg {
     width: 12px;
   }
-  .funds-trigger {
+  .terminal-actions .funds-trigger {
     min-height: 32px;
     padding: 8px;
   }

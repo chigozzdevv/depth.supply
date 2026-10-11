@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { PendingItem, PendingPage } from "@depthhq/sdk";
 import { ArrowUpRight, RefreshCw } from "lucide-react";
 import { useDepth } from "@/shared/depth/session";
+import { AccountPrompt } from "@/components/demo/prompt";
 import type { AccountView } from "@/shared/depth/account";
 import type { MarketView } from "@/shared/depth/market";
 import { Positions } from "@/components/trade/positions";
@@ -156,11 +157,11 @@ export function Records({
           )}
           {!session.trader ? (
             <div className="records-empty">
-              <p>
+              <AccountPrompt>
                 {tab === "pending"
                   ? "Connect wallet to view pending operations."
                   : "Connect wallet to view activity."}
-              </p>
+              </AccountPrompt>
             </div>
           ) : !page && !error ? (
             <div className="records-empty">

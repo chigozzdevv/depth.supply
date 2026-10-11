@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ArrowUpRight } from "lucide-react";
 import type { MakerClient, MakerHedgeView } from "@depthhq/maker-sdk";
 import { useDepth } from "@/shared/depth/session";
+import { AccountPrompt } from "@/components/demo/prompt";
 import { decimal, short } from "@/shared/depth/format";
 
 export function Hedges() {
@@ -67,11 +68,11 @@ export function Hedges() {
     <div className="operation-list">
       {!session.maker || !authorized ? (
         <div className="records-empty">
-          <p>
-            {session.maker
-              ? "View your maker’s hedge activity."
-              : "Connect your maker wallet."}
-          </p>
+          {session.maker ? (
+            <p>View your maker’s hedge activity.</p>
+          ) : (
+            <AccountPrompt>Connect your maker wallet.</AccountPrompt>
+          )}
           {session.maker && (
             <button
               className="records-more"

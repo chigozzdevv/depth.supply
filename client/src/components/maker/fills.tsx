@@ -5,6 +5,7 @@ import { PublicKey } from "@solana/web3.js";
 import type { FillPage } from "@depthhq/maker-sdk";
 import type { FillSnapshot } from "@depthhq/sdk";
 import { useDepth } from "@/shared/depth/session";
+import { AccountPrompt } from "@/components/demo/prompt";
 import { ArrowUpRight } from "lucide-react";
 import { decimal, transactionUrl, short } from "@/shared/depth/format";
 
@@ -79,7 +80,7 @@ export function Fills() {
       )}
       {!session.maker ? (
         <div className="records-empty">
-          <p>Connect wallet to view fills.</p>
+          <AccountPrompt>Connect wallet to view fills.</AccountPrompt>
         </div>
       ) : !page && !error ? (
         <div className="records-empty">

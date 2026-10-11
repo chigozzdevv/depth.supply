@@ -47,18 +47,7 @@ export function WalletButton({
           setOpen(true);
         }}
       >
-        {wallet.connected && wallet.wallet ? (
-          <Image
-            src={wallet.wallet.adapter.icon}
-            alt=""
-            width={18}
-            height={18}
-            className="wallet-icon"
-            unoptimized
-          />
-        ) : (
-          <Wallet size={15} />
-        )}
+        {!wallet.connected && <Wallet size={15} />}
         {wallet.connecting
           ? "Connecting…"
           : wallet.publicKey
@@ -84,6 +73,19 @@ export function WalletButton({
         </div>
         {wallet.connected ? (
           <>
+            {wallet.wallet && (
+              <div className="wallet-identity">
+                <Image
+                  src={wallet.wallet.adapter.icon}
+                  alt=""
+                  width={28}
+                  height={28}
+                  className="wallet-icon"
+                  unoptimized
+                />
+                <strong>{wallet.wallet.adapter.name}</strong>
+              </div>
+            )}
             <p className="wallet-address">{wallet.publicKey?.toBase58()}</p>
             <button
               className="terminal-button"

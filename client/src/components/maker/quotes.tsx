@@ -3,6 +3,7 @@
 import { PublicKey } from "@solana/web3.js";
 import type { QuoteSnapshot } from "@depthhq/maker-sdk";
 import { useDepth } from "@/shared/depth/session";
+import { AccountPrompt } from "@/components/demo/prompt";
 import { decimal, explorer, short } from "@/shared/depth/format";
 import { useState } from "react";
 
@@ -55,7 +56,7 @@ export function Quotes({
   if (!session.maker)
     return (
       <div className="records-empty">
-        <p>Connect wallet to view quotes.</p>
+        <AccountPrompt>Connect wallet to view quotes.</AccountPrompt>
       </div>
     );
   return (
