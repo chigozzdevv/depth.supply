@@ -220,6 +220,7 @@ test("position summary retries a risk check that wins the view submission race",
       );
     }
     return {
+      deferClose: async () => {},
       wait: async () => ({
         status: "ready",
         id: PublicKey.unique().toBase58(),

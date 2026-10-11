@@ -46,6 +46,7 @@ import type { AmountSelector } from "@/trade/amount";
 import { tradeDeadline, tradeLimit } from "@/trade/terms";
 import { TradeFlow } from "@/trade/flow";
 import { DepthView } from "@/view/view";
+import { ViewSession } from "@/view/session";
 import { ViewCache, DeviceViews } from "@/view/cache";
 import type { BalanceSnapshot, PositionSnapshot } from "@/view/view";
 import { positionPnl } from "@/position/pnl";
@@ -81,7 +82,8 @@ function enumName(value: Record<string, unknown>): string {
 export class DepthClient {
   readonly program: anchor.Program;
   readonly provider: DepthProvider;
-  private readonly views: ViewCache;
+  private readonly viewCache: ViewCache;
+  readonly views: ViewSession;
   private readonly viewReads = new Map<
     string,
     Promise<BalanceSnapshot | PositionSnapshot>
@@ -136,20 +138,28 @@ export class DepthClient {
   }
 
   private constructor(readonly options: ResolvedDepthOptions) {
-    this.views = new ViewCache(
-      `${"manifest" in options.deployment ? options.deployment.manifest.payload.genesisHash : "localnet"}:${DEPTH_PROGRAM_ID.toBase58()}:${options.wallet.publicKey.toBase58()}`,
+    const scope = `${"manifest" in options.deployment ? options.deployment.manifest.payload.genesisHash : "localnet"}:${DEPTH_PROGRAM_ID.toBase58()}:${options.wallet.publicKey.toBase58()}`;
+    const storage =
       options.privateViews === "device" &&
-        "manifest" in options.deployment &&
-        typeof indexedDB !== "undefined" &&
-        globalThis.crypto?.subtle
+      "manifest" in options.deployment &&
+      typeof indexedDB !== "undefined" &&
+      globalThis.crypto?.subtle
         ? new DeviceViews()
-        : undefined,
-    );
+        : undefined;
+    this.viewCache = new ViewCache(scope, storage);
     this.provider = new DepthProvider(options.connection, options.wallet, {
       commitment: "confirmed",
       preflightCommitment: "confirmed",
     });
     this.program = new anchor.Program(DEPTH_IDL, this.provider);
+    this.views = new ViewSession(
+      this.program,
+      options.connection,
+      options.wallet.publicKey,
+      options.serviceUrl,
+      scope,
+      storage,
+    );
     this.position = this.positionActions();
   }
 
@@ -267,6 +277,31 @@ export class DepthClient {
     );
   }
 
+  async requestQuoteView(quote: PublicKey): Promise<DepthView> {
+    const record = await this.read<{
+      maker: PublicKey;
+      market: PublicKey;
+      status: Record<string, unknown>;
+    }>("QuoteRecord", quote);
+    if (
+      !record.maker.equals(this.options.wallet.publicKey) ||
+      !record.market.equals(this.marketAddress) ||
+      !["active", "closing"].includes(enumName(record.status))
+    )
+      throw new Error("Active quote does not belong to this wallet and market");
+    const viewNonce = nonce();
+    const view = pda([
+      Buffer.from("quote-view"),
+      quote.toBuffer(),
+      this.options.wallet.publicKey.toBuffer(),
+      viewNonce.toArrayLike(Buffer, "le", 8),
+    ]);
+    return this.requestView("quote", view, viewNonce, {
+      market: this.marketAddress,
+      quote,
+    });
+  }
+
   async requestBalanceView(): Promise<DepthView> {
     const owner = this.options.wallet.publicKey;
     const balance = pda([Buffer.from("balance"), owner.toBuffer()]);
@@ -326,11 +361,23 @@ export class DepthClient {
   }
 
   private async requestView(
-    kind: "balance" | "market" | "fill",
+    kind: "balance" | "market" | "fill" | "quote",
     view: PublicKey,
     viewNonce: anchor.BN,
     accounts: Record<string, PublicKey>,
   ): Promise<DepthView> {
+    const source =
+      accounts.balance ??
+      accounts.marketAccount ??
+      accounts.order ??
+      accounts.quote;
+    if (
+      this.options.viewAuthorization === "session" ||
+      (this.options.viewAuthorization !== "wallet" &&
+        this.options.privateViews === "device" &&
+        this.options.serviceUrl)
+    )
+      return this.views.request(kind, source);
     const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
     if (!mxePublicKey) throw new Error("MXE public key is unavailable");
     const secret = x25519.utils.randomSecretKey();
@@ -341,7 +388,9 @@ export class DepthClient {
         ? "view_balance"
         : kind === "market"
           ? "view_market"
-          : "view_fill",
+          : kind === "fill"
+            ? "view_fill"
+            : "view_quote",
       offset,
     );
     const builder =
@@ -349,7 +398,9 @@ export class DepthClient {
         ? this.program.methods.requestBalanceView
         : kind === "market"
           ? this.program.methods.requestMarketView
-          : this.program.methods.requestFillView;
+          : kind === "fill"
+            ? this.program.methods.requestFillView
+            : this.program.methods.requestQuoteView;
     const signature = await builder(offset, viewNonce, Array.from(publicKey))
       .accountsPartial({
         ...queue,
@@ -369,6 +420,7 @@ export class DepthClient {
       mxePublicKey,
       this.program,
       this.options.connection,
+      source,
     );
   }
 
@@ -781,6 +833,20 @@ export class DepthClient {
     id: string,
   ): Promise<void> {
     const view = new PublicKey(id);
+    const info = await this.options.connection.getAccountInfo(
+      view,
+      "confirmed",
+    );
+    if (!info?.owner.equals(DEPTH_PROGRAM_ID)) return;
+    const receipt = this.program.coder.accounts.decode<{
+      owner: PublicKey;
+      status: Record<string, unknown>;
+    }>(kind === "balance" ? "balanceView" : "marketView", info.data);
+    if (
+      !receipt.owner.equals(this.options.wallet.publicKey) ||
+      "pending" in receipt.status
+    )
+      return;
     const method =
       kind === "balance"
         ? this.program.methods.closeBalanceView
@@ -842,7 +908,7 @@ export class DepthClient {
     for (;;) {
       const state = await this.viewState(kind, id);
       if (state.status === "ready") {
-        const cached = await this.views.get(kind, id, state.version);
+        const cached = await this.viewCache.get(kind, id, state.version);
         if (cached) {
           await this.deferViewClose(kind, cached.id);
           return cached;
@@ -857,7 +923,7 @@ export class DepthClient {
             timeoutMs: Math.max(0, deadline - Date.now()),
           })) as BalanceSnapshot | PositionSnapshot;
           if (result.status === "pending") return result;
-          await this.deferViewClose(kind, result.id);
+          await view.deferClose();
           const latest = await this.viewState(kind, id);
           if (
             result.status === "ready" &&
@@ -865,7 +931,7 @@ export class DepthClient {
             latest.version === result.version
           ) {
             const snapshot = { ...result, readAt: Date.now() };
-            await this.views.set(kind, id, snapshot);
+            await this.viewCache.set(kind, id, snapshot);
             return snapshot;
           }
         } catch (error) {

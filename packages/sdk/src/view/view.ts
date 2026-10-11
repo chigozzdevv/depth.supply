@@ -52,6 +52,10 @@ export type QuoteBalanceSnapshot = {
 
 type ViewState = {
   owner: PublicKey;
+  balance?: PublicKey;
+  marketAccount?: PublicKey;
+  order?: PublicKey;
+  quote?: PublicKey;
   viewKey: number[];
   status: Record<string, unknown>;
   version?: anchor.BN;
@@ -129,6 +133,8 @@ export class DepthView {
     private readonly mxePublicKey: Uint8Array,
     private readonly program: anchor.Program,
     private readonly connection: Connection,
+    private readonly source?: PublicKey,
+    private readonly release?: () => Promise<string>,
   ) {}
 
   async status(): Promise<
@@ -157,6 +163,16 @@ export class DepthView {
     ) {
       throw new Error("Private view authorization does not match this request");
     }
+    const source =
+      this.kind === "balance"
+        ? state.balance
+        : this.kind === "market"
+          ? state.marketAccount
+          : this.kind === "fill"
+            ? state.order
+            : state.quote;
+    if (this.source && !source?.equals(this.source))
+      throw new Error("Private view source does not match this request");
     const current = Object.keys(state.status)[0];
     if (current !== "pending" && current !== "ready" && current !== "stale") {
       throw new Error("Private view has an unknown status");
@@ -239,6 +255,10 @@ export class DepthView {
   }
 
   async deferClose(): Promise<void> {
+    if (this.release) {
+      await this.close();
+      return;
+    }
     const provider = this.program.provider as anchor.Provider &
       Partial<Pick<DepthProvider, "deferClose">>;
     if (typeof provider.deferClose !== "function") {
@@ -269,6 +289,7 @@ export class DepthView {
     if (snapshot.status === "pending") {
       throw new Error("Private view computation is still pending");
     }
+    if (this.release) return this.release();
     return this.closeBuilder().rpc({ commitment: "confirmed" });
   }
 }

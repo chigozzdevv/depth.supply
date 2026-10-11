@@ -87,6 +87,7 @@ test("private balances authorize once per version and defer receipt cleanup", as
     connection: new Connection("http://localhost:8899"),
     deployment: { localnet: true },
   });
+  client.options.connection.getAccountInfo = async () => null;
   let version = 2n;
   client.account().state = async () => ({
     id: balanceAddress(wallet.publicKey).toBase58(),
@@ -98,6 +99,7 @@ test("private balances authorize once per version and defer receipt cleanup", as
   client.requestBalanceView = async () => {
     calls.push("authorize");
     return {
+      deferClose: async () => {},
       wait: async () => ({
         id: PublicKey.unique().toBase58(),
         slot: 91,
@@ -133,6 +135,7 @@ test("a new client after refresh reuses the same wallet's current encrypted view
       trustedSigner: wallet.publicKey,
     } as DepthClient["options"]["deployment"],
   };
+  options.connection.getAccountInfo = async () => null;
   let version = 2n;
   let approvals = 0;
   const create = () => {
@@ -146,6 +149,7 @@ test("a new client after refresh reuses the same wallet's current encrypted view
     client.requestBalanceView = async () => {
       approvals++;
       return {
+        deferClose: async () => {},
         wait: async () => ({
           status: "ready",
           id: PublicKey.unique().toBase58(),
@@ -163,4 +167,53 @@ test("a new client after refresh reuses the same wallet's current encrypted view
   version = 3n;
   assert.equal((await create().account.summary()).amount, 500n);
   assert.equal(approvals, 2);
+});
+
+test("cached sponsored receipts never become owner-signed cleanup instructions", async () => {
+  const wallet = new anchor.Wallet(Keypair.generate());
+  const Constructor = DepthClient as unknown as new (
+    options: DepthClient["options"],
+  ) => DepthClient;
+  for (const payer of [wallet.publicKey, PublicKey.unique()]) {
+    const connection = new Connection("http://localhost:8899");
+    connection.getAccountInfo = async () => ({
+      owner: DEPTH_PROGRAM_ID,
+      data: Buffer.alloc(8),
+      executable: false,
+      lamports: 1,
+    });
+    const client = new Constructor({
+      wallet,
+      connection,
+      deployment: { localnet: true },
+    });
+    client.program.coder.accounts.decode = (() => ({
+      owner: payer,
+      status: { ready: {} },
+    })) as typeof client.program.coder.accounts.decode;
+    client.account().state = async () => ({
+      id: balanceAddress(wallet.publicKey).toBase58(),
+      slot: 90,
+      version: 2n,
+      status: "ready",
+    });
+    client.requestBalanceView = async () =>
+      ({
+        deferClose: async () => {},
+        wait: async () => ({
+          id: PublicKey.unique().toBase58(),
+          slot: 91,
+          version: 2n,
+          status: "ready",
+          amount: 500n,
+        }),
+      }) as unknown as DepthView;
+    let cleanup = 0;
+    client.provider.deferClose = () => {
+      cleanup++;
+    };
+    await client.account().summary();
+    await client.account().summary();
+    assert.equal(cleanup, payer.equals(wallet.publicKey) ? 1 : 0);
+  }
 });

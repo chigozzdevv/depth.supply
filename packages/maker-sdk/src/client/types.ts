@@ -16,6 +16,7 @@ export type MakerOptions = ConnectionOptions & {
   appId?: PublicKey | string;
   cursorDirectory?: string;
   privateViews?: "memory" | "device";
+  viewAuthorization?: "session" | "wallet";
   settlement?: "keeper" | "wallet";
 };
 

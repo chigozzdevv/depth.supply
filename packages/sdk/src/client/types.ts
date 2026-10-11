@@ -25,6 +25,7 @@ export type DepthOptions = ConnectionOptions & {
   appId?: PublicKey | string;
   wallet: DepthWallet;
   privateViews?: "memory" | "device";
+  viewAuthorization?: "session" | "wallet";
   settlement?: "keeper" | "wallet";
 };
 
@@ -32,6 +33,7 @@ export type ResolvedDepthOptions = ResolvedConnection & {
   appId?: PublicKey;
   wallet: DepthWallet;
   privateViews?: "memory" | "device";
+  viewAuthorization?: "session" | "wallet";
   settlement?: "keeper" | "wallet";
 };
 

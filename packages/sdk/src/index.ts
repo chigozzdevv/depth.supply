@@ -81,3 +81,5 @@ export type {
   SignedManifest,
   DeploymentPolicy,
 } from "@/chain/manifest";
+
+export { ViewSession } from "@/view/session";

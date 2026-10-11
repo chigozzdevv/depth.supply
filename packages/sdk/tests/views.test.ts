@@ -23,6 +23,7 @@ test("owner-authorized private views decrypt balance and signed position fields"
     viewKey: Array.from(publicKey),
     status: { ready: {} },
     version: new anchor.BN(7),
+    balance: PublicKey.unique(),
     ciphertext: cipher.encrypt([500n], outputNonce)[0],
     ciphertexts: cipher.encrypt([first, second, third], outputNonce),
     outputNonce: Array.from(outputNonce),
@@ -71,6 +72,19 @@ test("owner-authorized private views decrypt balance and signed position fields"
       positionSnapshot.fundingCheckpoint,
     -12n,
   );
+  const misdirected = new DepthView(
+    PublicKey.unique(),
+    "signature",
+    "balance",
+    owner,
+    secret,
+    publicKey,
+    mxePublicKey,
+    program,
+    connection,
+    PublicKey.unique(),
+  );
+  await assert.rejects(misdirected.status(), /source does not match/);
   state.owner = PublicKey.unique();
   await assert.rejects(
     position.status(),

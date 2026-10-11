@@ -67,6 +67,50 @@ export class DeviceViews implements ViewStorage {
   }
 }
 
+export class EncryptedViews {
+  private key?: Promise<CryptoKey>;
+  constructor(
+    private readonly scope: string,
+    private readonly storage: ViewStorage,
+  ) {}
+
+  private encryptionKey(): Promise<CryptoKey> {
+    return (this.key ??= crypto.subtle
+      .generateKey({ name: "AES-GCM", length: 256 }, false, [
+        "encrypt",
+        "decrypt",
+      ])
+      .then((key) => this.storage.key(this.scope, key)));
+  }
+
+  async read<T>(name: string): Promise<T | undefined> {
+    const id = `${this.scope}:${name}`;
+    const envelope = await this.storage.read(id);
+    if (!envelope) return;
+    const bytes = await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: envelope.iv,
+        additionalData: new TextEncoder().encode(id),
+      },
+      await this.encryptionKey(),
+      envelope.data,
+    );
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  }
+
+  async write(name: string, value: unknown): Promise<void> {
+    const id = `${this.scope}:${name}`;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const data = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv, additionalData: new TextEncoder().encode(id) },
+      await this.encryptionKey(),
+      new TextEncoder().encode(JSON.stringify(value)),
+    );
+    await this.storage.write(id, { iv, data });
+  }
+}
+
 export class ViewCache {
   private readonly memory = new Map<string, Snapshot>();
   private key?: Promise<CryptoKey>;

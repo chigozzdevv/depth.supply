@@ -118,6 +118,8 @@ export class MakerClient {
       appId: this.options.appId,
       environment: this.options.environment,
       privateViews: this.options.privateViews,
+      viewAuthorization: this.options.viewAuthorization,
+      serviceUrl: this.options.serviceUrl,
       settlement: this.options.settlement,
     });
     return this.ownerClient;
@@ -805,6 +807,19 @@ export class MakerClient {
     viewNonce: anchor.BN,
     accounts: Record<string, PublicKey | null>,
   ): Promise<DepthView> {
+    if (
+      this.options.wallet.publicKey.equals(this.options.maker) &&
+      (this.options.viewAuthorization === "session" ||
+        (this.options.viewAuthorization !== "wallet" &&
+          this.options.privateViews === "device" &&
+          this.options.serviceUrl))
+    ) {
+      const client = await this.owned();
+      return client.views.request(
+        kind,
+        (accounts.marketAccount ?? accounts.order ?? accounts.quote)!,
+      );
+    }
     const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
     if (!mxePublicKey) throw new Error("MXE public key is unavailable");
     const secret = x25519.utils.randomSecretKey();
