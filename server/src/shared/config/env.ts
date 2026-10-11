@@ -220,3 +220,14 @@ export function publisherConfig(
     healthPort,
   };
 }
+
+export function viewConfig(env: NodeJS.ProcessEnv = process.env) {
+  const enabled = env.DEPTH_VIEW_RELAY_ENABLED ?? "false";
+  if (enabled !== "true" && enabled !== "false")
+    throw new Error("DEPTH_VIEW_RELAY_ENABLED must be true or false");
+  if (enabled === "false") return;
+  return {
+    keypair: loadSigner("keeper", { env }),
+    directory: settingPath("DEPTH_VIEW_STATE_PATH", "data/views", env)!,
+  };
+}

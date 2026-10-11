@@ -20,9 +20,17 @@ import { MakerProxy } from "@/features/maker/maker.service";
 import { automationRoute } from "@/features/automation/automation.route";
 import { registerHttp } from "@/shared/http/http.plugin";
 
-export function buildApp(chain: ChainClient, logger = true): FastifyInstance {
+import { viewRoute } from "@/features/view/view.route";
+import type { ViewService } from "@/features/view/view.service";
+
+export function buildApp(
+  chain: ChainClient,
+  logger = true,
+  views?: ViewService,
+): FastifyInstance {
   const app = Fastify({ logger, bodyLimit: 1_024 });
   registerHttp(app);
+  viewRoute(app, views);
   deploymentRoute(app, new DeploymentService(deploymentPaths()));
   marketRoute(app, new MarketService(chain));
   candleRoute(app, new CandleService());
