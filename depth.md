@@ -549,6 +549,42 @@ same balance through several apps or markets. The program's account locks
 and the circuit's capacity calculation enforce this. Registration alone
 does not make a quote active.
 
+### Managed maker automation
+
+An application integrates managed workers through `maker.automation.configure`,
+`approve`, `start`, `pause`, `resume`, and `summary`. Configuration returns a
+wallet-bound setup for review. The owner approves a dedicated Solana operator,
+a bounded grant duration and capacity, explicit private inventory access, and
+an operator SOL funding budget. Collateral funding and withdrawals continue
+through owner-signed account operations; the automation session grants no
+onchain authority on its own.
+Operator funding saves the owner's signed SOL transfer before broadcast and
+reconciles its signature until finalized or expired. Retries reuse the saved
+transaction; an uncertain receipt blocks new funding and configuration changes.
+
+Each maker has separate credentials, configuration, desired state, quote nonces,
+fill cursors, and hedge history. The supervisor encrypts its credential registry
+with a deployment secret and synchronizes checkpoints before submission. A
+single supervisor lease protects the registry; maker and external account leases
+prevent duplicate workers. Owner signatures authorize short-lived wallet-bound
+sessions, and a history-reading session cannot change automation. Public market
+routes expose no private inventory or hedge-account mapping.
+
+Optional Hyperliquid setup requires a separately funded account and owner-approved
+agent. Its network follows the Solana deployment. A draft cannot reserve an
+external account; the supervisor binds it only after checking the agent and
+starting its worker. Confirmed bindings persist across restarts and cannot be
+reassigned through a configuration update. Limits cover hedge ratio, order size,
+residual exposure, slippage, leverage, freshness, and exposure time.
+
+Pause cancels available quotes and reconciles already submitted hedge receipts.
+It does not resubmit unknown hedges, flatten either venue, or erase positions.
+An unresolved receipt keeps the worker in a visible pausing state. Resume
+restores the existing checkpoint and checks operator grants and external account
+readiness again. Hosted automation can read a maker's own inventory only because
+that maker explicitly grants private-view access to its operator; this does not
+grant access to other makers or traders.
+
 ### Publish, refresh, and stop quoting
 
 The maker publishes encrypted two-sided curves through the maker SDK. The

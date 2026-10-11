@@ -116,29 +116,76 @@ pnpm --dir server keeper
 The devnet example uses `keys/devnet/deployer.json` for the keeper. A production
 keeper should use its own funded signer.
 
-The maker worker uses a dedicated operator signer with an owner-approved quote
-and private-view grant. Set `DEPTH_MAKER_OWNER` to the maker's public key and
-`DEPTH_MAKER_KEYPAIR_PATH` to the operator signer, then configure capacity,
-inventory, spread, and refresh limits in the root environment:
+The maker automation supervisor creates a separate quote operator and optional
+Hyperliquid agent for each connected maker. Store a random 32-byte hexadecimal
+`DEPTH_AUTOMATION_SECRET` in the root `.env.local`, then start the supervisor:
 
 ```sh
 pnpm maker
 ```
 
-It quotes around the pinned oracle, stops when prices or funding are stale,
-and caps capacity by available equity and inventory. It records quote nonces
-before submission and restores quote replacements and finalized fill cursors
-from `data/maker/`. One process may hold a wallet's checkpoint lease. Mount
-that directory on durable storage when hosting the worker; `/healthz` on port
-8789 reports progress. Optional Hyperliquid hedging follows the configured
-maker risk policy. The maker owner can reclaim terminal quote rent with
-`maker.quote.get(quoteId).close()` after replacement publication and attached
-orders have settled.
+In `/demo/maker`, open **Automation**, configure quote and inventory limits,
+and review the operator before approving it with the owner wallet. Approval
+explicitly grants private inventory access and tops the operator up to its SOL
+reserve plus a 0.2 SOL operating budget. The owner funds market collateral
+through the existing account flow. Start, pause, and resume are independent for
+each maker; pause cancels available quotes and leaves existing positions open.
+Pending external receipts are reconciled without submitting replacement hedges.
+Operator top-ups persist the owner's signed transaction before broadcasting;
+retries relay the same signature, and setup resumes after a browser or service
+restart without submitting a second payment. Funding receipts remain in status.
 
-The operator needs SOL for rent and Arcium computation fees. New quotes stop
-below `DEPTH_MAKER_GAS_RESERVE_LAMPORTS`, which defaults to 50000000 lamports
-(0.05 SOL), preserving a cancellation budget. Replenish the operator's fee
-balance to resume; the worker does not transfer funds from the owner.
+The supervisor restores desired state, operator identities, quotes, replacements,
+and finalized fill cursors from `data/maker/`. The registry is encrypted with
+AES-256-GCM; quote and hedge checkpoints use private file permissions. Back up
+the directory and vault secret together and mount durable storage when hosting.
+One supervisor owns the directory lease, and one worker owns each maker and
+hedge account lease. `/healthz` on loopback port 8789 reports supervisor health;
+authenticated SDK status reports each worker's phase, reason, and update time.
+
+Quotes fit available equity and inventory and stop on stale oracle, funding,
+hedge uncertainty, or low operator SOL. The default SOL reserve is 0.05 SOL.
+Replenishing the operator or changing permissions requires the owner wallet;
+the worker cannot move the owner's Depth collateral. Terminal quote rent can
+be reclaimed with `maker.quote.get(quoteId).close()` after attached orders settle.
+
+### Integrate maker automation
+
+The demo uses the same Maker SDK and authenticated API as other applications:
+
+```ts
+import { create_depth_maker } from "@depthhq/maker-sdk";
+
+const maker = await create_depth_maker({
+  environment: "devnet",
+  wallet: makerWallet,
+  serviceUrl,
+});
+
+const setup = await maker.automation.configure({
+  quote: {
+    maxCapacity: 100_000_000n,
+    maxInventoryNotional: 1_000_000_000n,
+    spreadBps: 20,
+    repriceBps: 10,
+    lifetimeSeconds: 120,
+    refreshSeconds: 60,
+  },
+});
+
+await maker.automation.approve(setup);
+await maker.automation.start();
+const automation = await maker.automation.summary();
+await maker.automation.pause();
+await maker.automation.resume();
+```
+
+Amounts are micro-USDC. Display the returned setup before approval; it identifies
+the operator, permissions, funding budget, and optional hedge agent. The default
+grant lasts 24 hours and may be renewed for up to seven days. Wallet signatures
+open scoped sessions; session tokens stay in memory. Sessions must be authorized
+again after expiry or a wallet change. Decryption keys are not sent to the API.
+The maker's explicit operator grant lets its worker read that maker's inventory.
 
 The optional Hermes publisher runs separately with `PYTH_ORACLE_MODE=hermes`
 and `PYTH_API_KEY`:
@@ -221,12 +268,16 @@ the same version twice.
 
 ## Hyperliquid maker hedging
 
-The Node maker SDK supports optional SOL inventory hedging on Hyperliquid.
+The Maker SDK supports optional SOL inventory hedging on Hyperliquid.
 The maker supplies collateral separately on each venue and approves a dedicated
 Hyperliquid agent wallet. The account must be dedicated to this strategy.
 
 ```ts
-import { create_maker_bot, create_hyperliquid, HedgeEngine } from "@depthhq/maker-sdk/node";
+import {
+  create_maker_bot,
+  create_hyperliquid,
+  HedgeEngine,
+} from "@depthhq/maker-sdk/node";
 
 const adapter = await create_hyperliquid({
   network: "testnet",
@@ -267,11 +318,17 @@ Hyperliquid's [faucet](https://hyperliquid.gitbook.io/hyperliquid-docs/onboardin
 requires a prior mainnet deposit from the same address. An existing funded
 Hyperliquid testnet account can also transfer testnet USDC to it.
 
-Set `DEPTH_MAKER_HEDGE=hyperliquid` and run `pnpm maker`. The worker uses only
-the agent key; production workers should receive only their scoped credentials.
+Enable Hyperliquid in the maker Automation setup and enter a funded account
+dedicated to this strategy. Connect its Ethereum wallet to approve the displayed
+agent, or approve that agent in Hyperliquid API wallets before completing setup.
+The worker receives only its agent key.
 Solana devnet pairs with Hyperliquid testnet, and Solana mainnet pairs with
 Hyperliquid mainnet. The SDK setup helper also accepts an owner wallet instead
-of a private key. External funding and setup are explicit operations.
+of a private key. External funding and setup are explicit operations. Automation
+configuration accepts `hedge: { account, policy }`; pass `hedgeWallet` to
+`maker.automation.approve(setup, { hedgeWallet })` for in-app agent approval.
+Once a worker binds a hedge account, configuration cannot replace or remove it;
+its inventory and recovery journal remain associated with that maker.
 
 Hedges follow finalized aggregate maker inventory. The engine reconciles actual
 fills, batches small changes, uses independent external prices, and persists
