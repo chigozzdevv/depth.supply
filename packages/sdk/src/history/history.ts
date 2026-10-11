@@ -87,7 +87,7 @@ export class ExecutionHistory {
       this.fills.get(key) ??
       ((await view.wait({ timeoutMs: 180_000 })) as FillSnapshot);
     if (result.status === "stale") {
-      await view.close();
+      await view.deferClose();
       this.views.delete(key);
       throw new Error(
         "Historical private execution changed; retry with the same wallet",
@@ -99,7 +99,7 @@ export class ExecutionHistory {
       );
     this.fills.set(key, result);
     try {
-      await view.close();
+      await view.deferClose();
     } catch (error) {
       if (await this.connection.getAccountInfo(view.id, "confirmed"))
         throw error;

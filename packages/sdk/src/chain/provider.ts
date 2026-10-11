@@ -4,7 +4,9 @@ import { DEPTH_IDL, DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import {
   ComputeBudgetProgram,
   SendTransactionError,
+  PublicKey,
   Transaction,
+  TransactionInstruction,
 } from "@solana/web3.js";
 
 const queuedInstructions = new Set([
@@ -71,15 +73,71 @@ export function applyDepthComputeBudget(transaction: Transaction): void {
 }
 
 export class DepthProvider extends anchor.AnchorProvider {
+  private readonly cleanup = new Map<string, TransactionInstruction>();
+
+  deferClose(id: PublicKey, instruction: TransactionInstruction): void {
+    this.cleanup.set(id.toBase58(), instruction);
+  }
+
+  async appendCleanup(transaction: Transaction): Promise<string[]> {
+    if (
+      !this.cleanup.size ||
+      transaction.signatures.some((item) => item.signature)
+    )
+      return [];
+    const entries = [...this.cleanup.entries()].slice(0, 64);
+    const queued = new Set(entries.map(([, instruction]) => instruction));
+    transaction.instructions = transaction.instructions.filter(
+      (instruction) => !queued.has(instruction),
+    );
+    const accounts = await this.connection.getMultipleAccountsInfo(
+      entries.map(([id]) => new PublicKey(id)),
+      "confirmed",
+    );
+    const added: string[] = [];
+    for (let index = 0; index < entries.length; index++) {
+      const [id, instruction] = entries[index];
+      if (!accounts[index]?.owner.equals(DEPTH_PROGRAM_ID)) {
+        this.cleanup.delete(id);
+        continue;
+      }
+      const candidate = new Transaction({
+        feePayer: transaction.feePayer ?? this.wallet.publicKey,
+        recentBlockhash:
+          transaction.recentBlockhash ?? PublicKey.default.toBase58(),
+      }).add(...transaction.instructions, instruction);
+      try {
+        candidate.serialize({
+          requireAllSignatures: false,
+          verifySignatures: false,
+        });
+      } catch {
+        continue;
+      }
+      transaction.add(instruction);
+      added.push(id);
+    }
+    return added;
+  }
+
   override async sendAndConfirm(
     transaction: Parameters<anchor.AnchorProvider["sendAndConfirm"]>[0],
     signers?: Parameters<anchor.AnchorProvider["sendAndConfirm"]>[1],
     options?: Parameters<anchor.AnchorProvider["sendAndConfirm"]>[2],
   ): Promise<string> {
-    if (transaction instanceof Transaction)
+    let cleanup: string[] = [];
+    if (transaction instanceof Transaction) {
       applyDepthComputeBudget(transaction);
+      cleanup = await this.appendCleanup(transaction);
+    }
     try {
-      return await super.sendAndConfirm(transaction, signers, options);
+      const signature = await super.sendAndConfirm(
+        transaction,
+        signers,
+        options,
+      );
+      for (const id of cleanup) this.cleanup.delete(id);
+      return signature;
     } catch (error) {
       if (
         !(error instanceof Error) ||

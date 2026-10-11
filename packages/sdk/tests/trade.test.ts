@@ -202,6 +202,12 @@ test("position summary retries a risk check that wins the view submission race",
     connection: new Connection("http://127.0.0.1:8899"),
     deployment: { localnet: true },
   });
+  (client as unknown as { read: () => Promise<unknown> }).read = async () => ({
+    owner: wallet.publicKey,
+    market: marketAddress(),
+    status: { ready: {} },
+    version: new anchor.BN(1),
+  });
   let attempts = 0;
   let closed = false;
   client.requestMarketView = async () => {
@@ -232,7 +238,7 @@ test("position summary retries a risk check that wins the view submission race",
   assert.equal(position.status, "ready");
   assert.equal(position.position, 0n);
   assert.equal(attempts, 2);
-  assert.equal(closed, true);
+  assert.equal(closed, false);
 });
 
 test("operation polling resumes after a transient RPC failure without submitting another order", async () => {
@@ -261,7 +267,7 @@ test("operation polling resumes after a transient RPC failure without submitting
   assert.equal(attempts, 2);
 });
 
-test("private fill result resumes its view and closes it before returning", async () => {
+test("private fill result resumes its view and schedules cleanup before returning", async () => {
   const id = PublicKey.unique();
   const viewId = PublicKey.unique();
   let requests = 0;
@@ -278,7 +284,7 @@ test("private fill result resumes its view and closes it before returning", asyn
             slot: 5,
             size: 100n,
           },
-    close: async () => {
+    deferClose: async () => {
       if (++closes === 1) throw new Error("temporary RPC error");
       return "close-signature";
     },
@@ -324,4 +330,61 @@ test("private fill result resumes its view and closes it before returning", asyn
   assert.equal(requests, 1);
   assert.equal(reads, 2);
   assert.equal(closes, 2);
+});
+
+test("submission waits through quote replacement and validates the new market snapshot", async () => {
+  const wallet = new anchor.Wallet(Keypair.generate());
+  const Constructor = DepthClient as unknown as new (
+    options: DepthClient["options"],
+  ) => DepthClient;
+  const client = new Constructor({
+    wallet,
+    connection: new Connection("http://localhost:8899"),
+    deployment: { localnet: true },
+  });
+  const app = PublicKey.unique();
+  let reads = 0;
+  let enabled = true;
+  client.market = async () => ({
+    address: marketAddress(),
+    slot: 1,
+    state: {
+      status: { active: {} },
+      pendingOrders: 0,
+      activeQuoteCount: ++reads === 1 ? 0 : 1,
+      oracleTimestamp: new anchor.BN(Math.floor(Date.now() / 1000)),
+      config: { maxOracleAgeSeconds: 60, maxOrderQueueSeconds: 120 },
+    } as unknown as Awaited<ReturnType<DepthClient["market"]>>["state"],
+  });
+  const internal = client as unknown as {
+    read: (name: string) => Promise<unknown>;
+    waitForMarket: (
+      input: { marketId: "SOL-USD"; maxFee: bigint; validForSeconds: number },
+      app: PublicKey,
+      intent: "increase",
+    ) => Promise<unknown>;
+  };
+  internal.read = async (name) =>
+    name === "Protocol"
+      ? { tradingEnabled: enabled }
+      : name === "MarketAccount"
+        ? {
+            owner: wallet.publicKey,
+            market: marketAddress(),
+            status: { ready: {} },
+          }
+        : { active: true, app };
+  const terms = {
+    marketId: "SOL-USD" as const,
+    maxFee: 1n,
+    validForSeconds: 120,
+  };
+  await internal.waitForMarket(terms, app, "increase");
+  assert.equal(reads, 2);
+  enabled = false;
+  await assert.rejects(
+    internal.waitForMarket(terms, app, "increase"),
+    /Market is paused/,
+  );
+  assert.equal(reads, 3);
 });

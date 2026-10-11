@@ -180,6 +180,7 @@ test("wallet-free preparation shares verification, expires it, and rejects chang
   binaryReads = 0;
   globalThis.fetch = async () => new Response(JSON.stringify(manifest));
   try {
+    Date.now = () => time;
     const options = { environment: "devnet" as const, connection };
     const [first, second] = await Promise.all([
       prepare_depth(options),

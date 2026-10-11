@@ -62,6 +62,7 @@ export class FundingClient {
     readonly connection: Connection,
     readonly owner: PublicKey,
     private readonly queue: Queue,
+    readonly settlement: "keeper" | "wallet" = "wallet",
   ) {
     this.market = marketAddress(program.programId);
     this.protocol = protocolAddress(program.programId);
@@ -577,7 +578,10 @@ export class TransferHandle {
             "Read the receipt and private account before retrying",
             this.id.toBase58(),
           );
-        if (transfer.state === "escrow") {
+        if (
+          transfer.state === "escrow" &&
+          this.client.settlement === "wallet"
+        ) {
           try {
             await this.settle();
           } catch (error) {

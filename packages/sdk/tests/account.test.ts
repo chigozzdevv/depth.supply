@@ -1,3 +1,4 @@
+import { indexedDB as fakeIndexedDB } from "fake-indexeddb";
 import * as anchor from "@anchor-lang/core";
 import { DEPTH_PROGRAM_ID, balanceAddress } from "@depthhq/bindings";
 import { Connection, Keypair, PublicKey } from "@solana/web3.js";
@@ -76,7 +77,7 @@ test("balance discovery checks account ownership, wallet identity, and lifecycle
   await assert.rejects(read(), /not owned/);
 });
 
-test("initialized balances still use an authenticated private view and close its receipt", async () => {
+test("private balances authorize once per version and defer receipt cleanup", async () => {
   const wallet = new anchor.Wallet(Keypair.generate());
   const Constructor = DepthClient as unknown as new (
     options: DepthClient["options"],
@@ -86,10 +87,11 @@ test("initialized balances still use an authenticated private view and close its
     connection: new Connection("http://localhost:8899"),
     deployment: { localnet: true },
   });
+  let version = 2n;
   client.account().state = async () => ({
     id: balanceAddress(wallet.publicKey).toBase58(),
     slot: 90,
-    version: 2n,
+    version,
     status: "ready",
   });
   const calls: string[] = [];
@@ -99,7 +101,7 @@ test("initialized balances still use an authenticated private view and close its
       wait: async () => ({
         id: PublicKey.unique().toBase58(),
         slot: 91,
-        version: 2n,
+        version,
         status: "ready",
         amount: 500n,
       }),
@@ -109,5 +111,56 @@ test("initialized balances still use an authenticated private view and close its
     } as unknown as DepthView;
   };
   assert.equal((await client.account.summary()).amount, 500n);
-  assert.deepEqual(calls, ["authorize", "close"]);
+  assert.equal((await client.account.summary()).amount, 500n);
+  assert.deepEqual(calls, ["authorize"]);
+  version = 3n;
+  await Promise.all([client.account.summary(), client.account.summary()]);
+  assert.deepEqual(calls, ["authorize", "authorize"]);
+});
+
+test("a new client after refresh reuses the same wallet's current encrypted view without signing", async () => {
+  globalThis.indexedDB = fakeIndexedDB;
+  const wallet = new anchor.Wallet(Keypair.generate());
+  const Constructor = DepthClient as unknown as new (
+    options: DepthClient["options"],
+  ) => DepthClient;
+  const options = {
+    wallet,
+    connection: new Connection("http://localhost:8899"),
+    privateViews: "device" as const,
+    deployment: {
+      manifest: { payload: { genesisHash: "reload-test" } },
+      trustedSigner: wallet.publicKey,
+    } as DepthClient["options"]["deployment"],
+  };
+  let version = 2n;
+  let approvals = 0;
+  const create = () => {
+    const client = new Constructor(options);
+    client.account().state = async () => ({
+      id: balanceAddress(wallet.publicKey).toBase58(),
+      status: "ready",
+      version,
+      slot: 90,
+    });
+    client.requestBalanceView = async () => {
+      approvals++;
+      return {
+        wait: async () => ({
+          status: "ready",
+          id: PublicKey.unique().toBase58(),
+          version,
+          slot: 91,
+          amount: 500n,
+        }),
+      } as unknown as DepthView;
+    };
+    return client;
+  };
+  assert.equal((await create().account.summary()).amount, 500n);
+  assert.equal((await create().account.summary()).amount, 500n);
+  assert.equal(approvals, 1);
+  version = 3n;
+  assert.equal((await create().account.summary()).amount, 500n);
+  assert.equal(approvals, 2);
 });

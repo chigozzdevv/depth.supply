@@ -132,3 +132,29 @@ test("deposit confirmation reconciles a keeper credit race", async () => {
     "credited",
   );
 });
+
+test("keeper settlement confirms escrow without asking the owner to sign its progression", async () => {
+  const owner = PublicKey.unique();
+  const client = new FundingClient(
+    { programId: DEPTH_PROGRAM_ID } as anchor.Program,
+    {} as Connection,
+    owner,
+    async () => ({}),
+    "keeper",
+  );
+  const handle = client.transferHandle(42n);
+  let reads = 0;
+  handle.status = async () => ({
+    state: ++reads === 1 ? "escrow" : "settled",
+    amount: 20_000_000n,
+    toMarket: true,
+  });
+  handle.settle = async () => {
+    throw new Error("Unexpected owner approval");
+  };
+  assert.equal(
+    (await handle.confirm({ timeoutMs: 1000, pollMs: 100 })).amount,
+    20_000_000n,
+  );
+  assert.equal(reads, 2);
+});

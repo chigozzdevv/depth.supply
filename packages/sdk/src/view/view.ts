@@ -3,11 +3,13 @@ import * as anchor from "@anchor-lang/core";
 import { createPacker, RescueCipher, x25519 } from "@arcium-hq/client";
 import { circuits, DEPTH_PROGRAM_ID } from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
+import type { DepthProvider } from "@/chain/provider";
 
 export type BalanceSnapshot = {
   status: "uninitialized" | "pending" | "ready" | "stale";
   id: string;
   version: bigint;
+  readAt?: number;
   slot: number;
   amount?: bigint;
 };
@@ -16,6 +18,7 @@ export type PositionSnapshot = {
   status: "pending" | "ready" | "stale";
   id: string;
   version: bigint;
+  readAt?: number;
   slot: number;
   collateral?: bigint;
   reserved?: bigint;
@@ -235,11 +238,21 @@ export class DepthView {
     }
   }
 
-  async close(): Promise<string> {
-    const snapshot = await this.status();
-    if (snapshot.status === "pending") {
-      throw new Error("Private view computation is still pending");
+  async deferClose(): Promise<void> {
+    const provider = this.program.provider as anchor.Provider &
+      Partial<Pick<DepthProvider, "deferClose">>;
+    if (typeof provider.deferClose !== "function") {
+      await this.close();
+      return;
     }
+    const snapshot = await this.status();
+    if (snapshot.status === "pending")
+      throw new Error("Private view computation is still pending");
+    const instruction = await this.closeBuilder().instruction();
+    provider.deferClose(this.id, instruction);
+  }
+
+  private closeBuilder() {
     const builder =
       this.kind === "balance"
         ? this.program.methods.closeBalanceView()
@@ -248,8 +261,14 @@ export class DepthView {
           : this.kind === "fill"
             ? this.program.methods.closeFillView()
             : this.program.methods.closeQuoteView();
-    return builder
-      .accountsPartial({ owner: this.owner, view: this.id })
-      .rpc({ commitment: "confirmed" });
+    return builder.accountsPartial({ owner: this.owner, view: this.id });
+  }
+
+  async close(): Promise<string> {
+    const snapshot = await this.status();
+    if (snapshot.status === "pending") {
+      throw new Error("Private view computation is still pending");
+    }
+    return this.closeBuilder().rpc({ commitment: "confirmed" });
   }
 }

@@ -360,7 +360,7 @@ export class DepthOperation {
       };
     }
     try {
-      await this.view.close();
+      await this.view.deferClose();
     } catch (error) {
       let remaining;
       try {
@@ -382,9 +382,9 @@ export class DepthOperation {
     return new DepthError(
       "FILL_VIEW_CLEANUP_PENDING",
       "confirmation",
-      "Private fill was read but its temporary view is still open",
+      "Private fill was read but receipt cleanup could not be scheduled",
       true,
-      "Call privateResult again with the same operation to close the view",
+      "Call privateResult again with the same operation to schedule cleanup",
       this.id.toBase58(),
       { cause },
     );

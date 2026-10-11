@@ -1,6 +1,6 @@
 {
   "name": "@depthhq/sdk",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publishConfig": {
     "access": "public"
   },
@@ -51,5 +51,8 @@
     "@noble/hashes": "1.8.0",
     "@solana/web3.js": "1.99.0",
     "buffer": "6.0.3"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "6.2.4"
   }
 }
