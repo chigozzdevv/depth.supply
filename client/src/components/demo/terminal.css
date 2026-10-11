@@ -973,12 +973,17 @@
 }
 .wallet-option {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 12px;
   padding: 14px;
   border: 1px solid #ffffff0a;
   border-radius: 4px;
   font-size: 12px;
+}
+.wallet-icon {
+  flex-shrink: 0;
+  object-fit: contain;
+  border-radius: 4px;
 }
 .wallet-option:hover {
   border-color: color-mix(in srgb, var(--terminal-accent) 37.6%, transparent);

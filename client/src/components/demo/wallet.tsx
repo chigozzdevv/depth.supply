@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import Image from "next/image";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletReadyState } from "@solana/wallet-adapter-base";
-import { Wallet, X, ExternalLink } from "lucide-react";
+import { Wallet, X } from "lucide-react";
 import { short } from "@/shared/depth/format";
 
 export function WalletButton({
@@ -46,7 +47,18 @@ export function WalletButton({
           setOpen(true);
         }}
       >
-        <Wallet size={15} />
+        {wallet.connected && wallet.wallet ? (
+          <Image
+            src={wallet.wallet.adapter.icon}
+            alt=""
+            width={18}
+            height={18}
+            className="wallet-icon"
+            unoptimized
+          />
+        ) : (
+          <Wallet size={15} />
+        )}
         {wallet.connecting
           ? "Connecting…"
           : wallet.publicKey
@@ -102,8 +114,15 @@ export function WalletButton({
                     }
                   }}
                 >
+                  <Image
+                    src={adapter.icon}
+                    alt=""
+                    width={24}
+                    height={24}
+                    className="wallet-icon"
+                    unoptimized
+                  />
                   {adapter.name}
-                  <ExternalLink size={14} />
                 </button>
               ))}
             </div>
