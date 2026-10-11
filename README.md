@@ -94,6 +94,14 @@ discovery needs no signature; reading initialized private balances requires
 wallet approval. A new wallet shows an uninitialized zero balance until its
 first deposit creates the account.
 
+The demo starts account loading after wallet connection and refreshes after
+operations. Fresh private views require wallet approval; rejected requests
+stop until retried. The trade form shows unallocated Depth USDC beside
+**Additional margin** and checks the amount before review and submission.
+Private snapshots stay in memory, are isolated by wallet, and are unavailable
+for trading while refreshing or outdated. An unchanged canonical balance
+version reuses its decrypted value without another balance view request.
+
 ## Configuration and services
 
 Copy [`.env.example`](.env.example) to a root `.env.local` if one does not

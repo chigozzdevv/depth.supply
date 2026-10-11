@@ -1569,7 +1569,17 @@ authentication and environment authority checks still run when connecting.
 and slot without signing or decrypting. A missing account is `uninitialized`;
 its summary reports zero without creating an account. RPC failures, invalid
 owners, and malformed accounts remain errors. Initialized balances require an
-owner-authorized Arcium view, requested explicitly with wallet approval.
+owner-authorized Arcium view with wallet approval. The demo begins account
+loading after connection, then refreshes after account operations. It decrypts
+approved responses locally and shows unallocated Depth USDC beside Additional
+margin. This amount excludes wallet tokens and market collateral. Review and
+submission reject additional margin above the fresh available balance.
+
+Private snapshots stay in memory and are isolated by wallet. A canonical
+balance version that has not changed may reuse its decrypted value; a changed
+version requires a new approved view. Loading or outdated values cannot
+authorize a trade. Rejected reads stop until the owner retries. These reads do
+not grant a server access to trader plaintext or authorize silent future views.
 
 `catalog.marketPolicy(marketId)` remains available for advanced risk and
 quoting decisions. Routine trade and quote methods already read and enforce
@@ -1731,9 +1741,9 @@ pinned and readable for as long as its computation definitions are active.
 
 ## Decisions and proofs still needed
 
-The flow is specified from app entry through maker exit. The following
-choices are deliberately open. They need numbers, code, and tests before
-Depth can claim a production-ready market or freeze its SDK types:
+The contracts, SDKs, and demo implement the flow from app entry through maker
+exit. The following calibration and verification gates remain before Depth
+can claim a production-ready market or freeze its compatibility policy:
 
 1. **First market economics:** Calibrate the funding formula, margin levels,
    quote tiers, capacity caps, and liquidation price rule against observed
@@ -1749,18 +1759,19 @@ Depth can claim a production-ready market or freeze its SDK types:
    implemented pro rata haircut, and audit and rehearse committee recovery
    with every account and fee receipt present. A normal Solana vault does
    not solve private-state recovery on its own.
-4. **Arcium implementation fit:** Compile bounded quote, ledger, view,
-   and liquidation circuits with one pinned toolchain. Measure
+4. **Arcium implementation fit:** Benchmark the compiled bounded quote,
+   ledger, view, and liquidation circuits with the pinned toolchain. Measure
    callback bytes, account sizes, compute cost, queue delay, and
    contention under the largest allowed market state.
 5. **Private receipt storage:** Order, fee-recovery, withdrawal, and payout receipts have fixed layouts
    and remain onchain without pruning; their creating transaction payer funds
    rent. Temporary view accounts can be closed by their authorized owner.
    Rehearse owner-only re-sealing after the original browser session has ended.
-6. **Final wire format:** Generate the Solana IDL, Arcis input packers,
-   event schema, and deployment manifest from the implementation.
-   Freeze SDK request and result types only after those artifacts
-   agree. The examples above are design contracts, not published APIs.
+6. **Final wire format:** Keep the generated Solana IDL, Arcis input packers,
+   event schema, and signed deployment manifest aligned with the implementation.
+   The trader and maker SDKs are published as `@depthhq/sdk` and
+   `@depthhq/maker-sdk`. Freeze their compatibility policy only after the
+   generated artifacts and documented public API agree.
 
 These are real feasibility and economic gates. A working interface mock
 or a successful encrypted matching demo would not close them.
