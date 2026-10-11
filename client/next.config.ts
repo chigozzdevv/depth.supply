@@ -9,6 +9,7 @@ if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const config: NextConfig = {
   agentRules: false,
+  allowedDevOrigins: ["127.0.0.1", "localhost"],
   outputFileTracingRoot: root,
   poweredByHeader: false,
   turbopack: { root },
