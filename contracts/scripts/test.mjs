@@ -1,15 +1,38 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  mkdtempSync,
+  rmSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Keypair } from "@solana/web3.js";
 import { resolvePath } from "../../scripts/paths.mjs";
 import { createSigner } from "../../scripts/signers.mjs";
 import { arciumRuntime } from "../../scripts/toolchain.mjs";
 import { stageProgramKeypair } from "./keys.mjs";
 
+if (process.argv[2] === "--docker") {
+  process.exit(await runDocker(process.argv[3], process.argv.slice(4)));
+}
+
 stageProgramKeypair();
 createSigner("localnet");
 const runtime = arciumRuntime("build");
+const shim = mkdtempSync(join(tmpdir(), "depth-docker-"));
+const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
+const docker = execFileSync("which", ["docker"], { encoding: "utf8" }).trim();
+writeFileSync(
+  join(shim, "docker"),
+  `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fileURLToPath(import.meta.url))} --docker ${quote(docker)} "$@"\n`,
+  { mode: 0o700 },
+);
+runtime.env.PATH = `${shim}:${runtime.env.PATH}`;
+process.once("exit", () => rmSync(shim, { recursive: true, force: true }));
 
 const address = Keypair.fromSeed(
   createHash("sha256").update("depth.oracle.fixture.v1").digest(),
@@ -123,6 +146,64 @@ function writePriceUpdate(address, price, confidence, publishTime, filename) {
       },
     }),
   );
+}
+
+function runDocker(command, args) {
+  const index = args.indexOf("-f");
+  const path = index >= 0 ? resolve(args[index + 1]) : undefined;
+  if (
+    args[0] === "compose" &&
+    args.includes("up") &&
+    path === resolvePath("contracts/artifacts/docker-compose-arx-env.yml")
+  ) {
+    const compose = readFileSync(path, "utf8");
+    const subnet = compose.match(/subnet: ([\d./]+)/)?.[1];
+    if (subnet) {
+      const ids = execFileSync(command, ["network", "ls", "-q"], {
+        encoding: "utf8",
+      })
+        .trim()
+        .split(/\s+/)
+        .filter(Boolean);
+      const networks = ids.length
+        ? JSON.parse(
+            execFileSync(command, ["network", "inspect", ...ids], {
+              encoding: "utf8",
+            }),
+          )
+        : [];
+      const network = networks.find(
+        (value) =>
+          value.Name !== "artifacts_arx_network" &&
+          value.IPAM?.Config?.some((item) => item.Subnet === subnet),
+      );
+      if (network) {
+        const prefix = subnet.split(".").slice(0, 3).join(".");
+        const addresses = new Set(
+          Object.values(network.Containers ?? {}).map(
+            (container) => container.IPv4Address.split("/")[0],
+          ),
+        );
+        for (const suffix of [99, 100, 101]) {
+          if (addresses.has(`${prefix}.${suffix}`))
+            throw new Error("Arcium test addresses are already occupied");
+        }
+        // Reuse the subnet without changing or stopping its existing containers.
+        writeFileSync(
+          path,
+          compose.replace(
+            /^networks:[\s\S]*?(?=services:)/,
+            `networks:\n  arx_network:\n    external: true\n    name: ${network.Name}\n\n`,
+          ),
+        );
+      }
+    }
+  }
+  const child = spawn(command, args, { stdio: "inherit" });
+  return new Promise((resolve, reject) => {
+    child.once("error", reject);
+    child.once("exit", (code) => resolve(code ?? 1));
+  });
 }
 
 function run(args, testFile, scenario) {

@@ -9,11 +9,12 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./*"],
-      "@/circuits": ["../packages/bindings/src/circuits.ts"],
+      "@/circuits": ["../packages/bindings/dist/index.js"],
       "@/sdk": ["../packages/sdk/dist/index.js"],
       "@/maker": ["../packages/maker-sdk/dist/index.js"],
       "@/operator": ["../packages/sdk/dist/operator.js"]
-    }
+    },
+    "skipLibCheck": true
   },
   "exclude": ["build", "target", "node_modules"]
 }

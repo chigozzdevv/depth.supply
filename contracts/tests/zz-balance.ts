@@ -447,6 +447,128 @@ describe("private balances", () => {
 
     const viewPrivateKey = x25519.utils.randomSecretKey();
     const viewKey = x25519.getPublicKey(viewPrivateKey);
+    const reader = anchor.web3.Keypair.generate();
+    const [viewMarket] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("market"),
+        Buffer.from(
+          "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d",
+          "hex"
+        ),
+      ],
+      program.programId
+    );
+    const [permit] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("view-permit"),
+        owner.toBuffer(),
+        reader.publicKey.toBuffer(),
+      ],
+      program.programId
+    );
+    const expiresAt = new anchor.BN(Math.floor(Date.now() / 1000) + 3600);
+    await program.methods
+      .authorizeViews(reader.publicKey, Array.from(viewKey), expiresAt, 1)
+      .accountsPartial({ owner, market: viewMarket, permit })
+      .rpc();
+    const sponsor = new anchor.Program<Depth>(
+      program.idl,
+      new anchor.AnchorProvider(
+        provider.connection,
+        new anchor.Wallet(keeper),
+        { commitment: "confirmed" }
+      )
+    );
+    const sponsoredNonce = new anchor.BN(99);
+    const sponsoredOffset = new anchor.BN(randomBytes(8), "hex");
+    const [sponsoredView] = PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("view"),
+        keeper.publicKey.toBuffer(),
+        sponsoredNonce.toArrayLike(Buffer, "le", 8),
+      ],
+      program.programId
+    );
+    const sponsoredAccounts = {
+      payer: keeper.publicKey,
+      balance,
+      view: sponsoredView,
+      computationAccount: getComputationAccAddress(
+        arciumEnv.arciumClusterOffset,
+        sponsoredOffset
+      ),
+      clusterAccount: getClusterAccAddress(arciumEnv.arciumClusterOffset),
+      mxeAccount,
+      mempoolAccount: getMempoolAccAddress(arciumEnv.arciumClusterOffset),
+      executingPool: getExecutingPoolAccAddress(arciumEnv.arciumClusterOffset),
+      compDefAccount: viewCompDefAccount,
+    };
+    const requestSponsored = (key: Uint8Array) =>
+      sponsor.methods
+        .requestBalanceView(sponsoredOffset, sponsoredNonce, Array.from(key))
+        .accountsPartial(sponsoredAccounts)
+        .remainingAccounts([
+          { pubkey: permit, isSigner: false, isWritable: false },
+        ]);
+    let denied = false;
+    try {
+      await requestSponsored(
+        x25519.getPublicKey(x25519.utils.randomSecretKey())
+      ).simulate();
+    } catch {
+      denied = true;
+    }
+    expect(denied, "a sponsor cannot change the encryption recipient").to.equal(
+      true
+    );
+    const sponsoredSignature = await requestSponsored(viewKey).rpc();
+    await awaitComputationFinalization(
+      provider,
+      sponsoredOffset,
+      program.programId,
+      "confirmed"
+    );
+    const sponsoredState = await program.account.balanceView.fetch(
+      sponsoredView
+    );
+    const sponsoredCipher = new RescueCipher(
+      x25519.getSharedSecret(viewPrivateKey, mxePublicKey)
+    );
+    expect(
+      sponsoredCipher.decrypt(
+        [Array.from(sponsoredState.ciphertext)],
+        Uint8Array.from(sponsoredState.outputNonce)
+      )[0]
+    ).to.equal(275_000n);
+    const sponsoredTransaction = await provider.connection.getTransaction(
+      sponsoredSignature,
+      { commitment: "confirmed", maxSupportedTransactionVersion: 0 }
+    );
+    expect(
+      sponsoredTransaction!.transaction.message.staticAccountKeys
+        .slice(
+          0,
+          sponsoredTransaction!.transaction.message.header.numRequiredSignatures
+        )
+        .some((key) => key.equals(owner)),
+      "private reads do not require an owner signature"
+    ).to.equal(false);
+    await sponsor.methods
+      .closeBalanceView()
+      .accountsPartial({ owner: keeper.publicKey, view: sponsoredView })
+      .rpc();
+    await program.methods
+      .revokeViews()
+      .accountsPartial({ owner, permit })
+      .rpc();
+    denied = false;
+    try {
+      await requestSponsored(viewKey).simulate();
+    } catch {
+      denied = true;
+    }
+    expect(denied, "revoked reads are rejected").to.equal(true);
+
     const viewNonce = new anchor.BN(100);
     const [view] = PublicKey.findProgramAddressSync(
       [
