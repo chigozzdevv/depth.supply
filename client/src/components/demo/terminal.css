@@ -700,23 +700,6 @@
   color: var(--terminal-text);
   font-size: 11px;
 }
-.trade-review {
-  border: 1px solid
-    color-mix(in srgb, var(--terminal-accent) 14.5%, transparent);
-  background: color-mix(in srgb, var(--terminal-accent) 2%, transparent);
-  padding: 14px;
-  border-radius: 4px;
-}
-.trade-review p {
-  color: var(--terminal-muted);
-  line-height: 1.8;
-  font-size: 12px;
-  margin-bottom: 12px;
-}
-.trade-review p + p {
-  color: var(--terminal-muted);
-  font-size: 12px;
-}
 .review-back {
   display: block;
   margin: 12px auto 0;

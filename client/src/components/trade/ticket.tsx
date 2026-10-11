@@ -262,24 +262,13 @@ export function Ticket({
         </p>
       )}
       {review ? (
-        <div className="trade-review">
-          <p>
-            {draft?.direction === "long" ? "Long" : "Short"} ·{" "}
-            {decimal(draft?.notional)} USDC exposure
-            <br />
-            {decimal(draft?.margin)} USDC additional margin ·{" "}
-            {(draft?.slippageBps ?? 0) / 100}% slippage
-          </p>
-          <p>
-            Your wallet will approve the required account, private view and
-            trade transactions. Network fees are additional.
-          </p>
+        <div>
           <button
             className="terminal-button primary full"
             disabled={Boolean(session.busy)}
             onClick={() => void submit()}
           >
-            Sign and submit
+            Confirm {draft?.direction}
             <ArrowUpRight size={14} />
           </button>
           <button
@@ -287,7 +276,7 @@ export function Ticket({
             disabled={unresolved}
             onClick={() => setReview(false)}
           >
-            Back to order
+            Back
           </button>
         </div>
       ) : !session.connected ? (
