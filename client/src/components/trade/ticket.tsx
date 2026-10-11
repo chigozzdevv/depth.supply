@@ -9,7 +9,7 @@ import type { AccountView } from "@/shared/depth/account";
 import { availableBalance } from "@/shared/depth/snapshot";
 import { decimal, nonce, units } from "@/shared/depth/format";
 import { WalletButton } from "@/components/demo/wallet";
-import { tradeFeeBps, tradeMargin } from "@/shared/depth/terms";
+import { tradeFeeBps, tradeMargin, idleCollateral } from "@/shared/depth/terms";
 
 export function Ticket({
   view,
@@ -21,6 +21,11 @@ export function Ticket({
   const session = useDepth();
   const marginId = useId();
   const available = availableBalance(account);
+  const allocated =
+    account.loaded && !account.outdated && !account.checking
+      ? idleCollateral(account.position)
+      : 0n;
+  const usable = available === undefined ? undefined : available + allocated;
   const [direction, setDirection] = useState<"long" | "short">("long");
   const [margin, setMargin] = useState("");
   const [leverage, setLeverage] = useState(3);
@@ -52,7 +57,7 @@ export function Ticket({
     try {
       if (!view.ready || !session.trader || maxFee === undefined)
         throw new Error(view.reason || "Connect your wallet first");
-      const amount = tradeMargin(units(margin), available);
+      const amount = tradeMargin(units(margin), usable);
       const slippageBps = Number(units(slippage, 2));
       if (amount <= 0n || maxFee <= 0n)
         throw new Error("Enter a positive USDC margin");
@@ -64,7 +69,7 @@ export function Ticket({
         marketId: "SOL-USD",
         direction,
         notional: exposure,
-        margin: amount,
+        margin: amount > allocated ? amount - allocated : 0n,
         slippageBps,
         maxFee,
         validForSeconds: view.market!.max_order_queue_seconds,
@@ -80,7 +85,7 @@ export function Ticket({
     if (!session.trader || !draft) return;
     if (!unresolved) {
       try {
-        tradeMargin(draft.margin, available);
+        if (draft.margin > 0n) tradeMargin(draft.margin, available);
       } catch (cause) {
         setError((cause as Error).message);
         setReview(false);
@@ -158,7 +163,7 @@ export function Ticket({
       </div>
       <div className="field-label">
         <div className="field-heading">
-          <label htmlFor={marginId}>Additional margin</label>
+          <label htmlFor={marginId}>Margin</label>
           {session.connected &&
             (account.error ? (
               <button
@@ -170,7 +175,7 @@ export function Ticket({
               </button>
             ) : (
               <span className="margin-balance" aria-live="polite">
-                Available: {decimal(available)} USDC
+                Available: {decimal(usable)} USDC
               </span>
             ))}
         </div>

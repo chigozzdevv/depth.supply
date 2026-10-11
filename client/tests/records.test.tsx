@@ -52,3 +52,19 @@ test("positions display PnL directly while sharing remains a separate action", (
   );
   assert.doesNotMatch(outdated, /\+20\.00 USDC/);
 });
+
+test("collateral without exposure is not presented as a closable position", () => {
+  const html = renderToStaticMarkup(
+    <Positions
+      account={{
+        ...account,
+        position: { ...position, position: 0n, collateral: 20_000_000n },
+      }}
+      view={market}
+    />,
+  );
+  assert.match(html, /No open positions/);
+  assert.match(html, /20\.00.*?USDC/);
+  assert.match(html, /Release margin/);
+  assert.doesNotMatch(html, /Close position|Review operation|Entry price/);
+});

@@ -1,4 +1,4 @@
-import type { PublicMarket, PublicApp } from "@depthhq/sdk";
+import type { PublicMarket, PublicApp, PositionSnapshot } from "@depthhq/sdk";
 
 export function tradeMargin(
   amount: bigint,
@@ -27,4 +27,17 @@ export function tradeFeeBps(
   )
     throw new Error("Invalid trading fee policy");
   return market.fee_bps + app.fee_bps;
+}
+
+export function idleCollateral(position: PositionSnapshot | undefined): bigint {
+  if (
+    position?.status !== "ready" ||
+    position.position !== 0n ||
+    position.collateral === undefined ||
+    position.reserved === undefined
+  )
+    return 0n;
+  return position.collateral > position.reserved
+    ? position.collateral - position.reserved
+    : 0n;
 }

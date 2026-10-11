@@ -154,6 +154,8 @@ export function DepthSession({
       ...connection,
       appId: config.appId,
       wallet: signer,
+      privateViews: "device" as const,
+      settlement: "keeper" as const,
     };
     void (async () => {
       try {

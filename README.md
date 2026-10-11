@@ -94,13 +94,20 @@ discovery needs no signature; reading initialized private balances requires
 wallet approval. A new wallet shows an uninitialized zero balance until its
 first deposit creates the account.
 
-The demo starts account loading after wallet connection and refreshes after
-operations. Fresh private views require wallet approval; rejected requests
-stop until retried. The trade form shows unallocated Depth USDC beside
-**Additional margin** and checks the amount before review and submission.
-Private snapshots stay in memory, are isolated by wallet, and are unavailable
-for trading while refreshing or outdated. An unchanged canonical balance
-version reuses its decrypted value without another balance view request.
+The demo loads private account views after wallet connection. Fresh views need
+wallet approval; unchanged account versions reuse the authorized result across
+refreshes. With `privateViews: "device"`, the SDK stores authenticated ciphertext
+in IndexedDB under a non-extractable device key, isolated by wallet, network,
+program, account, and view kind. The default is memory-only storage. Device
+caching protects stored data from plaintext inspection; trusted code on the
+same origin can still use its key. No private values or view secrets go to the API.
+
+The trade form includes idle market collateral in available margin, allocating
+only the additional amount needed. Public-environment clients let the keeper
+settle margin transfers; `settlement: "wallet"` opts into caller-paid settlement.
+Private view receipts close alongside a later wallet transaction when space
+allows, rather than requiring a separate cleanup approval. Changed account
+versions require a new authorized view. Outdated values cannot authorize trades.
 
 Funds keeps transfer progress and errors inside its dialog. It saves the
 request nonce, action, and amount selector before submission, scoped to the
@@ -252,9 +259,9 @@ deduplicates upstream requests, supports older-page cursors, and streams updates
 Cached live prices are explicitly marked stale and expire after five minutes;
 unavailable prices are never replaced with generated candles.
 
-Private account views require explicit wallet approval. The UI holds decrypted
-results and unpublished private trade terms in memory and clears them when the
-wallet changes. `account().pending()` and `account().history()` discover
+Fresh private account views require wallet approval. Unpublished trade terms
+stay in memory and clear when the wallet changes; the demo keeps encrypted,
+version-checked balance and position snapshots on the device. `account().pending()` and `account().history()` discover
 canonical receipts from Solana after reconnecting or changing browsers.
 If a trade stops after allocating margin and before submitting its order,
 `trade.unpairedAllocations()` identifies that allocation. Its collateral remains

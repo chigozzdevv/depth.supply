@@ -1030,8 +1030,9 @@ volume, or open interest. The shared market service validates, caches, and
 deduplicates provider requests and marks delayed live prices explicitly.
 
 Canonical `account().pending()` and `account().history()` scans are tied to
-the wallet and work across browser changes. Private views and unpublished
-order terms remain in memory and clear when the wallet changes. A submitted
+the wallet and work across browser changes. Unpublished order terms remain in
+memory and clear when the wallet changes. Balance and position views can use
+the encrypted device cache described below. A submitted
 order can be resumed from its canonical nonce. If no order was submitted,
 `trade.unpairedAllocations()` locates settled allocations; the collateral
 remains in the market and unpublished trade terms must be supplied again.
@@ -1571,15 +1572,35 @@ its summary reports zero without creating an account. RPC failures, invalid
 owners, and malformed accounts remain errors. Initialized balances require an
 owner-authorized Arcium view with wallet approval. The demo begins account
 loading after connection, then refreshes after account operations. It decrypts
-approved responses locally and shows unallocated Depth USDC beside Additional
-margin. This amount excludes wallet tokens and market collateral. Review and
-submission reject additional margin above the fresh available balance.
+approved responses locally. The Margin field includes unallocated Depth USDC
+and unreserved market collateral when the account is flat. Wallet tokens are
+excluded. Review and submission reject allocations above the fresh free balance.
 
-Private snapshots stay in memory and are isolated by wallet. A canonical
-balance version that has not changed may reuse its decrypted value; a changed
-version requires a new approved view. Loading or outdated values cannot
-authorize a trade. Rejected reads stop until the owner retries. These reads do
-not grant a server access to trader plaintext or authorize silent future views.
+Private snapshots default to memory storage. The demo selects
+`privateViews: "device"`: balance and position results are encrypted with
+AES-GCM in IndexedDB using a non-extractable device key. Associated data binds
+the network genesis, program, wallet, account, and view kind. A confirmed
+canonical account must still belong to the wallet, be ready, and have the
+snapshot's version before reuse. Concurrent reads share one authorization.
+Changed versions require a new approved view. Corrupted or unavailable storage
+falls back to a new authorized read; no private result is sent to the server.
+Snapshots retain their original slot and read time. Device caching does not
+protect against malicious same-origin code or an attacker controlling the
+unlocked device, both of which could use the stored key. Another browser
+requests a fresh authorized view without needing the original device key.
+
+Receipt cleanup is deferred to a later owner-signed transaction that fits the
+Solana packet limit. Closed receipts are skipped and failed submissions retain
+cleanup work. Explicit low-level view closure remains available. Clients for
+public environments use keeper-paid margin settlement by default; explicit
+`settlement: "wallet"` requests caller-paid progression. A transient empty quote
+set or another pending order is polled for at most 60 seconds before returning a
+specific liquidity or busy error. Relative order lifetimes begin after account
+and margin preparation; explicit expiry times remain fixed. Settled allocations
+are reusable by their canonical nonce and do not represent executed trades.
+Flat accounts show collateral and release controls rather than close-position
+controls. The trade form uses idle unreserved collateral before allocating
+additional margin. Loading or outdated private values cannot authorize a trade.
 
 `catalog.marketPolicy(marketId)` remains available for advanced risk and
 quoting decisions. Routine trade and quote methods already read and enforce

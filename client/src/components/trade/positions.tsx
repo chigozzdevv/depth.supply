@@ -149,12 +149,13 @@ function Details({
       maxFee: fee > 0n ? fee : 1n,
       validForSeconds: view.market.max_order_queue_seconds,
     };
+    const selected = hasPosition ? action : "remove";
     setReview(false);
     await session.run("Updating position", async () => {
       const handle = sdk.position();
-      if (action === "add" || action === "remove") {
+      if (selected === "add" || selected === "remove") {
         const transfer =
-          action === "add"
+          selected === "add"
             ? await handle.addMargin(value)
             : await handle.removeMargin(value);
         await transfer.confirm();
@@ -232,6 +233,43 @@ function Details({
     return (
       <div className="records-empty">
         <p>No open positions.</p>
+      </div>
+    );
+  if (!hasPosition)
+    return (
+      <div className="position-details">
+        <div className="position-stats">
+          <div>
+            <span>Positions</span>
+            <strong>No open positions</strong>
+          </div>
+          <div>
+            <span>Collateral</span>
+            <strong>{decimal(position.collateral)} USDC</strong>
+          </div>
+        </div>
+        {(position.collateral ?? 0n) > (position.reserved ?? 0n) && (
+          <div className="position-controls">
+            <button
+              className="terminal-button quiet"
+              disabled={Boolean(session.busy)}
+              onClick={() => {
+                if (review) void execute();
+                else {
+                  setAmount("all");
+                  setReview(true);
+                }
+              }}
+            >
+              {review ? "Confirm release" : "Release margin"}
+            </button>
+          </div>
+        )}
+        {error && (
+          <p role="alert" className="form-error">
+            {error}
+          </p>
+        )}
       </div>
     );
   return (

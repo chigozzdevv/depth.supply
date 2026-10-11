@@ -22,3 +22,21 @@ test("additional margin must fit the known free balance with exact micro-USDC pr
   assert.throws(() => tradeMargin(0n, 125_000_000n), /positive/);
   assert.throws(() => tradeMargin(1n, undefined), /account balance/);
 });
+
+test("an idle market allocation can fund a trade without allocating the same margin twice", async () => {
+  const { idleCollateral } = await import("@/shared/depth/terms");
+  const position = {
+    status: "ready" as const,
+    id: "account",
+    slot: 1,
+    version: 1n,
+    collateral: 20_000_000n,
+    reserved: 3_000_000n,
+    position: 0n,
+  };
+  assert.equal(idleCollateral(position), 17_000_000n);
+  assert.equal(idleCollateral({ ...position, position: 1n }), 0n);
+  assert.equal(idleCollateral({ ...position, status: "stale" }), 0n);
+  assert.equal(idleCollateral({ ...position, reserved: 21_000_000n }), 0n);
+  assert.equal(idleCollateral(undefined), 0n);
+});
