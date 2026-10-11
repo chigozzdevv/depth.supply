@@ -3,7 +3,7 @@ import { Texture } from "@/components/landing/texture";
 
 export function Hero() {
   return (
-    <section className="hero">
+    <section id="top" className="hero">
       <Texture />
       <div className="shell hero-inner">
         <div className="hero-copy">
