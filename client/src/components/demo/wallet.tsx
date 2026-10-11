@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletReadyState } from "@solana/wallet-adapter-base";
 import { Wallet, X } from "lucide-react";
+import { PrivateViews } from "@/components/demo/views";
 import { short } from "@/shared/depth/format";
 
 export function WalletButton({
@@ -87,6 +88,7 @@ export function WalletButton({
               </div>
             )}
             <p className="wallet-address">{wallet.publicKey?.toBase58()}</p>
+            {open && <PrivateViews />}
             <button
               className="terminal-button"
               onClick={() =>

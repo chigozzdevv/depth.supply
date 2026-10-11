@@ -155,6 +155,7 @@ export function DepthSession({
       appId: config.appId,
       wallet: signer,
       privateViews: "device" as const,
+      viewAuthorization: "session" as const,
       settlement: "keeper" as const,
     };
     void (async () => {

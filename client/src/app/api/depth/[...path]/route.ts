@@ -8,7 +8,7 @@ export async function GET(
   const { path } = await context.params;
   const pathname = path.join("/");
   if (
-    !/^(v1\/(markets|apps|quotes|operations|recovery)(\/[^.\s]*)?|v1\/maker\/(challenge|hedges|automation(?:\/challenge)?)|\.well-known\/depth\/(devnet|localnet)\.json)$/.test(
+    !/^(v1\/(markets|apps|quotes|operations|recovery|views)(\/[^.\s]*)?|v1\/maker\/(challenge|hedges|automation(?:\/challenge)?)|\.well-known\/depth\/(devnet|localnet)\.json)$/.test(
       pathname,
     )
   ) {
@@ -45,7 +45,7 @@ export async function POST(
   const { path } = await context.params;
   const pathname = path.join("/");
   if (
-    !/^v1\/maker\/(session|automation\/(session|configure|start|pause|fund))$/.test(
+    !/^(v1\/views(?:\/close)?|v1\/maker\/(session|automation\/(session|configure|start|pause|fund)))$/.test(
       pathname,
     )
   )
@@ -64,7 +64,10 @@ export async function POST(
       },
       body,
       cache: "no-store",
-      signal: AbortSignal.any([request.signal, AbortSignal.timeout(10_000)]),
+      signal: AbortSignal.any([
+        request.signal,
+        AbortSignal.timeout(pathname.startsWith("v1/views") ? 60_000 : 10_000),
+      ]),
     });
     return new Response(upstream.body, {
       status: upstream.status,

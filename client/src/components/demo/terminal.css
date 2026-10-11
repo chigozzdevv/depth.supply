@@ -1542,3 +1542,17 @@
     display: none;
   }
 }
+
+.wallet-views {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-block: 1rem;
+  color: var(--terminal-muted);
+}
+.wallet-views .terminal-button {
+  min-height: 2rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.8rem;
+}

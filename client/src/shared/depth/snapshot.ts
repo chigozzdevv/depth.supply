@@ -42,14 +42,20 @@ export class AccountReader {
         "Account is processing an operation. Retry when it settles.",
       );
     const cached = this.balance;
-    const balance: BalanceSnapshot =
+    const balanceRequest: BalanceSnapshot | Promise<BalanceSnapshot> =
       state.status === "uninitialized"
         ? { ...state, status: "uninitialized", amount: 0n }
         : cached?.snapshot.status === "ready" &&
             cached.account === state.id &&
             cached.snapshot.version === state.version
           ? cached.snapshot
-          : await account.summary();
+          : account.summary();
+    const [balance, position] = await Promise.all([
+      balanceRequest,
+      positions.items.length
+        ? this.client.position().summary()
+        : Promise.resolve(undefined),
+    ]);
     check();
     if (
       (balance.status !== "ready" && balance.status !== "uninitialized") ||
@@ -59,9 +65,6 @@ export class AccountReader {
     if (balance.version !== state.version)
       throw new Error("Balance changed while loading. Retry the account read.");
     this.balance = { account: state.id, snapshot: balance };
-    const position = positions.items.length
-      ? await this.client.position().summary()
-      : undefined;
     check();
     if (
       position &&
