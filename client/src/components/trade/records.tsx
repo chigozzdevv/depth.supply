@@ -156,18 +156,26 @@ export function Records({
           )}
           {!session.trader ? (
             <div className="records-empty">
-              <p>Connect wallet to view activity.</p>
+              <p>
+                {tab === "pending"
+                  ? "Connect wallet to view pending operations."
+                  : "Connect wallet to view activity."}
+              </p>
             </div>
           ) : !page && !error ? (
             <div className="records-empty">
-              <p>Loading canonical operation receipts…</p>
+              <p>
+                {tab === "pending"
+                  ? "Loading pending operations…"
+                  : "Loading activity…"}
+              </p>
             </div>
           ) : items?.length === 0 ? (
             <div className="records-empty">
               <p>
                 {tab === "pending"
-                  ? "No pending operations found."
-                  : "No operation receipts found."}
+                  ? "No pending operations."
+                  : "No activity on this page."}
               </p>
             </div>
           ) : (

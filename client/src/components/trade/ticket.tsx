@@ -76,7 +76,7 @@ export function Ticket({ view }: { view: MarketView }) {
       const opening = await sdk.trade
         .flow(input.clientNonce!)
         .resume(input, "increase");
-      session.notice(`Order ${opening.id.toBase58()} submitted`);
+      session.notice("Trade submitted");
       await opening.confirm();
       setUnresolved(false);
       setDraft(null);
@@ -213,10 +213,6 @@ export function Ticket({ view }: { view: MarketView }) {
         <div>
           <dt>Trading fee cap</dt>
           <dd>{decimal(maxFee, 6, 4)} USDC</dd>
-        </div>
-        <div>
-          <dt>Settlement token</dt>
-          <dd>USDC</dd>
         </div>
       </dl>
       {error && (

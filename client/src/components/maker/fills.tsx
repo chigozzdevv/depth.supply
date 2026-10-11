@@ -79,15 +79,15 @@ export function Fills() {
       )}
       {!session.maker ? (
         <div className="records-empty">
-          <p>Connect your maker wallet to discover fills.</p>
+          <p>Connect wallet to view fills.</p>
         </div>
       ) : !page && !error ? (
         <div className="records-empty">
-          <p>Loading finalized fill receipts…</p>
+          <p>Loading fills…</p>
         </div>
       ) : page?.fills.length === 0 ? (
         <div className="records-empty">
-          <p>No finalized fills found in this history page.</p>
+          <p>No fills on this page.</p>
         </div>
       ) : (
         page?.fills.map((fill) => (

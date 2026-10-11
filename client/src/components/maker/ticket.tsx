@@ -100,11 +100,11 @@ export function QuoteTicket({
         const quote = terms.prior
           ? await maker.quote.replace(new PublicKey(terms.prior), terms.input)
           : await maker.quote.publish(terms.input);
-        session.notice(`Quote ${quote.id.toBase58()} submitted`);
+        session.notice("Quote submitted");
         await quote.confirm();
         setPending(false);
         setDraft(null);
-        session.notice("Quote active. Maker prices remain encrypted.");
+        session.notice("Quote active");
       },
     );
   }
@@ -230,20 +230,6 @@ export function QuoteTicket({
         <div>
           <dt>Margin reservation</dt>
           <dd>{decimal(reservation)} USDC</dd>
-        </div>
-        <div>
-          <dt>Eligible tiers</dt>
-          <dd>
-            {view.market && capacity
-              ? view.market.quote_tiers.filter((value) => {
-                  try {
-                    return BigInt(value) <= units(capacity);
-                  } catch {
-                    return false;
-                  }
-                }).length
-              : "—"}
-          </dd>
         </div>
         <div>
           <dt>Max lifetime</dt>

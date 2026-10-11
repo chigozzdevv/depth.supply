@@ -67,14 +67,11 @@ export function Quotes({
       )}
       {!items && !error ? (
         <div className="records-empty">
-          <p>Loading canonical quotes…</p>
+          <p>Loading quotes…</p>
         </div>
       ) : items?.length === 0 ? (
         <div className="records-empty">
-          <h3>No quotes published yet.</h3>
-          <p>
-            Allocate collateral, then publish your first encrypted bid and ask.
-          </p>
+          <p>No quotes yet.</p>
         </div>
       ) : (
         <div className="table-scroll">
