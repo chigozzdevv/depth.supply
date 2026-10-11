@@ -319,8 +319,12 @@ export function Ticket({
                 : "Wallet unavailable"
               : unresolved
                 ? "Check pending trade"
-                : `Review ${direction}`}
-          {session.trader && <ArrowUpRight size={14} />}
+                : view.reason === "Waiting for maker liquidity"
+                  ? "Waiting for liquidity"
+                  : `Review ${direction}`}
+          {session.trader && (view.ready || unresolved) && (
+            <ArrowUpRight size={14} />
+          )}
         </button>
       )}
     </section>
