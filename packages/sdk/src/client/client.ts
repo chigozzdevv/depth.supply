@@ -1114,6 +1114,30 @@ export class DepthClient {
     u64(position.collateral, "collateral");
     if (position.collateral === 0n)
       throw new Error("The market account has no collateral");
+    const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
+    if (!mxePublicKey) throw new Error("MXE public key is unavailable");
+    const secret = x25519.utils.randomSecretKey();
+    const inputKey = x25519.getPublicKey(secret);
+    const inputNonce = randomBytes(16);
+    const cipher = new RescueCipher(
+      x25519.getSharedSecret(secret, mxePublicKey),
+    );
+    const ciphertexts = cipher.encrypt(
+      circuits.OrderInput.pack({
+        side: encodeSide(direction),
+        amount,
+        margin: position.collateral,
+        limit_price: worstPriceE8,
+        max_fee: input.maxFee,
+        intent: BigInt(
+          ["increase", "reduce", "close", "reverse"].indexOf(intent),
+        ),
+        version: position.version,
+      }),
+      inputNonce,
+    );
+    const offset = nonce();
+    const queue = await this.queue("match_order", offset);
     let keys: PublicKey[] = [];
     const quoteDeadline = Date.now() + 60_000;
     for (;;) {
@@ -1163,30 +1187,6 @@ export class DepthClient {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
-    const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
-    if (!mxePublicKey) throw new Error("MXE public key is unavailable");
-    const secret = x25519.utils.randomSecretKey();
-    const inputKey = x25519.getPublicKey(secret);
-    const inputNonce = randomBytes(16);
-    const cipher = new RescueCipher(
-      x25519.getSharedSecret(secret, mxePublicKey),
-    );
-    const ciphertexts = cipher.encrypt(
-      circuits.OrderInput.pack({
-        side: encodeSide(direction),
-        amount,
-        margin: position.collateral,
-        limit_price: worstPriceE8,
-        max_fee: input.maxFee,
-        intent: BigInt(
-          ["increase", "reduce", "close", "reverse"].indexOf(intent),
-        ),
-        version: position.version,
-      }),
-      inputNonce,
-    );
-    const offset = nonce();
-    const queue = await this.queue("match_order", offset);
     const signature = await this.program.methods
       .submitOrder(
         offset,
