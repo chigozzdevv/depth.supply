@@ -4,7 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import * as anchor from "@anchor-lang/core";
-import { PublicKey } from "@solana/web3.js";
+import { PublicKey, SYSVAR_CLOCK_PUBKEY } from "@solana/web3.js";
 import { DEPTH_PROGRAM_ID, marketAddress } from "@depthhq/bindings";
 import { MakerBot } from "@/bot/bot";
 import { BotStore } from "@/bot/store";
@@ -253,8 +253,19 @@ function fixture() {
       connection: {
         getGenesisHash: async () => PublicKey.default.toBase58(),
         getBalance: async () => lamports,
-        getAccountInfo: async (address: PublicKey) =>
-          quotes.has(address.toBase58()) ? {} : null,
+        getAccountInfo: async (address: PublicKey) => {
+          if (address.equals(SYSVAR_CLOCK_PUBKEY)) {
+            const data = Buffer.alloc(40);
+            data.writeBigInt64LE(BigInt(Math.floor(Date.now() / 1000)), 32);
+            return {
+              owner: new PublicKey(
+                "Sysvar1111111111111111111111111111111111111",
+              ),
+              data,
+            };
+          }
+          return quotes.has(address.toBase58()) ? {} : null;
+        },
       },
     },
     marketAddress: marketAddress(),
@@ -281,6 +292,7 @@ function fixture() {
       const quote = quotes.get(address.toBase58())!;
       return {
         operator: maker,
+        capacity: new anchor.BN(quote.input.maxCapacity.toString()),
         status: { [quote.status]: {} },
         pendingComputation: computation,
         balanceNonce: Array.from(
@@ -1048,6 +1060,120 @@ test("a confirmed Hyperliquid receipt retains funded liquidity while its account
     assert.equal(bot.hedge!.snapshot!.phase, "balanced");
     assert.equal(active.status, "active");
     assert.equal((await bot.store.load()).inventoryPendingSince, undefined);
+  } finally {
+    await bot.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("restart adopts an onchain successor and only rebinds its risk after the matching reservation write", async () => {
+  for (const extraWrite of [false, true]) {
+    const directory = await mkdtemp(join(tmpdir(), "depth-handover-bot-"));
+    const setup = fixture();
+    const hedge = {
+      adapter: {
+        identity: "hyperliquid:testnet:handover:SOL",
+        book: async () => ({
+          timestamp: Date.now(),
+          bids: [{ priceE8: 9_999_000_000n, size: 10_000_000_000n }],
+          asks: [{ priceE8: 10_001_000_000n, size: 10_000_000_000n }],
+        }),
+        account: async () => ({
+          timestamp: Date.now(),
+          position: 0n,
+          availableMargin: 100_000_000n,
+          leverage: 1,
+          openOrders: [],
+        }),
+        costs: async () => ({ takerFeeBps: 4, hourlyFundingBps: 0 }),
+      },
+      policy: {
+        ratioBps: 10000,
+        maxPriceAgeMs: 5000,
+        maxLeverage: 1,
+        maxUnhedgedNotional: 200_000_000n,
+        maxUnhedgedMs: 90000,
+      },
+      tick: async (_state: unknown, _save: unknown, inventory?: bigint) => ({
+        phase: inventory === undefined ? "pending" : "balanced",
+        reason:
+          inventory === undefined
+            ? "Waiting for finalized Depth inventory"
+            : undefined,
+        externalPosition: 0n,
+        history: [],
+      }),
+    } as unknown as HedgeEngine;
+    const create = () =>
+      MakerBot.create({
+        maker: setup.client,
+        policy,
+        stateDirectory: directory,
+        hedge,
+      });
+    let bot = await create();
+    try {
+      await bot.tick();
+      await bot.tick();
+      setup.current.oraclePriceE8 = new anchor.BN("10100000000");
+      await bot.tick();
+      const [prior, next] = [...setup.quotes.values()];
+      next.status = "validated";
+      await bot.tick();
+      assert.equal(prior.status, "cancelled");
+      assert.equal(next.status, "active");
+      setup.finishWrite(true);
+      if (extraWrite) setup.finishWrite(true);
+      setup.finalize();
+      const saved = await bot.store.load();
+      assert.ok(saved.replacement);
+      const nextId = saved.replacement!.risk!.quote;
+      const summary = setup.client.position.summary;
+      setup.client.position.summary = async (options) => ({
+        ...(await summary(options)),
+        status: "pending",
+        position: undefined,
+      });
+      await bot.close();
+      bot = await create();
+      const restored = await bot.store.load();
+      assert.equal(restored.quote, nextId);
+      assert.equal(restored.replacement, undefined);
+      assert.equal(restored.quoteRisk!.version, extraWrite ? 0n : 1n);
+      await bot.tick();
+      assert.equal(next.status, extraWrite ? "cancelled" : "active");
+    } finally {
+      await bot.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
+test("oracle movement during renewal triggers a replacement while the funded quote remains active", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-renew-race-"));
+  const setup = fixture();
+  const get = setup.client.quote.get;
+  setup.client.quote.get = (id: PublicKey) => {
+    const handle = get(id);
+    handle.renew = async () => {
+      setup.current.oraclePriceE8 = new anchor.BN("10030000000");
+      throw { error: { errorCode: { code: "InvalidQuote" } } };
+    };
+    return handle;
+  };
+  const bot = await MakerBot.create({
+    maker: setup.client,
+    policy,
+    stateDirectory: directory,
+  });
+  try {
+    await bot.tick();
+    await bot.tick();
+    const prior = [...setup.quotes.values()][0];
+    prior.input.expiresAt = Math.floor(Date.now() / 1000) + 30;
+    await bot.tick();
+    assert.equal(prior.status, "active");
+    assert.ok((await bot.store.load()).replacement);
   } finally {
     await bot.close();
     await rm(directory, { recursive: true, force: true });

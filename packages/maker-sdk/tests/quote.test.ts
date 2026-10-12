@@ -1,6 +1,11 @@
 import * as anchor from "@anchor-lang/core";
 import { DEPTH_PROGRAM_ID, marketAccountAddress } from "@depthhq/bindings";
-import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  SYSVAR_CLOCK_PUBKEY,
+} from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { MakerClient, retryQuote } from "@/client/client";
@@ -214,6 +219,7 @@ test("flat quotes use published tiers within capacity", () => {
       input: Record<string, unknown>,
       market: Record<string, unknown>,
       nonce: bigint,
+      now: number,
     ) => {
       tiers: Array<{ size: bigint; bidE8: bigint; askE8: bigint }>;
       expiresAt: number;
@@ -234,26 +240,80 @@ test("flat quotes use published tiers within capacity", () => {
     maxCapacity: 100_000n,
     validForSeconds: 30,
   };
-  const quote = client.flatQuote(input, market, 9n);
+  const quote = client.flatQuote(input, market, 9n, 1000);
+  assert.equal(quote.expiresAt, 1030);
   assert.deepEqual(
     quote.tiers.map((tier) => tier.size),
     [1_000n, 10_000n, 100_000n],
   );
   assert.deepEqual(
     client
-      .flatQuote({ ...input, maxCapacity: 99_000n }, market, 10n)
+      .flatQuote({ ...input, maxCapacity: 99_000n }, market, 10n, 1000)
       .tiers.map((tier) => tier.size),
     [1_000n, 10_000n, 100_000n],
   );
   assert.ok(quote.tiers.every((tier) => tier.bidE8 === input.bidE8));
-  assert.ok(quote.expiresAt > Math.floor(Date.now() / 1_000));
   assert.throws(
-    () => client.flatQuote({ ...input, maxCapacity: 999n }, market, 9n),
+    () => client.flatQuote({ ...input, maxCapacity: 999n }, market, 9n, 1000),
     /below the first quote tier/,
   );
   assert.throws(
-    () => client.flatQuote({ ...input, validForSeconds: 121 }, market, 9n),
+    () =>
+      client.flatQuote({ ...input, validForSeconds: 121 }, market, 9n, 1000),
     /outside market policy/,
+  );
+});
+
+test("renewal respects the chain lifetime ceiling when the local clock is ahead", async () => {
+  const maker = PublicKey.unique();
+  const time = Math.floor(Date.now() / 1000) - 5;
+  const data = Buffer.alloc(40);
+  data.writeBigInt64LE(BigInt(time), 32);
+  let expiry = time + 50;
+  let owner = new PublicKey("Sysvar1111111111111111111111111111111111111");
+  const client = {
+    options: {
+      maker,
+      wallet: { publicKey: maker },
+      connection: {
+        getAccountInfo: async (address: PublicKey) => {
+          assert.ok(address.equals(SYSVAR_CLOCK_PUBKEY));
+          return { owner, data };
+        },
+      },
+    },
+    read: async () => ({ config: { maxQuoteLifetimeSeconds: 120 } }),
+    quoteState: async () => ({
+      status: { active: {} },
+      capacity: new anchor.BN(1),
+      attachedOrders: 0,
+      expiry: new anchor.BN(expiry),
+      replacementNonce: null,
+    }),
+    program: {
+      programId: DEPTH_PROGRAM_ID,
+      methods: {
+        renewQuote: (value: anchor.BN) => ({
+          accountsPartial: () => ({
+            rpc: async () => {
+              assert.ok(value.toNumber() - time <= 120);
+              expiry = value.toNumber();
+              return "renew-signature";
+            },
+          }),
+        }),
+      },
+    },
+  } as unknown as MakerClient;
+  const handle = new QuoteHandle(PublicKey.unique(), undefined, client);
+  assert.equal(
+    (await handle.renew({ validForSeconds: 120 })).expiresAt,
+    time + 120,
+  );
+  owner = DEPTH_PROGRAM_ID;
+  await assert.rejects(
+    handle.renew({ validForSeconds: 120 }),
+    /clock sysvar is unavailable/,
   );
 });
 
@@ -262,6 +322,7 @@ test("draft market accepts the initial quote required for activation", () => {
     validateQuote: (
       input: Record<string, unknown>,
       market: Record<string, unknown>,
+      now: number,
     ) => void;
   };
   const now = Math.floor(Date.now() / 1_000);
@@ -285,12 +346,13 @@ test("draft market accepts the initial quote required for activation", () => {
       maxQuoteDeviationBps: 200,
     },
   };
-  assert.doesNotThrow(() => client.validateQuote(quote, market));
+  assert.doesNotThrow(() => client.validateQuote(quote, market, now));
   assert.doesNotThrow(() =>
-    client.validateQuote(quote, { ...market, status: { active: {} } }),
+    client.validateQuote(quote, { ...market, status: { active: {} } }, now),
   );
   assert.throws(
-    () => client.validateQuote(quote, { ...market, status: { paused: {} } }),
+    () =>
+      client.validateQuote(quote, { ...market, status: { paused: {} } }, now),
     /does not accept quotes/,
   );
 });
