@@ -238,6 +238,33 @@ export class BackstopHandle {
     return new BackstopRelease(this, signature);
   }
 
+  async renew(validForSeconds = 86_400): Promise<string> {
+    if (!this.client.options.wallet.publicKey.equals(this.client.options.maker))
+      throw new Error("Only the maker owner can renew backstop capacity");
+    if (
+      !Number.isSafeInteger(validForSeconds) ||
+      validForSeconds < 1 ||
+      validForSeconds > 86_400
+    )
+      throw new RangeError("Backstop duration must be from 1 to 86400 seconds");
+    const current = await this.status();
+    const now = Math.floor(Date.now() / 1000);
+    if (
+      current.status !== "active" ||
+      current.expiresAt <= now ||
+      now + validForSeconds <= current.expiresAt
+    )
+      throw new Error("Renew an active, unexpired offer with a later expiry");
+    return this.client.program.methods
+      .renewBackstop(new anchor.BN(now + validForSeconds))
+      .accountsPartial({
+        maker: this.client.options.maker,
+        market: this.client.marketAddress,
+        offer: this.id,
+      })
+      .rpc({ commitment: "confirmed" });
+  }
+
   async close(): Promise<string> {
     if (!this.client.options.wallet.publicKey.equals(this.client.options.maker))
       throw new Error("Only the maker owner can close its backstop record");

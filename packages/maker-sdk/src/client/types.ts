@@ -56,6 +56,10 @@ export type QuoteState = {
   capacity: anchor.BN;
   expiry: anchor.BN;
   attachedOrders: number;
+  pendingComputation?: PublicKey;
+  marketRevision: anchor.BN;
+  oracleTimestamp: anchor.BN;
+  oracleReferenceE8: anchor.BN;
   replacementNonce: anchor.BN | null;
 };
 
@@ -65,6 +69,7 @@ export type MarketState = {
   settlementMint: PublicKey;
   vault: PublicKey;
   oracleTimestamp: anchor.BN;
+  oraclePriceE8: anchor.BN;
   pendingOrders: number;
   backstopOffer: PublicKey;
   activeQuoteCount: number;
@@ -77,6 +82,7 @@ export type MarketState = {
     maxMarketNotional: anchor.BN;
     maxQuoteLifetimeSeconds: number;
     maxOracleAgeSeconds: number;
+    maxQuoteDeviationBps: number;
     backstopMinCollateral: anchor.BN;
   };
 };

@@ -15,6 +15,7 @@ import {
   quoteQueueAddress,
   protocolAddress,
   SOL_USD_MARKET_ID,
+  quoteBounds,
 } from "@depthhq/bindings";
 import { DepthView } from "@depthhq/sdk/views";
 import { DepthRecovery } from "@depthhq/sdk/recovery";
@@ -43,6 +44,7 @@ import { FillHistory } from "@/fill/history";
 import { createCursorStore } from "@/fill/store";
 import { QuoteHandle } from "@/quote/quote";
 import { QuoteReplacement } from "@/quote/replacement";
+import { cleanupQuotes } from "@/quote/cleanup";
 import type {
   GrantState,
   BackstopInput,
@@ -79,7 +81,9 @@ export async function retryQuote<T>(
     } catch (error) {
       if (
         !(error instanceof anchor.AnchorError) ||
-        error.error.errorCode.code !== "WrongMarketAccountStatus" ||
+        !["WrongMarketAccountStatus", "StaleMarketSnapshot"].includes(
+          error.error.errorCode.code,
+        ) ||
         Date.now() >= deadline
       )
         throw error;
@@ -464,6 +468,8 @@ export class MakerClient {
   };
 
   readonly quote = {
+    cleanup: (options?: { limit?: number; exclude?: string[] }) =>
+      cleanupQuotes(this, options),
     replacement: (prior: PublicKey, clientNonce: bigint) =>
       new QuoteReplacement(this, prior, clientNonce),
     publish: async (request: QuoteRequest): Promise<QuoteHandle> => {
@@ -956,6 +962,8 @@ export class MakerClient {
 
   private validateQuote(input: QuoteInput, market: MarketState): void {
     const now = Math.floor(Date.now() / 1_000);
+    const reference = BigInt(market.oraclePriceE8.toString());
+    const { preparationBps } = quoteBounds(market.config.maxQuoteDeviationBps);
     if (!["draft", "active"].includes(stateName(market.status)))
       throw new Error("Market does not accept quotes");
     if (input.tiers.length === 0 || input.tiers.length > 4) {
@@ -971,6 +979,16 @@ export class MakerClient {
       if (tier.bidE8 === 0n || tier.askE8 === 0n || tier.bidE8 >= tier.askE8) {
         throw new Error("Quote bid and ask are invalid");
       }
+      if (
+        reference <= 0n ||
+        [tier.bidE8, tier.askE8].some(
+          (price) =>
+            (price > reference ? price - reference : reference - price) *
+              10_000n >
+            reference * BigInt(preparationBps),
+        )
+      )
+        throw new Error("Quote prices exceed the preparation deviation limit");
     });
     u64(input.maxCapacity, "maxCapacity");
     if (

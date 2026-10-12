@@ -38,6 +38,8 @@ function market(): BotMarket {
     fundingIndex: new anchor.BN(0),
     lastFundingTimestamp: new anchor.BN(now),
     pendingOrders: 0,
+    activeQuoteCount: 1,
+    quotedNotional: new anchor.BN(100_000_000),
     config: {
       quoteTiers: [10_000_000, 100_000_000, 1_000_000_000].map(
         (value) => new anchor.BN(value),
@@ -181,6 +183,10 @@ function fixture() {
   let publicFills: Array<{ id: string; signature: string; slot: number }> = [];
   let privatePosition = { ...position };
   let finalizedVersion = 0;
+  let accountStatus = "ready";
+  let writes = false;
+  let viewCount = 0;
+  const computation = PublicKey.unique();
   const accountAddress = PublicKey.unique();
   const id = (nonce: bigint) => {
     const bytes = Buffer.alloc(8);
@@ -195,20 +201,38 @@ function fixture() {
       DEPTH_PROGRAM_ID,
     )[0];
   };
-  const get = (address: PublicKey) => ({
-    id: address,
-    status: async () => ({
-      id: address.toBase58(),
-      status: quotes.get(address.toBase58())!.status,
-      attachedOrders: 0,
-    }),
-    activate: async () => {
-      quotes.get(address.toBase58())!.status = "active";
-    },
-    cancel: async () => {
-      quotes.get(address.toBase58())!.status = "cancelled";
-    },
-  });
+  const get = (address: PublicKey) => {
+    let reserveSignature: string | undefined;
+    return {
+      id: address,
+      get reserveSignature() {
+        return reserveSignature;
+      },
+      status: async () => ({
+        id: address.toBase58(),
+        status: quotes.get(address.toBase58())!.status,
+        attachedOrders: 0,
+        maxCapacity: quotes.get(address.toBase58())!.input.maxCapacity,
+      }),
+      activate: async () => {
+        if (writes) {
+          const quote = quotes.get(address.toBase58())!;
+          if (quote.status === "validated") {
+            quote.status = "reserving";
+            accountStatus = "reserving";
+            reserveSignature = "reserve-signature";
+          }
+          return get(address).status();
+        }
+        quotes.get(address.toBase58())!.status = "active";
+        return get(address).status();
+      },
+      cancel: async () => {
+        quotes.get(address.toBase58())!.status = "cancelled";
+        return get(address).status();
+      },
+    };
+  };
   const client = {
     options: {
       maker,
@@ -226,19 +250,26 @@ function fixture() {
       name === "Market"
         ? current
         : {
-            status: { ready: {} },
+            status: { [accountStatus]: {} },
+            pendingComputation: computation,
             version: new anchor.BN(
               commitment === "finalized"
                 ? finalizedVersion
                 : privatePosition.version.toString(),
             ),
           },
-    position: { summary: async () => privatePosition },
+    position: {
+      summary: async () => {
+        viewCount++;
+        return privatePosition;
+      },
+    },
     quoteState: async (address: PublicKey) => {
       const quote = quotes.get(address.toBase58())!;
       return {
         operator: maker,
         status: { [quote.status]: {} },
+        pendingComputation: computation,
         expiry: new anchor.BN(quote.input.expiresAt),
         replacementNonce:
           quote.replacementNonce == null
@@ -247,6 +278,7 @@ function fixture() {
       };
     },
     quote: {
+      cleanup: async () => ({ closed: 0, reclaimedLamports: 0n }),
       list: async () => ({
         items: [...quotes.keys()].map((key) => ({ id: new PublicKey(key) })),
       }),
@@ -266,6 +298,7 @@ function fixture() {
         return get(address);
       },
       replacement: (prior: PublicKey, nonce: bigint) => ({
+        nextId: id(nonce),
         begin: async () => {
           quotes.get(prior.toBase58())!.replacementNonce = nonce;
         },
@@ -288,6 +321,22 @@ function fixture() {
     current,
     quotes,
     published,
+    views: () => viewCount,
+    quoteWrites: () => {
+      writes = true;
+    },
+    finishWrite: (success: boolean) => {
+      for (const quote of quotes.values()) {
+        if (quote.status === "reserving")
+          quote.status = success ? "active" : "rejected";
+      }
+      accountStatus = "ready";
+      if (success)
+        privatePosition = {
+          ...privatePosition,
+          version: privatePosition.version + 1n,
+        };
+    },
     gas: (value: number) => {
       lamports = value;
     },
@@ -297,6 +346,14 @@ function fixture() {
     },
     fill: () => {
       publicFills = [{ id: "fill", signature: "settlement", slot: 51 }];
+    },
+    reserve: (reserved: bigint) => {
+      privatePosition = {
+        ...privatePosition,
+        reserved,
+        version: privatePosition.version + 1n,
+      };
+      finalizedVersion = Number(privatePosition.version);
     },
     inventory: (size: bigint, final = true) => {
       privatePosition = {
@@ -443,6 +500,9 @@ test("the bot waits for finalized inventory, pauses quotes for uncertain hedges 
     }
     await bot.tick();
     assert.equal((await bot.tick()).phase, "active");
+    setup.reserve(1_000_000n);
+    assert.equal((await bot.tick()).phase, "active");
+    assert.equal(setup.published.length, 1);
     setup.inventory(-1_000_000_000n, false);
     assert.match((await bot.tick()).reason!, /finalized/);
     assert.equal(submitted.length, 0);
@@ -527,6 +587,71 @@ test("maker retains gas for cancellation and stops publishing below its reserve"
   }
 });
 
+test("own quote reservations preserve cached inventory, while a failed reservation cannot mask a fill", async () => {
+  for (const success of [true, false]) {
+    const directory = await mkdtemp(join(tmpdir(), "depth-reserve-bot-"));
+    const setup = fixture();
+    setup.quoteWrites();
+    const observed: Array<bigint | undefined> = [];
+    const book = () => ({
+      timestamp: Date.now(),
+      bids: [{ priceE8: 9_999_000_000n, size: 10_000_000_000n }],
+      asks: [{ priceE8: 10_001_000_000n, size: 10_000_000_000n }],
+    });
+    const hedge = {
+      adapter: {
+        identity: `test:reserve:${success}`,
+        book: async () => book(),
+        costs: async () => ({ takerFeeBps: 4, hourlyFundingBps: 0 }),
+      },
+      policy: { maxPriceAgeMs: 5000 },
+      tick: async (_state: unknown, _save: unknown, inventory?: bigint) => {
+        observed.push(inventory);
+        return {
+          phase: "balanced",
+          externalPosition: -(inventory ?? 0n),
+          history: [],
+        };
+      },
+    } as unknown as HedgeEngine;
+    const bot = await MakerBot.create({
+      maker: setup.client,
+      policy,
+      stateDirectory: directory,
+      hedge,
+    });
+    try {
+      await bot.tick();
+      for (const quote of setup.quotes.values()) quote.status = "validated";
+      await bot.tick();
+      assert.ok((await bot.store.load()).quoteWrite);
+      const reads = setup.views();
+      assert.equal((await bot.tick()).reason, "updating quote margin");
+      assert.ok(
+        [...setup.quotes.values()].some(
+          (quote) => quote.status === "reserving",
+        ),
+      );
+      setup.finishWrite(success);
+      if (!success) setup.inventory(-1_000_000_000n);
+      await bot.tick();
+      if (success) {
+        assert.equal(setup.views(), reads);
+        assert.equal(observed.at(-1), 0n);
+        setup.finalize();
+        await bot.tick();
+        assert.equal((await bot.store.load()).quoteWrite, undefined);
+      } else {
+        assert.ok(setup.views() > reads);
+        assert.equal(observed.at(-1), -1_000_000_000n);
+      }
+    } finally {
+      await bot.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
+});
+
 test("unconfirmed publish retries the persisted nonce and a restart reconciles receipts and finalized fills", async () => {
   const directory = await mkdtemp(join(tmpdir(), "depth-bot-"));
   const setup = fixture();
@@ -552,7 +677,10 @@ test("unconfirmed publish retries the persisted nonce and a restart reconciles r
     assert.deepEqual(setup.published, [original, original]);
     assert.equal((await bot.tick()).phase, "active");
     setup.fill();
+    const clock = Date.now;
+    Date.now = () => clock() + 10_001;
     assert.equal((await bot.tick()).fillCount, 1);
+    Date.now = clock;
     await bot.close();
     bot = await MakerBot.create({
       maker: setup.client,
@@ -569,7 +697,7 @@ test("unconfirmed publish retries the persisted nonce and a restart reconciles r
   }
 });
 
-test("maker links a successor before stopping the old quote and cancels on stale prices", async () => {
+test("maker validates a durable successor before stopping the old quote and cancels both on stale prices", async () => {
   const directory = await mkdtemp(join(tmpdir(), "depth-bot-"));
   const setup = fixture();
   const bot = await MakerBot.create({
@@ -585,8 +713,17 @@ test("maker links a successor before stopping the old quote and cancels on stale
     setup.current.oraclePriceE8 = new anchor.BN("10100000000");
     assert.equal((await bot.tick()).reason, "repricing quote");
     assert.ok(prior.replacementNonce !== undefined);
-    assert.equal(prior.status, "cancelled");
+    assert.equal(prior.status, "active");
+    const next = [...setup.quotes.values()][1];
+    assert.equal(next.status, "validating");
     await bot.tick();
+    assert.equal(prior.status, "active");
+    next.status = "validated";
+    await bot.tick();
+    assert.equal(prior.status, "active");
+    assert.equal(next.status, "active");
+    await bot.tick();
+    assert.equal(prior.status, "cancelled");
     await bot.tick();
     assert.equal(setup.published[1], prior.replacementNonce);
     assert.equal((await bot.tick()).phase, "active");
@@ -596,6 +733,32 @@ test("maker links a successor before stopping the old quote and cancels on stale
     assert.equal((await bot.tick()).reason, "oracle stale");
     assert.equal((await bot.tick()).phase, "stopped");
     assert.equal(setup.quotes.size, 2);
+  } finally {
+    await bot.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("quote overlap cannot exceed the maker's inventory allowance", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-overlap-bot-"));
+  const setup = fixture();
+  const bot = await MakerBot.create({
+    maker: setup.client,
+    policy: { ...policy, maxInventoryNotional: 100_000_000n },
+    stateDirectory: directory,
+  });
+  try {
+    await bot.tick();
+    await bot.tick();
+    setup.current.oraclePriceE8 = new anchor.BN("10100000000");
+    await bot.tick();
+    const [prior, next] = [...setup.quotes.values()];
+    next.status = "validated";
+    await bot.tick();
+    assert.equal(prior.status, "cancelled");
+    assert.equal(next.status, "validated");
+    await bot.tick();
+    assert.equal(next.status, "active");
   } finally {
     await bot.close();
     await rm(directory, { recursive: true, force: true });

@@ -56,6 +56,17 @@ function fixture(operator = false) {
     queue: async () => ({}),
     program: {
       methods: {
+        renewBackstop: (expiry: anchor.BN) => ({
+          accountsPartial: (accounts: Record<string, PublicKey>) => ({
+            rpc: async () => {
+              assert.ok(
+                expiry.toNumber() <= Math.floor(Date.now() / 1000) + 86400,
+              );
+              calls.push({ name: "renew", accounts });
+              return "renew-signature";
+            },
+          }),
+        }),
         offerBackstop: () => ({
           accountsPartial: (accounts: Record<string, PublicKey>) => ({
             rpc: async () => {
@@ -99,6 +110,26 @@ function fixture(operator = false) {
     },
   };
 }
+
+test("renewal extends an unexpired backstop without a new computation or collateral reservation", async () => {
+  const run = fixture();
+  const handle = await BackstopHandle.offer(run.client, {
+    marketId: "SOL-USD",
+    maxCapacity: 2_000_000n,
+    validForSeconds: 600,
+    clientNonce: run.nonce,
+  });
+  await assert.rejects(handle.renew(), /active, unexpired/);
+  run.setState("active");
+  await assert.rejects(handle.renew(100), /later expiry/);
+  await assert.rejects(handle.renew(86401), /duration/);
+  assert.equal(await handle.renew(), "renew-signature");
+  assert.deepEqual(
+    run.calls.map((call) => call.name),
+    ["offer", "renew"],
+  );
+  assert.ok(run.calls[1].accounts.offer.equals(handle.id));
+});
 
 test("owner offer uses the canonical nonce address and resumes through callback states", async () => {
   const run = fixture();

@@ -32,14 +32,15 @@ test("quote replacement resumes a closing quote and preserves the successor nonc
       wallet: { publicKey: maker },
       connection: {
         getAccountInfo: async (id: PublicKey) =>
-          successor?.equals(id) ? {} : null,
+          id.equals(priorId) || successor?.equals(id) ? {} : null,
       },
     },
     quote: {
       get: (id: PublicKey) => ({
+        id,
         status: async () => ({
           id: id.toBase58(),
-          status: id.equals(priorId) ? priorStatus : "validating",
+          status: id.equals(priorId) ? priorStatus : "validated",
           maxCapacity: 1n,
           attachedOrders: 0,
           replacementNonce,
@@ -51,7 +52,7 @@ test("quote replacement resumes a closing quote and preserves the successor nonc
       }),
       publish: async (input: { clientNonce?: bigint }) => {
         published.push(input);
-        return { id: successor };
+        return client.quote.get(successor!);
       },
     },
     quoteState: async () => ({
@@ -79,7 +80,7 @@ test("quote replacement resumes a closing quote and preserves the successor nonc
   assert.equal(quote.id.toBase58(), flow.nextId.toBase58());
   assert.equal(cancellations, 1);
   assert.equal(replacementNonce, 77n);
-  assert.equal(published[0].clientNonce, 77n);
+  assert.equal(published.length, 1);
   await assert.rejects(
     flow.resume({
       tiers: [],

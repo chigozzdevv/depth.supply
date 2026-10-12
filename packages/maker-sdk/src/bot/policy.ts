@@ -1,6 +1,7 @@
 import type { QuoteInput, MarketState } from "@/client/types";
 import type { PositionSnapshot } from "@depthhq/sdk";
 import { positionPnl } from "@depthhq/sdk";
+import { quoteBounds } from "@depthhq/bindings";
 import { executionPrice, validateBook } from "@/hedge/policy";
 import { abs, notional, type HedgeBook } from "@/hedge/types";
 
@@ -134,7 +135,10 @@ export function botQuote(
     .filter((size) => size > 0n && size <= capacity);
   if (!tiers.length) return;
   const half = Math.ceil(policy.spreadBps / 2);
-  if (half > market.config.maxQuoteDeviationBps)
+  const preparation = quoteBounds(
+    market.config.maxQuoteDeviationBps,
+  ).preparationBps;
+  if (half > preparation)
     throw new Error("Maker spread exceeds oracle deviation policy");
   if (pricing) validateBook(pricing.book, now * 1000, pricing.maxPriceAgeMs);
   if (
@@ -178,7 +182,7 @@ export function botQuote(
     const buy = pricing ? executionPrice(pricing.book.asks, units) : price;
     const bidE8 = (sell * (10_000n - bidCosts)) / 10_000n + skew;
     const askE8 = (buy * (10_000n + askCosts) + 9_999n) / 10_000n + skew;
-    const bound = price * BigInt(market.config.maxQuoteDeviationBps);
+    const bound = price * BigInt(preparation);
     if (
       bidE8 < 100_000_000n ||
       bidE8 >= askE8 ||

@@ -126,6 +126,7 @@ test("quote activation waits for private validation and stays pending until rese
   let status = "validating";
   let makerReady = false;
   let submitted = 0;
+  const now = Math.floor(Date.now() / 1000);
   const client = {
     options: { maker, wallet: { publicKey: maker } },
     marketAddress,
@@ -136,6 +137,10 @@ test("quote activation waits for private validation and stays pending until rese
       status: { [status]: {} },
       capacity: new anchor.BN(1_000),
       attachedOrders: 0,
+      marketRevision: new anchor.BN(1),
+      oracleTimestamp: new anchor.BN(now),
+      oracleReferenceE8: new anchor.BN(10_000),
+      expiry: new anchor.BN(now + 120),
     }),
     requestQuoteView: async () => ({
       wait: async () => ({ status: "ready", remainingCapacity: 750n }),
@@ -146,10 +151,16 @@ test("quote activation waits for private validation and stays pending until rese
         ? { status: { [makerReady ? "ready" : "trading"]: {} } }
         : name === "Market"
           ? {
+              revision: new anchor.BN(1),
+              oracleTimestamp: new anchor.BN(now + 1),
+              oraclePriceE8: new anchor.BN(10_010),
               activeQuoteCount: 0,
               pendingOrders: 0,
               quotedNotional: new anchor.BN(0),
-              config: { maxMarketNotional: new anchor.BN(10_000) },
+              config: {
+                maxMarketNotional: new anchor.BN(10_000),
+                maxQuoteDeviationBps: 200,
+              },
             }
           : { market: marketAddress, count: 0, entries: [] },
     queue: async () => ({}),
@@ -251,12 +262,14 @@ test("draft market accepts the initial quote required for activation", () => {
   const market = {
     status: { draft: {} },
     oracleTimestamp: new anchor.BN(now),
+    oraclePriceE8: new anchor.BN(20_000_000_000),
     config: {
       quoteTiers: [new anchor.BN(100_000_000)],
       maxAccountNotional: new anchor.BN(1_000_000_000),
       maxMarketNotional: new anchor.BN(10_000_000_000),
       maxQuoteLifetimeSeconds: 3_600,
       maxOracleAgeSeconds: 300,
+      maxQuoteDeviationBps: 200,
     },
   };
   assert.doesNotThrow(() => client.validateQuote(quote, market));
@@ -356,8 +369,9 @@ test("cancellation reconciles a keeper release and repeated calls", async () => 
   assert.equal(releases, 1);
 });
 
-test("only the owner can reclaim a terminal quote without attached orders", async () => {
+test("only the owner or original payer can reclaim a terminal quote without attached orders", async () => {
   const maker = PublicKey.unique();
+  const operator = PublicKey.unique();
   let actor = PublicKey.unique();
   let status = "cancelled";
   let attachedOrders = 0;
@@ -372,12 +386,22 @@ test("only the owner can reclaim a terminal quote without attached orders", asyn
       },
     },
     quoteState: async () => ({
+      operator,
       status: { [status]: {} },
       capacity: new anchor.BN(1_000),
       attachedOrders,
     }),
     program: {
       methods: {
+        closeOperatorQuote: () => ({
+          accountsPartial: (accounts: { operator: PublicKey }) => ({
+            rpc: async () => {
+              assert.ok(accounts.operator.equals(operator));
+              closes += 1;
+              return "operator-close-signature";
+            },
+          }),
+        }),
         closeQuote: () => ({
           accountsPartial: () => ({
             rpc: async () => {
@@ -390,7 +414,10 @@ test("only the owner can reclaim a terminal quote without attached orders", asyn
     },
   } as unknown as MakerClient;
   const handle = new QuoteHandle(PublicKey.unique(), undefined, client);
-  await assert.rejects(() => handle.close(), /Only the maker owner/);
+  await assert.rejects(
+    () => handle.close(),
+    /Only the maker or original payer/,
+  );
   actor = maker;
   status = "active";
   await assert.rejects(() => handle.close(), /settle its orders/);
@@ -400,4 +427,7 @@ test("only the owner can reclaim a terminal quote without attached orders", asyn
   attachedOrders = 0;
   assert.equal(await handle.close(), "close-signature");
   assert.equal(closes, 1);
+  actor = operator;
+  assert.equal(await handle.close(), "operator-close-signature");
+  assert.equal(closes, 2);
 });

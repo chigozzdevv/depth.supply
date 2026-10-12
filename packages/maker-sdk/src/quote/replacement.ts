@@ -7,7 +7,7 @@ import type { QuoteRequest } from "@/client/types";
 import type { QuoteHandle, QuoteSnapshot } from "@/quote/quote";
 
 export type ReplacementSnapshot = {
-  prior: QuoteSnapshot;
+  prior?: QuoteSnapshot;
   next?: QuoteSnapshot;
   nextId: PublicKey;
   phase: "stopping" | "ready" | "publishing" | "active" | "failed";
@@ -40,9 +40,15 @@ export class QuoteReplacement {
   }
 
   async status(): Promise<ReplacementSnapshot> {
-    const prior = await this.client.quote.get(this.priorId).status();
+    const priorAccount = await this.client.options.connection.getAccountInfo(
+      this.priorId,
+      "confirmed",
+    );
+    const prior = priorAccount
+      ? await this.client.quote.get(this.priorId).status()
+      : undefined;
     if (
-      prior.replacementNonce !== undefined &&
+      prior?.replacementNonce !== undefined &&
       prior.replacementNonce !== this.nonce
     ) {
       throw new Error("Prior quote is linked to a different successor");
@@ -54,7 +60,9 @@ export class QuoteReplacement {
     const next = account
       ? await this.client.quote.get(this.nextId).status()
       : undefined;
-    const stopped = ["cancelled", "filled"].includes(prior.status);
+    if (!prior && !next) throw new Error("Replacement quotes are unavailable");
+    const stopped =
+      !prior || ["cancelled", "filled", "rejected"].includes(prior.status);
     return {
       prior,
       next,
@@ -72,7 +80,32 @@ export class QuoteReplacement {
     };
   }
 
+  async prepare(input: QuoteRequest): Promise<QuoteHandle> {
+    if (input.clientNonce !== undefined && input.clientNonce !== this.nonce)
+      throw new Error("Replacement terms use a different client nonce");
+    await this.begin();
+    return this.client.quote.publish({
+      ...input,
+      clientNonce: this.nonce,
+    } as QuoteRequest);
+  }
+
   async begin(): Promise<void> {
+    if (
+      !(await this.client.options.connection.getAccountInfo(
+        this.priorId,
+        "confirmed",
+      ))
+    ) {
+      if (
+        await this.client.options.connection.getAccountInfo(
+          this.nextId,
+          "confirmed",
+        )
+      )
+        return;
+      throw new Error("Replacement quotes are unavailable");
+    }
     const prior = await this.client.quoteState(this.priorId);
     const recorded =
       prior.replacementNonce == null
@@ -115,10 +148,37 @@ export class QuoteReplacement {
       );
     const deadline = Date.now() + timeoutMs;
     const previous = this.client.quote.get(this.priorId);
-    await this.begin();
+    const next = await this.prepare(input);
+    for (;;) {
+      const snapshot = await next.status();
+      if (
+        ["validated", "waiting", "reserving", "active", "filled"].includes(
+          snapshot.status,
+        )
+      )
+        break;
+      if (["rejected", "cancelled"].includes(snapshot.status))
+        throw new Error(
+          "Successor quote was rejected; prior quote remains available",
+        );
+      if (Date.now() >= deadline)
+        throw new Error(
+          `Successor quote ${this.nextId.toBase58()} is still validating`,
+        );
+      await new Promise((resolve) =>
+        setTimeout(resolve, Math.min(pollMs, deadline - Date.now())),
+      );
+    }
+    if (
+      !(await this.client.options.connection.getAccountInfo(
+        this.priorId,
+        "confirmed",
+      ))
+    )
+      return next;
     for (;;) {
       const snapshot = await previous.status();
-      if (["cancelled", "filled"].includes(snapshot.status)) break;
+      if (["cancelled", "filled", "rejected"].includes(snapshot.status)) break;
       if (["active", "closing"].includes(snapshot.status)) {
         if (snapshot.status === "active" || snapshot.attachedOrders === 0)
           await previous.cancel();
@@ -134,8 +194,6 @@ export class QuoteReplacement {
         setTimeout(resolve, Math.min(pollMs, deadline - Date.now())),
       );
     }
-    const request = { ...input, clientNonce: this.nonce } as QuoteRequest;
-    const next = await this.client.quote.publish(request);
     if (!next.id.equals(this.nextId))
       throw new Error("Replacement quote address changed");
     return next;

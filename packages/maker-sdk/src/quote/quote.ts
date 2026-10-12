@@ -4,6 +4,7 @@ import { randomBytes } from "@/chain/random";
 import type { MakerClient } from "@/client/client";
 import type { MarketState, QuoteQueueState } from "@/client/types";
 import { DepthError } from "@depthhq/sdk";
+import { quoteBounds } from "@depthhq/bindings";
 
 export type QuoteSnapshot = {
   id: string;
@@ -149,6 +150,22 @@ export class QuoteHandle {
           "Market",
           this.client.marketAddress,
         );
+        const quote = await this.client.quoteState(this.id);
+        const reference = BigInt(quote.oracleReferenceE8.toString());
+        const price = BigInt(market.oraclePriceE8.toString());
+        const drift = price > reference ? price - reference : reference - price;
+        if (
+          !quote.marketRevision.eq(market.revision) ||
+          market.oracleTimestamp.lt(quote.oracleTimestamp) ||
+          reference <= 0n ||
+          drift * 10_000n >
+            reference *
+              BigInt(
+                quoteBounds(market.config.maxQuoteDeviationBps).driftBps,
+              ) ||
+          quote.expiry.toNumber() <= Math.floor(Date.now() / 1000)
+        )
+          return this.cancel();
         const queueState = await this.client.read<QuoteQueueState>(
           "QuoteQueue",
           this.client.quoteQueueAddress,
@@ -333,14 +350,24 @@ export class QuoteHandle {
   }
 
   async close(): Promise<string> {
-    if (!this.client.options.wallet.publicKey.equals(this.client.options.maker))
-      throw new Error("Only the maker owner can reclaim quote rent");
     const snapshot = await this.status();
     if (
       !["cancelled", "filled", "rejected"].includes(snapshot.status) ||
       snapshot.attachedOrders > 0
     )
       throw new Error("Release the quote and settle its orders before closing");
+    const actor = this.client.options.wallet.publicKey;
+    if (!actor.equals(this.client.options.maker)) {
+      const state = await this.client.quoteState(this.id);
+      if (!state.operator.equals(actor))
+        throw new Error(
+          "Only the maker or original payer can reclaim quote rent",
+        );
+      return this.client.program.methods
+        .closeOperatorQuote()
+        .accountsPartial({ operator: actor, quote: this.id })
+        .rpc({ commitment: "confirmed" });
+    }
     return this.client.program.methods
       .closeQuote()
       .accountsPartial({ maker: this.client.options.maker, quote: this.id })

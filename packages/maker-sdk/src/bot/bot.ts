@@ -32,6 +32,9 @@ export class MakerBot {
   private pricing?: BotPricing;
   private hedgeLease?: BotStore;
   private pricingDirty = false;
+  private lastCleanup = 0;
+  private lastFills = 0;
+  private inventoryVersion?: bigint;
   private constructor(
     readonly maker: MakerClient,
     readonly policy: BotPolicy,
@@ -124,22 +127,74 @@ export class MakerBot {
     const account = await this.maker.read<{
       status: Record<string, unknown>;
       version: { toString(): string };
+      pendingComputation?: PublicKey;
     }>("MarketAccount", this.maker.marketAccount(), "finalized");
     const confirmed = await this.maker.read<typeof account>(
       "MarketAccount",
       this.maker.marketAccount(),
     );
+    const write = this.state!.quoteWrite;
+    if (
+      !this.state!.hedge?.pending &&
+      ("reserving" in confirmed.status || "releasing" in confirmed.status)
+    ) {
+      const ids = [
+        this.state!.quote,
+        write?.quote,
+        this.state!.replacement
+          ? this.maker.quote
+              .replacement(
+                new PublicKey(this.state!.replacement.prior),
+                this.state!.replacement.nonce,
+              )
+              .nextId.toBase58()
+          : undefined,
+      ];
+      for (const id of new Set(ids.filter((id): id is string => Boolean(id)))) {
+        const quote = await this.maker.quoteState(new PublicKey(id));
+        if (
+          ("reserving" in quote.status || "releasing" in quote.status) &&
+          quote.pendingComputation?.equals(
+            confirmed.pendingComputation ?? PublicKey.default,
+          )
+        )
+          return "updating quote margin";
+      }
+    }
     let ready =
       "ready" in account.status &&
       "ready" in confirmed.status &&
       account.version.toString() === confirmed.version.toString();
+    const currentVersion = BigInt(confirmed.version.toString());
+    const candidate =
+      write &&
+      this.position &&
+      "ready" in confirmed.status &&
+      currentVersion === write.version + 1n &&
+      (this.inventoryVersion ?? this.position.version) >= write.version &&
+      (this.inventoryVersion ?? this.position.version) <= currentVersion;
+    const completedWrite =
+      candidate &&
+      (await this.maker.quoteState(new PublicKey(write.quote))).status;
+    const ownCommit =
+      completedWrite &&
+      (write.release
+        ? "cancelled" in completedWrite || "filled" in completedWrite
+        : "active" in completedWrite);
+    if (ownCommit) {
+      this.inventoryVersion = currentVersion;
+      ready = true;
+      if (account.version.toString() === confirmed.version.toString()) {
+        this.state!.quoteWrite = undefined;
+        await this.store.save(this.state!);
+      }
+    }
     if (
       ready &&
       (!this.position ||
-        this.position.version !== BigInt(account.version.toString()) ||
-        this.dirty)
+        (this.inventoryVersion ?? this.position.version) !== currentVersion)
     ) {
-      const prior = this.position?.version;
+      const prior = this.position;
       this.position = await this.maker.position.summary({ timeoutMs: 180_000 });
       const fresh = await this.maker.read<typeof account>(
         "MarketAccount",
@@ -157,10 +212,19 @@ export class MakerBot {
         this.position.status === "ready" &&
         this.position.version === BigInt(fresh.version.toString());
       if (ready) {
-        this.pricingDirty ||= prior !== this.position.version || this.dirty;
+        this.inventoryVersion = this.position.version;
+        if (write && this.position.version >= write.version) {
+          this.state!.quoteWrite = undefined;
+          await this.store.save(this.state!);
+        }
+        this.pricingDirty ||=
+          prior !== undefined &&
+          (prior.position !== this.position.position ||
+            prior.collateral !== this.position.collateral);
         this.dirty = false;
       }
     }
+    if (ready) this.dirty = false;
     const snapshot = await this.hedge.tick(
       this.state!.hedge!,
       () => this.saveHedge(),
@@ -191,6 +255,32 @@ export class MakerBot {
       maxPriceAgeMs: this.hedge.policy.maxPriceAgeMs,
     };
   }
+  private async quoteWrite(
+    handle: ReturnType<MakerClient["quote"]["get"]>,
+    release = false,
+  ) {
+    const before = await this.maker.read<{
+      status: Record<string, unknown>;
+      version: { toString(): string };
+    }>("MarketAccount", this.maker.marketAccount());
+    const version = BigInt(before.version.toString());
+    const result = release
+      ? await handle.cancel()
+      : await handle.activate({ timeoutMs: 0 });
+    if (
+      (release ? handle.releaseSignature : handle.reserveSignature) &&
+      "ready" in before.status &&
+      version === (this.inventoryVersion ?? this.position?.version)
+    ) {
+      this.state!.quoteWrite = {
+        quote: handle.id.toBase58(),
+        version,
+        release,
+      };
+      await this.store.save(this.state!);
+    }
+    return result;
+  }
   private snapshot(phase: BotSnapshot["phase"], reason?: string): BotSnapshot {
     return {
       phase,
@@ -216,6 +306,52 @@ export class MakerBot {
   }
   private async reconcile() {
     const state = this.state!;
+    if (
+      state.quote &&
+      !(await this.maker.options.connection.getAccountInfo(
+        new PublicKey(state.quote),
+        "confirmed",
+      ))
+    ) {
+      if (
+        !state.request ||
+        state.request.expiresAt + 180 < Math.floor(Date.now() / 1000)
+      ) {
+        state.quote = undefined;
+        state.request = undefined;
+        state.referencePrice = undefined;
+        await this.store.save(state);
+      }
+    }
+    if (state.replacement) {
+      const flow = this.maker.quote.replacement(
+        new PublicKey(state.replacement.prior),
+        state.replacement.nonce,
+      );
+      const [prior, next] = await Promise.all([
+        this.maker.options.connection.getAccountInfo(
+          new PublicKey(state.replacement.prior),
+          "confirmed",
+        ),
+        this.maker.options.connection.getAccountInfo(flow.nextId, "confirmed"),
+      ]);
+      if (!prior && next) {
+        state.quote = flow.nextId.toBase58();
+        state.request = state.replacement.request;
+        state.referencePrice = state.replacement.referencePrice;
+        state.replacement = undefined;
+        await this.store.save(state);
+      } else if (
+        !prior &&
+        !next &&
+        (!state.replacement.request ||
+          state.replacement.request.expiresAt + 180 <
+            Math.floor(Date.now() / 1000))
+      ) {
+        state.replacement = undefined;
+        await this.store.save(state);
+      }
+    }
     let cursor: string | undefined;
     const managed: string[] = [];
     do {
@@ -234,6 +370,14 @@ export class MakerBot {
       [
         state.quote,
         state.replacement?.prior,
+        state.replacement
+          ? this.maker.quote
+              .replacement(
+                new PublicKey(state.replacement.prior),
+                state.replacement.nonce,
+              )
+              .nextId.toBase58()
+          : undefined,
         this.requestId()?.toBase58(),
       ].filter(Boolean),
     );
@@ -249,6 +393,7 @@ export class MakerBot {
       }
   }
   private async fills() {
+    if (Date.now() - this.lastFills < 10_000) return;
     const state = this.state!;
     let before: string | undefined;
     let head: string | undefined;
@@ -273,9 +418,35 @@ export class MakerBot {
       state.cursor = head;
       await this.store.save(state);
     }
+    this.lastFills = Date.now();
   }
   private async cancel(preserve = false): Promise<boolean> {
     const state = this.state!;
+    let successorPending = false;
+    if (state.replacement?.request) {
+      const next = this.maker.quote.replacement(
+        new PublicKey(state.replacement.prior),
+        state.replacement.nonce,
+      ).nextId;
+      if (
+        await this.maker.options.connection.getAccountInfo(next, "confirmed")
+      ) {
+        const handle = this.maker.quote.get(next);
+        const snapshot = await handle.status();
+        if (!terminal.has(snapshot.status)) {
+          const result = [
+            "active",
+            "waiting",
+            "validated",
+            "validating",
+            "closing",
+          ].includes(snapshot.status)
+            ? await this.quoteWrite(handle, true)
+            : snapshot;
+          successorPending = !terminal.has(result.status);
+        }
+      }
+    }
     if (!state.quote) {
       const request = this.requestId();
       if (
@@ -302,11 +473,11 @@ export class MakerBot {
     const handle = this.maker.quote.get(new PublicKey(state.quote));
     const quote = await handle.status();
     if (terminal.has(quote.status)) {
+      if (successorPending) return false;
       state.quote = undefined;
       state.request = undefined;
       state.referencePrice = undefined;
       if (!preserve) state.replacement = undefined;
-      this.dirty = true;
       await this.store.save(state);
       return true;
     }
@@ -315,8 +486,105 @@ export class MakerBot {
         quote.status,
       )
     )
-      await handle.cancel();
+      await this.quoteWrite(handle, true);
     return false;
+  }
+  private async replace(market: BotMarket, now: number): Promise<BotSnapshot> {
+    const state = this.state!;
+    const replacement = state.replacement!;
+    const flow = this.maker.quote.replacement(
+      new PublicKey(replacement.prior),
+      replacement.nonce,
+    );
+    if (!replacement.request) {
+      const account = await this.maker.read<{
+        status: Record<string, unknown>;
+        version: { toString(): string };
+      }>("MarketAccount", this.maker.marketAccount());
+      if (!("ready" in account.status) || market.pendingOrders)
+        return this.snapshot("pending", "settlement in progress");
+      if (
+        !this.position ||
+        this.position.version !== BigInt(account.version.toString())
+      ) {
+        this.position = await this.maker.position.summary({
+          timeoutMs: 180_000,
+        });
+        if (
+          this.position.status !== "ready" ||
+          this.position.version !== BigInt(account.version.toString())
+        )
+          return this.snapshot("pending", "maker view changed");
+      }
+      this.inventoryVersion = this.position.version;
+      this.dirty = false;
+      replacement.request = botQuote(
+        this.policy,
+        market,
+        this.position,
+        replacement.nonce,
+        now,
+        this.pricing,
+      );
+      if (!replacement.request)
+        return this.snapshot("pending", "inventory or collateral limit");
+      replacement.referencePrice = BigInt(market.oraclePriceE8.toString());
+      await this.store.save(state);
+    }
+    await flow.begin();
+    const exists = await this.maker.options.connection.getAccountInfo(
+      flow.nextId,
+      "confirmed",
+    );
+    const next = exists
+      ? this.maker.quote.get(flow.nextId)
+      : await this.maker.quote.publish(replacement.request);
+    const snapshot = await next.status();
+    if (snapshot.status === "validating" && replacement.request.expiresAt > now)
+      return this.snapshot("pending", "validating successor quote");
+    if (
+      ["rejected", "cancelled"].includes(snapshot.status) ||
+      replacement.request.expiresAt <= now
+    ) {
+      await this.cancel();
+      return this.snapshot("pending", "releasing expired successor");
+    }
+    const prior = this.maker.quote.get(new PublicKey(replacement.prior));
+    const previous = await prior.status();
+    const size = this.position!.position!;
+    const exposure =
+      ((size < 0n ? -size : size) * BigInt(market.oraclePriceE8.toString()) +
+        99_999_999_999n) /
+      100_000_000_000n;
+    if (
+      !terminal.has(previous.status) &&
+      ["validated", "waiting", "reserving"].includes(snapshot.status) &&
+      market.activeQuoteCount < 4 &&
+      exposure + previous.maxCapacity + snapshot.maxCapacity <=
+        this.policy.maxInventoryNotional &&
+      BigInt(market.quotedNotional.toString()) + snapshot.maxCapacity <=
+        BigInt(market.config.maxMarketNotional.toString())
+    ) {
+      await this.quoteWrite(next);
+      return this.snapshot("pending", "activating successor quote");
+    }
+    if (!terminal.has(previous.status)) {
+      if (
+        ["active", "waiting", "validated", "validating", "closing"].includes(
+          previous.status,
+        )
+      )
+        await this.quoteWrite(prior, true);
+      return this.snapshot("pending", "releasing prior quote");
+    }
+    state.quote = flow.nextId.toBase58();
+    state.request = replacement.request;
+    state.referencePrice = replacement.referencePrice;
+    state.replacement = undefined;
+    this.pricingDirty = false;
+    await this.store.save(state);
+    await this.quoteWrite(next);
+    return this.snapshot("pending", "activating successor quote");
   }
   async tick(): Promise<BotSnapshot> {
     if (this.busy) throw new Error("Maker bot tick is already running");
@@ -324,6 +592,25 @@ export class MakerBot {
     this.busy = true;
     try {
       const state = this.state;
+      if (Date.now() - this.lastCleanup >= 60_000) {
+        await this.maker.quote.cleanup({
+          exclude: [
+            state.quoteWrite?.quote,
+            state.quote,
+            state.replacement?.prior,
+            this.requestId()?.toBase58(),
+            state.replacement
+              ? this.maker.quote
+                  .replacement(
+                    new PublicKey(state.replacement.prior),
+                    state.replacement.nonce,
+                  )
+                  .nextId.toBase58()
+              : undefined,
+          ].filter((id): id is string => Boolean(id)),
+        });
+        this.lastCleanup = Date.now();
+      }
       let [market, lamports] = await Promise.all([
         this.maker.read<BotMarket>("Market", this.maker.marketAddress),
         this.maker.options.connection.getBalance(
@@ -370,6 +657,7 @@ export class MakerBot {
           return this.snapshot(stopped ? "stopped" : "pending", changed);
         }
       }
+      if (state.replacement) return this.replace(market, now);
       if (
         !state.quote &&
         this.requestId() &&
@@ -387,19 +675,7 @@ export class MakerBot {
         if (terminal.has(quote.status)) {
           state.quote = undefined;
           state.request = undefined;
-          this.dirty = true;
           await this.store.save(state);
-        } else if (state.replacement) {
-          if (!["cancelled", "filled"].includes(quote.status)) {
-            await this.maker.quote
-              .replacement(
-                new PublicKey(state.replacement.prior),
-                state.replacement.nonce,
-              )
-              .begin();
-            await this.cancel(true);
-            return this.snapshot("pending", "releasing prior quote");
-          }
         } else if (
           ["validating", "validated", "waiting", "reserving"].includes(
             quote.status,
@@ -411,7 +687,7 @@ export class MakerBot {
             ["validating", "validated", "waiting"].includes(quote.status)
           )
             await this.cancel();
-          else await handle.activate({ timeoutMs: 0 });
+          else await this.quoteWrite(handle);
           return this.snapshot("pending", "activating quote");
         } else if (["closing", "releasing"].includes(quote.status)) {
           await this.cancel();
@@ -446,7 +722,7 @@ export class MakerBot {
           await this.maker.quote
             .replacement(handle.id, state.replacement.nonce)
             .begin();
-          await this.cancel(true);
+          await this.replace(market, now);
           return this.snapshot("pending", "repricing quote");
         }
       }
@@ -479,7 +755,7 @@ export class MakerBot {
           this.policy,
           market,
           this.position,
-          state.replacement?.nonce ?? nonce(),
+          nonce(),
           now,
           this.pricing,
         );
@@ -496,21 +772,13 @@ export class MakerBot {
         await this.store.save(state);
         return this.snapshot("idle", "prepared quote expired");
       }
-      const handle = state.replacement
-        ? await this.maker.quote
-            .replacement(
-              new PublicKey(state.replacement.prior),
-              state.replacement.nonce,
-            )
-            .resume(request, { timeoutMs: 0 })
-        : await this.maker.quote.publish(request);
+      const handle = await this.maker.quote.publish(request);
       state.quote = handle.id.toBase58();
       state.replacement = undefined;
       await this.store.save(state);
-      await handle.activate({ timeoutMs: 0 });
+      await this.quoteWrite(handle);
       return this.snapshot("pending", "quote submitted");
     } catch (error) {
-      this.dirty = true;
       try {
         await this.cancel(true);
       } catch (cause) {

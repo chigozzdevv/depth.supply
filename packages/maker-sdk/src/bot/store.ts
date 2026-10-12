@@ -13,7 +13,13 @@ export type BotState = {
   quote?: string;
   request?: QuoteInput;
   referencePrice?: bigint;
-  replacement?: { prior: string; nonce: bigint };
+  quoteWrite?: { quote: string; version: bigint; release: boolean };
+  replacement?: {
+    prior: string;
+    nonce: bigint;
+    request?: QuoteInput;
+    referencePrice?: bigint;
+  };
   fills: Record<string, { signature: string; slot: number }>;
   hedge?: HedgeState;
 };
@@ -126,7 +132,11 @@ export class BotStore {
       (typeof state.referencePrice !== "bigint" || state.referencePrice <= 0n)
     )
       throw new Error("Maker bot checkpoint price is invalid");
-    for (const value of [state.request?.clientNonce, state.replacement?.nonce])
+    for (const value of [
+      state.request?.clientNonce,
+      state.replacement?.nonce,
+      state.replacement?.request?.clientNonce,
+    ])
       if (
         value !== undefined &&
         (typeof value !== "bigint" || value < 0n || value >= 1n << 64n)
@@ -136,14 +146,28 @@ export class BotStore {
       if (value !== undefined && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value))
         throw new Error("Maker bot checkpoint quote is invalid");
     if (
-      state.request &&
-      (!Number.isSafeInteger(state.request.expiresAt) ||
-        typeof state.request.maxCapacity !== "bigint" ||
-        state.request.maxCapacity <= 0n ||
-        !Array.isArray(state.request.tiers) ||
-        !state.request.tiers.length)
+      state.quoteWrite &&
+      (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(state.quoteWrite.quote) ||
+        typeof state.quoteWrite.version !== "bigint" ||
+        typeof state.quoteWrite.release !== "boolean" ||
+        state.quoteWrite.version < 0n)
     )
-      throw new Error("Maker bot checkpoint request is invalid");
+      throw new Error("Quote write checkpoint is invalid");
+    for (const request of [state.request, state.replacement?.request])
+      if (
+        request &&
+        (!Number.isSafeInteger(request.expiresAt) ||
+          typeof request.maxCapacity !== "bigint" ||
+          request.maxCapacity <= 0n ||
+          !Array.isArray(request.tiers) ||
+          !request.tiers.length)
+      )
+        throw new Error("Maker bot checkpoint request is invalid");
+    if (
+      state.replacement?.request &&
+      state.replacement.request.clientNonce !== state.replacement.nonce
+    )
+      throw new Error("Replacement checkpoint nonce is invalid");
     for (const fill of Object.values(state.fills))
       if (
         typeof fill.signature !== "string" ||
