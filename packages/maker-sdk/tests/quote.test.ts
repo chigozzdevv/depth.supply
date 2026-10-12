@@ -232,6 +232,12 @@ test("flat quotes use published tiers within capacity", () => {
     quote.tiers.map((tier) => tier.size),
     [1_000n, 10_000n, 100_000n],
   );
+  assert.deepEqual(
+    client
+      .flatQuote({ ...input, maxCapacity: 99_000n }, market, 10n)
+      .tiers.map((tier) => tier.size),
+    [1_000n, 10_000n, 100_000n],
+  );
   assert.ok(quote.tiers.every((tier) => tier.bidE8 === input.bidE8));
   assert.ok(quote.expiresAt > Math.floor(Date.now() / 1_000));
   assert.throws(
@@ -295,6 +301,7 @@ test("cancellation stops selection before releasing reserved margin", async () =
     quoteState: async () => ({
       status: { [status]: {} },
       capacity: new anchor.BN(1_000),
+      expiry: new anchor.BN(2_000_000_000),
       attachedOrders: 0,
     }),
     read: async (name: string) =>
@@ -342,6 +349,7 @@ test("cancellation reconciles a keeper release and repeated calls", async () => 
     quoteState: async () => ({
       status: { [status]: {} },
       capacity: new anchor.BN(1_000),
+      expiry: new anchor.BN(2_000_000_000),
       attachedOrders: 0,
     }),
     read: async (name: string) =>
@@ -389,6 +397,7 @@ test("only the owner or original payer can reclaim a terminal quote without atta
       operator,
       status: { [status]: {} },
       capacity: new anchor.BN(1_000),
+      expiry: new anchor.BN(2_000_000_000),
       attachedOrders,
     }),
     program: {
@@ -430,4 +439,42 @@ test("only the owner or original payer can reclaim a terminal quote without atta
   actor = operator;
   assert.equal(await handle.close(), "operator-close-signature");
   assert.equal(closes, 2);
+});
+
+test("delegated nonblocking inventory reads reuse their pending request and close completed views", async () => {
+  const wallet = new anchor.Wallet(Keypair.generate());
+  const constructor = MakerClient as unknown as new (
+    options: unknown,
+  ) => MakerClient;
+  const client = new constructor({
+    wallet,
+    maker: PublicKey.unique(),
+    connection: new Connection("http://127.0.0.1:8899"),
+    deployment: { localnet: true },
+  });
+  let requests = 0;
+  let reads = 0;
+  let closes = 0;
+  client.requestMarketView = async () => {
+    requests++;
+    return {
+      wait: async () => ({
+        status: ++reads === 1 ? "pending" : "ready",
+        version: 1n,
+      }),
+      deferClose: async () => {
+        closes++;
+      },
+    } as unknown as Awaited<ReturnType<MakerClient["requestMarketView"]>>;
+  };
+  assert.equal(
+    (await client.position.summary({ timeoutMs: 0 })).status,
+    "pending",
+  );
+  assert.equal(
+    (await client.position.summary({ timeoutMs: 0 })).status,
+    "ready",
+  );
+  assert.equal(requests, 1);
+  assert.equal(closes, 1);
 });
