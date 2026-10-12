@@ -485,14 +485,21 @@ test("the bot waits for finalized inventory, pauses quotes for uncertain hedges 
   try {
     const realNow = Date.now;
     let clock = realNow();
+    let reads = 0;
     const summary = setup.client.position.summary;
     setup.client.position.summary = async (options) => {
       clock += 2000;
-      return summary(options);
+      const snapshot = await summary(options);
+      return ++reads === 1
+        ? { ...snapshot, status: "pending", position: undefined }
+        : snapshot;
     };
     Date.now = () => clock;
     try {
       await bot.tick();
+      assert.equal(setup.published.length, 0);
+      await bot.tick();
+      assert.equal(reads, 2);
       assert.equal(setup.published.length, 1);
     } finally {
       Date.now = realNow;

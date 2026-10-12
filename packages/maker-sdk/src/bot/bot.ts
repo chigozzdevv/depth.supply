@@ -192,6 +192,8 @@ export class MakerBot {
     if (
       ready &&
       (!this.position ||
+        this.position.status !== "ready" ||
+        this.position.position === undefined ||
         (this.inventoryVersion ?? this.position.version) !== currentVersion)
     ) {
       const prior = this.position;
@@ -505,6 +507,7 @@ export class MakerBot {
         return this.snapshot("pending", "settlement in progress");
       if (
         !this.position ||
+        this.position.status !== "ready" ||
         this.position.version !== BigInt(account.version.toString())
       ) {
         this.position = await this.maker.position.summary({
@@ -515,6 +518,9 @@ export class MakerBot {
           this.position.version !== BigInt(account.version.toString())
         )
           return this.snapshot("pending", "maker view changed");
+        this.inventoryVersion = this.position.version;
+        this.dirty = false;
+        return this.snapshot("pending", "maker view refreshed");
       }
       this.inventoryVersion = this.position.version;
       this.dirty = false;
