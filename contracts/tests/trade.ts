@@ -209,7 +209,8 @@ describe("confidential trade settlement", () => {
       insuranceFeeBps: 1,
       maxAccountNotional: new anchor.BN(1_000_000_000),
       maxMarketNotional: new anchor.BN(10_000_000_000),
-      maxOracleAgeSeconds: 300,
+      maxOracleAgeSeconds:
+        process.env.DEPTH_TEST_SCENARIO === "devnet" ? 600 : 300,
       maxConfidenceBps: 100,
       maxQuoteDeviationBps: 500,
       maxQuoteLifetimeSeconds: 120,
@@ -1312,7 +1313,7 @@ describe("confidential trade settlement", () => {
           new anchor.BN(1),
           new anchor.BN(deadline),
           orderSnapshot.revision,
-          orderSnapshot.oracleTimestamp.sub(new anchor.BN(1)),
+          orderSnapshot.oracleTimestamp.add(new anchor.BN(1)),
           input.ciphertexts,
           input.inputKey,
           input.inputNonce
@@ -1392,6 +1393,21 @@ describe("confidential trade settlement", () => {
     expect(
       (await program.account.market.fetch(market)).pendingOrder.equals(order)
     ).to.equal(true);
+    try {
+      await program.methods
+        .refreshOracle()
+        .accountsPartial({ protocol, market, priceUpdate: entryOracle })
+        .rpc();
+      expect.fail("An admitted order must keep its oracle snapshot");
+    } catch (error) {
+      expect(error).to.be.instanceOf(anchor.AnchorError);
+      expect((error as anchor.AnchorError).error.errorCode.code).to.equal(
+        "WrongOrderStatus"
+      );
+    }
+    expect(
+      (await program.account.market.fetch(market)).oracleTimestamp.toString()
+    ).to.equal(orderState.oracleTimestamp.toString());
     const before = await program.account.marketAccount.fetch(
       traderState.marketAccount
     );
@@ -2310,7 +2326,7 @@ describe("confidential trade settlement", () => {
           new anchor.BN(3),
           new anchor.BN(Math.floor(Date.now() / 1000) + 260),
           marketBefore.revision,
-          marketBefore.oracleTimestamp,
+          marketBefore.oracleTimestamp.sub(new anchor.BN(1)),
           encrypted.ciphertexts,
           encrypted.inputKey,
           encrypted.inputNonce

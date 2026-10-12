@@ -23,7 +23,7 @@ export const defaults = {
   quoteCapacity: 500_000_000n,
   tierCapacity: 1_000_000_000n,
   maxFee: 1_000_000n,
-  slippageBps: 200,
+  slippageBps: 50,
   quoteSeconds: 120,
   attempts: 3,
 };
