@@ -19,8 +19,15 @@ import { loadSigner } from "@/workspace/signers";
 
 const genesisHash = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
 const checkOnly = process.argv.includes("--check");
-if (process.argv.slice(2).some((value) => value !== "--check")) {
-  throw new Error("Usage: market.ts [--check]");
+const pause = process.argv.includes("--pause");
+const updateAge = process.argv.includes("--oracle-age");
+if (
+  process.argv.slice(2).length > 1 ||
+  process.argv
+    .slice(2)
+    .some((value) => !["--check", "--pause", "--oracle-age"].includes(value))
+) {
+  throw new Error("Usage: market.ts [--check | --pause | --oracle-age]");
 }
 const rpc = process.env.SOLANA_RPC_URL;
 const committeePath = settingPath(
@@ -129,6 +136,100 @@ const config = {
   ),
 };
 
+const connection = new Connection(rpc, "confirmed");
+if ((await connection.getGenesisHash()) !== genesisHash) {
+  throw new Error("The configured RPC does not point to Solana devnet");
+}
+const signer = loadSigner("deployer");
+const provider = new anchor.AnchorProvider(
+  connection,
+  new anchor.Wallet(signer),
+  { commitment: "confirmed" },
+);
+const program = new anchor.Program(DEPTH_IDL, provider);
+const accounts = program.account as unknown as {
+  protocol: { fetch(address: PublicKey): Promise<{ authority: PublicKey }> };
+  market: {
+    fetch(address: PublicKey): Promise<{
+      oracleAccount: PublicKey;
+      config: Record<string, anchor.BN | number | anchor.BN[]>;
+      status: Record<string, unknown>;
+      pendingOrders: number;
+    }>;
+  };
+  recoveryConfig: {
+    fetch(address: PublicKey): Promise<{
+      recoveryKey: number[];
+      signers: PublicKey[];
+    }>;
+  };
+};
+const market = marketAddress();
+const protocol = protocolAddress();
+const quoteQueue = quoteQueueAddress();
+const recoveryConfig = recoveryConfigAddress();
+const [protocolState, oracleInfo] = await Promise.all([
+  accounts.protocol.fetch(protocol),
+  connection.getAccountInfo(SOL_USD_PUSH_ACCOUNT),
+]);
+if (!protocolState.authority.equals(signer.publicKey)) {
+  throw new Error("The deployer is not the protocol authority");
+}
+if (pause || updateAge) {
+  const state = await accounts.market.fetch(market);
+  if (state.pendingOrders !== 0)
+    throw new Error("Finish pending orders before changing the market");
+  if (pause) {
+    if (!("paused" in state.status)) {
+      const signature = await program.methods
+        .pauseMarket()
+        .accountsPartial({ actor: signer.publicKey, protocol, market })
+        .rpc();
+      console.log(`Paused devnet market: ${signature}`);
+    }
+  } else {
+    if (!("paused" in state.status))
+      throw new Error("Pause the market before updating oracle age");
+    if (
+      state.config.maxOracleAgeSeconds.toString() !==
+      config.maxOracleAgeSeconds.toString()
+    ) {
+      const signature = await program.methods
+        .setOracleAge(config.maxOracleAgeSeconds)
+        .accountsPartial({ authority: signer.publicKey, protocol, market })
+        .rpc();
+      console.log(`Updated devnet oracle age: ${signature}`);
+    }
+  }
+  const verified = await accounts.market.fetch(market);
+  if (
+    !("paused" in verified.status) ||
+    (updateAge &&
+      verified.config.maxOracleAgeSeconds.toString() !==
+        config.maxOracleAgeSeconds.toString())
+  )
+    throw new Error("Market update was not confirmed");
+  console.log(
+    `Verified paused devnet market with ${verified.config.maxOracleAgeSeconds} second oracle limit`,
+  );
+  process.exit(0);
+}
+if (!oracleInfo) {
+  throw new Error("The sponsored Pyth SOL/USD account is unavailable");
+}
+const oracleAge = Math.floor(Date.now() / 1000) - solUsdPublishTime(oracleInfo);
+if (oracleAge < 0 || oracleAge > config.maxOracleAgeSeconds) {
+  throw new Error("The sponsored Pyth SOL/USD account is stale");
+}
+const existingMarket = await connection.getAccountInfo(market);
+if (checkOnly) {
+  console.log(
+    `Verified devnet authority and sponsored oracle for ${market.toBase58()}`,
+  );
+  console.log(`Market: ${existingMarket ? "present" : "not created"}`);
+  process.exit(0);
+}
+
 const rawCommittee = JSON.parse(await readFile(committeePath, "utf8"));
 if (!Array.isArray(rawCommittee) || rawCommittee.length !== 5) {
   throw new RangeError("The recovery committee needs five members");
@@ -156,59 +257,6 @@ if (
     .size !== 5
 ) {
   throw new RangeError("Recovery signer and encryption keys must be distinct");
-}
-
-const connection = new Connection(rpc, "confirmed");
-if ((await connection.getGenesisHash()) !== genesisHash) {
-  throw new Error("The configured RPC does not point to Solana devnet");
-}
-const signer = loadSigner("deployer");
-const provider = new anchor.AnchorProvider(
-  connection,
-  new anchor.Wallet(signer),
-  { commitment: "confirmed" },
-);
-const program = new anchor.Program(DEPTH_IDL, provider);
-const accounts = program.account as unknown as {
-  protocol: { fetch(address: PublicKey): Promise<{ authority: PublicKey }> };
-  market: {
-    fetch(address: PublicKey): Promise<{
-      oracleAccount: PublicKey;
-      config: Record<string, anchor.BN | number | anchor.BN[]>;
-    }>;
-  };
-  recoveryConfig: {
-    fetch(address: PublicKey): Promise<{
-      recoveryKey: number[];
-      signers: PublicKey[];
-    }>;
-  };
-};
-const market = marketAddress();
-const protocol = protocolAddress();
-const quoteQueue = quoteQueueAddress();
-const recoveryConfig = recoveryConfigAddress();
-const [protocolState, oracleInfo] = await Promise.all([
-  accounts.protocol.fetch(protocol),
-  connection.getAccountInfo(SOL_USD_PUSH_ACCOUNT),
-]);
-if (!protocolState.authority.equals(signer.publicKey)) {
-  throw new Error("The deployer is not the protocol authority");
-}
-if (!oracleInfo) {
-  throw new Error("The sponsored Pyth SOL/USD account is unavailable");
-}
-const oracleAge = Math.floor(Date.now() / 1000) - solUsdPublishTime(oracleInfo);
-if (oracleAge < 0 || oracleAge > config.maxOracleAgeSeconds) {
-  throw new Error("The sponsored Pyth SOL/USD account is stale");
-}
-const existingMarket = await connection.getAccountInfo(market);
-if (checkOnly) {
-  console.log(
-    `Verified devnet authority and sponsored oracle for ${market.toBase58()}`,
-  );
-  console.log(`Market: ${existingMarket ? "present" : "not created"}`);
-  process.exit(0);
 }
 
 type ShareFile = {

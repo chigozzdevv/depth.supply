@@ -17,6 +17,7 @@ export const computations = [
   "release_backstop",
   "release_quote",
   "reserve_quote_v2",
+  "rotate_quote",
   "seal_clearing",
   "seal_market",
   "seal_trade_fees",
@@ -24,7 +25,7 @@ export const computations = [
   "view_balance",
   "view_fill",
   "view_market",
-  "view_quote"
+  "view_quote",
 ] as const;
 
 export function computationName(name: string) {

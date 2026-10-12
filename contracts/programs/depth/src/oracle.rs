@@ -184,21 +184,41 @@ mod tests {
     }
 
     fn read_update(update: &PriceUpdateV2, owner: &Pubkey) -> Result<OraclePrice> {
+        read_with_age(update, owner, 30)
+    }
+
+    fn read_with_age(update: &PriceUpdateV2, owner: &Pubkey, max_age: u32) -> Result<OraclePrice> {
         let key = Pubkey::new_unique();
         let mut lamports = 1;
         let mut data = PRICE_UPDATE_DISCRIMINATOR.to_vec();
         update.serialize(&mut data).unwrap();
         data.resize(134, 0);
         let info = AccountInfo::new(&key, false, false, &mut lamports, &mut data, owner, false);
+        let mut policy = config();
+        policy.max_oracle_age_seconds = max_age;
         read_price(
             &info,
-            &config(),
+            &policy,
             &Clock {
                 slot: 50,
                 unix_timestamp: 1_000,
                 ..Clock::default()
             },
         )
+    }
+
+    #[test]
+    fn extended_age_tolerates_delays_without_disabling_the_cutoff() {
+        let mut price = update();
+        price.price_message.publish_time = 674;
+        assert!(read_with_age(&price, &PYTH_RECEIVER, 300).is_err());
+        assert!(read_with_age(&price, &PYTH_RECEIVER, 600).is_ok());
+        price.price_message.publish_time = 400;
+        assert!(read_with_age(&price, &PYTH_RECEIVER, 600).is_ok());
+        price.price_message.publish_time = 399;
+        assert!(read_with_age(&price, &PYTH_RECEIVER, 600).is_err());
+        price.price_message.publish_time = 1_001;
+        assert!(read_with_age(&price, &PYTH_RECEIVER, 600).is_err());
     }
 
     #[test]

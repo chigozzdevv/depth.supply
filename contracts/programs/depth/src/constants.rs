@@ -34,6 +34,7 @@ pub const COMP_DEF_OFFSET_VIEW_FILL: u32 = comp_def_offset("view_fill");
 
 pub const MIN_SOL_PRICE_E8: u64 = 100_000_000;
 pub const MAX_SOL_PRICE_E8: u64 = 100_000_000_000_000;
+pub const MAX_ORACLE_AGE_SECONDS: u32 = if cfg!(feature = "devnet") { 600 } else { 300 };
 
 pub const SOL_USD_FEED_ID: [u8; 32] = [
     0xef, 0x0d, 0x8b, 0x6f, 0xda, 0x2c, 0xeb, 0xa4, 0x1d, 0xa1, 0x5d, 0x40, 0x95, 0xd1, 0xda, 0x39,

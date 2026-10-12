@@ -3,7 +3,7 @@ use anchor_spl::token::TokenAccount;
 use sha3::{Digest, Sha3_256};
 
 use crate::{
-    constants::SOL_USD_FEED_ID,
+    constants::{MAX_ORACLE_AGE_SECONDS, SOL_USD_FEED_ID},
     error::ErrorCode,
     oracle::{read_price, OraclePrice},
     state::{
@@ -206,6 +206,28 @@ pub fn revise_market_handler(ctx: Context<ReviseMarket>, config: MarketConfig) -
         .revision
         .checked_add(1)
         .ok_or(ErrorCode::RevisionOverflow)?;
+    Ok(())
+}
+
+pub fn set_oracle_age_handler(ctx: Context<ReviseMarket>, max_age_seconds: u32) -> Result<()> {
+    let market = &mut ctx.accounts.market;
+    require!(
+        market.status == MarketStatus::Paused,
+        ErrorCode::MarketNotPaused
+    );
+    require!(market.pending_orders == 0, ErrorCode::WrongOrderStatus);
+    require!(
+        market.config.max_oracle_age_seconds != max_age_seconds,
+        ErrorCode::UnchangedConfig
+    );
+    let mut config = market.config;
+    config.max_oracle_age_seconds = max_age_seconds;
+    validate_config(&config)?;
+    market.revision = market
+        .revision
+        .checked_add(1)
+        .ok_or(ErrorCode::RevisionOverflow)?;
+    market.config = config;
     Ok(())
 }
 
@@ -553,7 +575,7 @@ fn validate_config(config: &MarketConfig) -> Result<()> {
         ErrorCode::InvalidMarketConfig
     );
     require!(
-        (1..=300).contains(&config.max_oracle_age_seconds)
+        (1..=MAX_ORACLE_AGE_SECONDS).contains(&config.max_oracle_age_seconds)
             && (1..=500).contains(&config.max_confidence_bps)
             && (1..=1_000).contains(&config.max_quote_deviation_bps),
         ErrorCode::InvalidMarketConfig
@@ -582,4 +604,45 @@ fn validate_config(config: &MarketConfig) -> Result<()> {
         ErrorCode::InvalidMarketConfig
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod age_tests {
+    use super::*;
+
+    fn config(age: u32) -> MarketConfig {
+        MarketConfig {
+            initial_margin_bps: 1_000,
+            maintenance_margin_bps: 500,
+            liquidation_fee_bps: 50,
+            trade_fee_bps: 5,
+            insurance_fee_bps: 1,
+            max_account_notional: 1_000_000_000,
+            max_market_notional: 10_000_000_000,
+            max_oracle_age_seconds: age,
+            max_confidence_bps: 100,
+            max_quote_deviation_bps: 500,
+            max_quote_lifetime_seconds: 120,
+            max_order_queue_seconds: 300,
+            funding_interval_seconds: 3_600,
+            funding_rate_cap_bps: 50,
+            quote_tiers: [1_000_000, 10_000_000, 100_000_000, 1_000_000_000],
+            backstop_min_collateral: 100_000_000,
+        }
+    }
+
+    #[test]
+    fn oracle_age_is_bounded_for_the_selected_build() {
+        assert!(validate_config(&config(0)).is_err());
+        assert!(validate_config(&config(300)).is_ok());
+        assert_eq!(
+            validate_config(&config(326)).is_ok(),
+            cfg!(feature = "devnet")
+        );
+        assert_eq!(
+            validate_config(&config(600)).is_ok(),
+            cfg!(feature = "devnet")
+        );
+        assert!(validate_config(&config(601)).is_err());
+    }
 }

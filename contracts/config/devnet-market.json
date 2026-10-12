@@ -6,7 +6,7 @@
   "insuranceFeeBps": 1,
   "maxAccountNotional": "1000000000",
   "maxMarketNotional": "10000000000",
-  "maxOracleAgeSeconds": 300,
+  "maxOracleAgeSeconds": 600,
   "maxConfidenceBps": 100,
   "maxQuoteDeviationBps": 500,
   "maxQuoteLifetimeSeconds": 120,

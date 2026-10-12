@@ -7135,6 +7135,51 @@ export type Depth = {
       "args": []
     },
     {
+      "name": "initRotateQuoteCompDef",
+      "discriminator": [
+        57,
+        253,
+        224,
+        105,
+        220,
+        148,
+        234,
+        162
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mxeAccount",
+          "writable": true
+        },
+        {
+          "name": "compDefAccount",
+          "writable": true
+        },
+        {
+          "name": "addressLookupTable",
+          "writable": true
+        },
+        {
+          "name": "lutProgram",
+          "address": "AddressLookupTab1e1111111111111111111111111"
+        },
+        {
+          "name": "arciumProgram",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initSealClearingCompDef",
       "discriminator": [
         216,
@@ -11901,6 +11946,123 @@ export type Depth = {
       ]
     },
     {
+      "name": "renewQuote",
+      "discriminator": [
+        36,
+        4,
+        132,
+        26,
+        240,
+        105,
+        255,
+        45
+      ],
+      "accounts": [
+        {
+          "name": "actor",
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "grant",
+          "optional": true
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quote.market",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "expiry",
+          "type": "i64"
+        }
+      ]
+    },
+    {
       "name": "reportIncident",
       "discriminator": [
         126,
@@ -13458,6 +13620,95 @@ export type Depth = {
       ]
     },
     {
+      "name": "resetQuoteReplacement",
+      "discriminator": [
+        137,
+        154,
+        154,
+        234,
+        17,
+        139,
+        76,
+        116
+      ],
+      "accounts": [
+        {
+          "name": "actor",
+          "signer": true
+        },
+        {
+          "name": "grant",
+          "optional": true
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quote.market",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "successor",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "successor.market",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "successor.maker",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "successor.nonce",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "resumeMarket",
       "discriminator": [
         198,
@@ -14207,6 +14458,479 @@ export type Depth = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "rotateQuote",
+      "discriminator": [
+        7,
+        177,
+        67,
+        58,
+        253,
+        243,
+        153,
+        4
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "grant",
+          "optional": true
+        },
+        {
+          "name": "marketAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "prior",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "prior.market",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "prior.maker",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "prior.nonce",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "signPdaAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  65,
+                  114,
+                  99,
+                  105,
+                  117,
+                  109,
+                  83,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114,
+                  65,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mxeAccount"
+        },
+        {
+          "name": "mempoolAccount",
+          "writable": true
+        },
+        {
+          "name": "executingPool",
+          "writable": true
+        },
+        {
+          "name": "computationAccount",
+          "writable": true
+        },
+        {
+          "name": "compDefAccount"
+        },
+        {
+          "name": "clusterAccount",
+          "writable": true
+        },
+        {
+          "name": "poolAccount",
+          "writable": true,
+          "address": "G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC"
+        },
+        {
+          "name": "clockAccount",
+          "writable": true,
+          "address": "7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "arciumProgram",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        }
+      ],
+      "args": [
+        {
+          "name": "computationOffset",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "rotateQuoteCallback",
+      "discriminator": [
+        191,
+        31,
+        102,
+        22,
+        246,
+        106,
+        255,
+        72
+      ],
+      "accounts": [
+        {
+          "name": "arciumProgram",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "compDefAccount"
+        },
+        {
+          "name": "mxeAccount"
+        },
+        {
+          "name": "computationAccount"
+        },
+        {
+          "name": "clusterAccount"
+        },
+        {
+          "name": "instructionsSysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "marketAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market_account.market",
+                "account": "marketAccount"
+              },
+              {
+                "kind": "account",
+                "path": "market_account.owner",
+                "account": "marketAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quote.market",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "prior",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "prior.market",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "prior.maker",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "prior.nonce",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "output",
+          "type": {
+            "defined": {
+              "name": "signedComputationOutputs",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": {
+                    "defined": {
+                      "name": "rotateQuoteOutput"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     {
       "name": "sealClearing",
@@ -15928,6 +16652,110 @@ export type Depth = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "setOracleAge",
+      "discriminator": [
+        67,
+        228,
+        97,
+        154,
+        143,
+        16,
+        161,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "protocol",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "maxAgeSeconds",
+          "type": "u32"
+        }
+      ]
     },
     {
       "name": "settleAllocation",
@@ -23127,6 +23955,75 @@ export type Depth = {
     },
     {
       "name": "reserveQuoteV2OutputStruct0",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field0",
+            "type": {
+              "defined": {
+                "name": "mxeEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "3"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field1",
+            "type": {
+              "defined": {
+                "name": "sharedEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "3"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field2",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "field3",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "rotateQuoteOutput",
+      "docs": [
+        "The output of the callback instruction. Provided as a struct with ordered fields",
+        "as anchor does not support tuples and tuple structs yet."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field0",
+            "type": {
+              "defined": {
+                "name": "rotateQuoteOutputStruct0"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "rotateQuoteOutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [

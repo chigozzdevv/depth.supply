@@ -26,6 +26,12 @@ export function quoteBounds(maximum: number) {
       maximum - driftBps - Math.ceil((maximum * driftBps) / 10000),
   };
 }
+
+export function quoteSizes(tiers: bigint[], capacity: bigint): bigint[] {
+  if (capacity < (tiers[0] ?? 1n)) return [];
+  const ceiling = tiers.findIndex((size) => size >= capacity);
+  return tiers.slice(0, ceiling < 0 ? tiers.length : ceiling + 1);
+}
 export const PYTH_PUSH_ORACLE_ID = new PublicKey(
   "pythWSnswVUd12oZpeFP8e9CVaEqJg25g1Vtc2biRsT",
 );

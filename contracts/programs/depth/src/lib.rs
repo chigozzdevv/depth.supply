@@ -108,6 +108,10 @@ pub mod depth {
         market::revise_market_handler(ctx, config)
     }
 
+    pub fn set_oracle_age(ctx: Context<ReviseMarket>, max_age_seconds: u32) -> Result<()> {
+        market::set_oracle_age_handler(ctx, max_age_seconds)
+    }
+
     pub fn refresh_oracle(ctx: Context<RefreshOracle>) -> Result<()> {
         market::refresh_oracle_handler(ctx)
     }

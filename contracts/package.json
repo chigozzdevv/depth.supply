@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "build": "node --env-file-if-exists=../.env.local scripts/build.mjs",
+    "build:devnet": "node --env-file-if-exists=../.env.local scripts/build.mjs --devnet",
     "deploy:devnet": "node --env-file-if-exists=../.env.local scripts/deploy.mjs",
     "init:defs": "node --env-file-if-exists=../.env.local scripts/defs.mjs",
     "init:protocol": "node --env-file-if-exists=../.env.local scripts/protocol.mjs",

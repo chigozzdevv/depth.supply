@@ -7129,6 +7129,51 @@
       "args": []
     },
     {
+      "name": "init_rotate_quote_comp_def",
+      "discriminator": [
+        57,
+        253,
+        224,
+        105,
+        220,
+        148,
+        234,
+        162
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mxe_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account",
+          "writable": true
+        },
+        {
+          "name": "address_lookup_table",
+          "writable": true
+        },
+        {
+          "name": "lut_program",
+          "address": "AddressLookupTab1e1111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "init_seal_clearing_comp_def",
       "discriminator": [
         216,
@@ -11895,6 +11940,123 @@
       ]
     },
     {
+      "name": "renew_quote",
+      "discriminator": [
+        36,
+        4,
+        132,
+        26,
+        240,
+        105,
+        255,
+        45
+      ],
+      "accounts": [
+        {
+          "name": "actor",
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "grant",
+          "optional": true
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quote.market",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "QuoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "expiry",
+          "type": "i64"
+        }
+      ]
+    },
+    {
       "name": "report_incident",
       "discriminator": [
         126,
@@ -13452,6 +13614,95 @@
       ]
     },
     {
+      "name": "reset_quote_replacement",
+      "discriminator": [
+        137,
+        154,
+        154,
+        234,
+        17,
+        139,
+        76,
+        116
+      ],
+      "accounts": [
+        {
+          "name": "actor",
+          "signer": true
+        },
+        {
+          "name": "grant",
+          "optional": true
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quote.market",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "QuoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "successor",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "successor.market",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "successor.maker",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "successor.nonce",
+                "account": "QuoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "resume_market",
       "discriminator": [
         198,
@@ -14201,6 +14452,479 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "rotate_quote",
+      "discriminator": [
+        7,
+        177,
+        67,
+        58,
+        253,
+        243,
+        153,
+        4
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "grant",
+          "optional": true
+        },
+        {
+          "name": "market_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "QuoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "QuoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "prior",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "prior.market",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "prior.maker",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "prior.nonce",
+                "account": "QuoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "sign_pda_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  65,
+                  114,
+                  99,
+                  105,
+                  117,
+                  109,
+                  83,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114,
+                  65,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "mempool_account",
+          "writable": true
+        },
+        {
+          "name": "executing_pool",
+          "writable": true
+        },
+        {
+          "name": "computation_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "cluster_account",
+          "writable": true
+        },
+        {
+          "name": "pool_account",
+          "writable": true,
+          "address": "G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC"
+        },
+        {
+          "name": "clock_account",
+          "writable": true,
+          "address": "7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        }
+      ],
+      "args": [
+        {
+          "name": "computation_offset",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "rotate_quote_callback",
+      "discriminator": [
+        191,
+        31,
+        102,
+        22,
+        246,
+        106,
+        255,
+        72
+      ],
+      "accounts": [
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "computation_account"
+        },
+        {
+          "name": "cluster_account"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116,
+                  45,
+                  97,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market_account.market",
+                "account": "MarketAccount"
+              },
+              {
+                "kind": "account",
+                "path": "market_account.owner",
+                "account": "MarketAccount"
+              }
+            ]
+          }
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quote.market",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "QuoteRecord"
+              }
+            ]
+          }
+        },
+        {
+          "name": "prior",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "prior.market",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "prior.maker",
+                "account": "QuoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "prior.nonce",
+                "account": "QuoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "output",
+          "type": {
+            "defined": {
+              "name": "SignedComputationOutputs",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": {
+                    "defined": {
+                      "name": "RotateQuoteOutput"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
     },
     {
       "name": "seal_clearing",
@@ -15922,6 +16646,110 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "set_oracle_age",
+      "discriminator": [
+        67,
+        228,
+        97,
+        154,
+        143,
+        16,
+        161,
+        47
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "protocol"
+          ]
+        },
+        {
+          "name": "protocol",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  116,
+                  111,
+                  99,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "market",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "max_age_seconds",
+          "type": "u32"
+        }
+      ]
     },
     {
       "name": "settle_allocation",
@@ -23121,6 +23949,75 @@
     },
     {
       "name": "ReserveQuoteV2OutputStruct0",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "MXEEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "3"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field_1",
+            "type": {
+              "defined": {
+                "name": "SharedEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "3"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field_2",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "field_3",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RotateQuoteOutput",
+      "docs": [
+        "The output of the callback instruction. Provided as a struct with ordered fields",
+        "as anchor does not support tuples and tuple structs yet."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "RotateQuoteOutputStruct0"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "RotateQuoteOutputStruct0",
       "type": {
         "kind": "struct",
         "fields": [
