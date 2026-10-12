@@ -549,6 +549,32 @@ same balance through several apps or markets. The program's account locks
 and the circuit's capacity calculation enforce this. Registration alone
 does not make a quote active.
 
+The maker worker prepares and privately validates the successor before stopping
+the prior quote. With sufficient collateral, inventory allowance and book capacity, it activates the
+successor before releasing the prior reservation; a full book requires releasing
+the prior quote first.
+Both quotes and their private terms remain in its durable checkpoint during the
+transition. A shutdown or hedge failure stops both quotes. Inventory reads follow
+the canonical account version; a reservation-only version change does not trigger
+another repricing cycle.
+
+Preparation validates prices inside a narrower oracle band, reserving up to
+25 bps for price movement before admission. Admission rejects larger movement
+or a changed market policy, while reservation callbacks and trades retain their
+exact snapshot checks. The published execution deviation limit remains unchanged.
+
+Terminal quotes with no attached orders can be closed by their maker owner or
+original quote payer. The original payer receives rent through the operator close
+instruction, including after grant revocation; this grants no collateral or view
+authority. Workers batch eligible closures and preserve unfinished replacement
+links. Arcium computation charges and transaction fees are spent costs and are
+not refunded by rent recycling.
+
+The owner can renew an active, unexpired backstop for at most 24 hours from the
+current time without changing capacity or reserving collateral again. Renewal
+requires an idle market and the canonical active offer; an expired offer must
+complete the normal release and reservation flow.
+
 ### Managed maker automation
 
 An application integrates managed workers through `maker.automation.configure`,

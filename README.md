@@ -42,6 +42,30 @@ pnpm --dir server start
 pnpm dev
 ```
 
+For the complete local demo, `pnpm services:start` runs the API, settlement
+keeper, maker workers, and client with crash recovery. Use `pnpm services:status`
+to inspect the processes and `pnpm services:stop` for orderly shutdown.
+Runtime logs and process state live in the ignored `data/runtime/` directory.
+The Mac must remain awake; public hosting is configured separately.
+
+`GET /health` checks API liveness. `GET /ready` checks worker health, oracle
+freshness, funding, market status, and live quote availability. The keeper and
+maker also expose `/healthz` on their configured local health ports.
+
+The API shares one bounded RPC queue across the browser and workers.
+`SOLANA_RPC_RPS` sets its provider request rate; short read caching avoids
+duplicate concurrent queries, and signed submissions retain their original bytes.
+
+For an authority-operated devnet demo, `DEPTH_DEMO_MAINTENANCE=true` renews the
+authority's unexpired backstop before expiry and resumes stale-oracle or
+missed-funding incidents after prices recover. It does not resume manual or
+safety pauses, revive expired backstops, or operate on mainnet.
+
+`pnpm devnet:quote --hosted` verifies a trade, the managed Hyperliquid testnet
+hedge, maker process recovery, position closure, and hedge unwind against the
+running services. Interrupted operations retain their IDs in the existing devnet
+journal and resume with `--hosted --resume`.
+
 The client uses Next.js, Tailwind CSS, Lucide icons, Solana Wallet Standard,
 and Lightweight Charts. `/demo/trade` supports funding, encrypted trades,
 position management, and canonical operation receipts. `/demo/maker` supports
