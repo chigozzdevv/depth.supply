@@ -9,6 +9,7 @@ import type { AccountView } from "@/shared/depth/account";
 const owner = new PublicKey("8fB17UvuSQSnAyvBjRwwgQgdhwHLQMqCrfQ7tqfGF5BJ");
 let session: {
   connected: boolean;
+  connecting?: boolean;
   verifying: boolean;
   busy: string;
   local?: boolean;
@@ -27,7 +28,7 @@ mock.module("@solana/wallet-adapter-react", () => ({
   useWallet: () => ({
     publicKey: session.connected ? owner : null,
     connected: session.connected,
-    connecting: false,
+    connecting: Boolean(session.connecting),
     wallet: {
       adapter: { name: "Phantom", icon: "data:image/png;base64,AAAA" },
     },
@@ -146,6 +147,21 @@ test("wallet logos belong to selection options and deployment preloading has no 
     disconnected,
     /class="wallet-option"[^>]*><img[^>]*class="wallet-icon"/,
   );
+});
+
+test("a pending wallet connection can be cancelled without submitting a second request", () => {
+  session = { connected: false, connecting: true, verifying: false, busy: "" };
+  const pending = renderToStaticMarkup(<WalletButton />);
+  assert.match(pending, /Connecting…/);
+  assert.match(pending, /Cancel connection/);
+  assert.match(pending, /class="wallet-option" disabled=""/);
+  session = { connected: true, connecting: true, verifying: false, busy: "" };
+  const connected = renderToStaticMarkup(<WalletButton />);
+  const trigger = connected.match(
+    /<button[^>]*class="terminal-wallet"[^>]*>.*?<\/button>/s,
+  )![0];
+  assert.match(trigger, /8fB17…F5BJ/);
+  assert.doesNotMatch(trigger, /Connecting/);
 });
 
 test("funds show a proven empty account without requesting balance decryption", () => {
