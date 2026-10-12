@@ -240,5 +240,23 @@ if (action === "start") {
   }, 15_000);
   process.once("SIGTERM", shutdown);
   process.once("SIGINT", shutdown);
-  for (const definition of definitions) await launch(definition);
+  for (const definition of definitions) {
+    await launch(definition);
+    if (definition[0] === "api") {
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        try {
+          const response = await fetch(definition[3], {
+            signal: AbortSignal.timeout(1000),
+          });
+          if (response.ok) break;
+        } catch {}
+        if (Date.now() >= deadline) {
+          await shutdown(new Error("API did not become ready during startup"));
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+    }
+  }
 } else throw new Error("Usage: services.mjs start|stop|status");

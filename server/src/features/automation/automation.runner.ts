@@ -150,6 +150,11 @@ export class AutomationRunner {
   constructor(
     readonly store: AutomationStore,
     private readonly factory: AutomationFactory,
+    private readonly report?: (event: {
+      owner: string;
+      reason: string;
+      causes: string[];
+    }) => void,
   ) {}
   has = (owner: string) => this.bots.has(owner) || this.tasks.has(owner);
   health(now = Date.now()) {
@@ -256,6 +261,16 @@ export class AutomationRunner {
         this.bots.delete(owner);
       }
     } catch (error) {
+      this.report?.({
+        owner,
+        reason: automationError(error),
+        causes:
+          error instanceof AggregateError
+            ? error.errors.map(automationError)
+            : error instanceof Error && error.cause
+              ? [automationError(error.cause)]
+              : [],
+      });
       const attempts = (this.retries.get(owner)?.attempts ?? 0) + 1;
       this.retries.set(owner, {
         attempts,

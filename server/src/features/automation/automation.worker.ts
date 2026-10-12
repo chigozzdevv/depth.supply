@@ -18,7 +18,15 @@ const store = await AutomationStore.open(
   config.secret,
   config.environment,
 );
-const runner = new AutomationRunner(store, automationFactory(config));
+const runner = new AutomationRunner(
+  store,
+  automationFactory(config),
+  (event) => {
+    process.stderr.write(
+      `${JSON.stringify({ at: new Date().toISOString(), event: "maker_error", ...event })}\n`,
+    );
+  },
+);
 const funding = new AutomationFunding(
   store,
   chainConnection(`${config.serviceUrl.replace(/\/+$/, "")}/rpc`),
