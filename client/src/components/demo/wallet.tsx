@@ -1,18 +1,21 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useContext, useEffect, useId, useRef, useState } from "react";
 import Image from "next/image";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletReadyState } from "@solana/wallet-adapter-base";
 import { Wallet, X } from "lucide-react";
 import { PrivateViews } from "@/components/demo/views";
 import { short } from "@/shared/depth/format";
+import { WalletConnection } from "@/shared/depth/wallet";
 
 export function WalletButton({
   label = "Connect wallet",
   className = "terminal-wallet",
 }: { label?: string; className?: string } = {}) {
   const wallet = useWallet();
+  const connection = useContext(WalletConnection);
+  const connecting = wallet.connecting || Boolean(connection?.connecting);
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
@@ -41,7 +44,7 @@ export function WalletButton({
         {!wallet.connected && <Wallet size={15} />}
         {wallet.publicKey
           ? short(wallet.publicKey.toBase58())
-          : wallet.connecting
+          : connecting
             ? "Connecting…"
             : label}
       </button>
@@ -95,18 +98,25 @@ export function WalletButton({
                 <button
                   key={adapter.name}
                   className="wallet-option"
-                  disabled={
-                    wallet.connecting &&
-                    wallet.wallet?.adapter.name === adapter.name
-                  }
+                  disabled={connecting}
                   onClick={() => {
+                    if (!connection)
+                      throw new Error(
+                        "Wallet connection provider is unavailable",
+                      );
                     setError("");
-                    if (wallet.wallet?.adapter.name === adapter.name) {
-                      void wallet
-                        .connect()
-                        .then(() => setOpen(false))
-                        .catch((cause) => setError(String(cause)));
-                    } else wallet.select(adapter.name);
+                    void connection
+                      .connect(adapter, wallet.select)
+                      .then(() => {
+                        if (adapter.connected) setOpen(false);
+                      })
+                      .catch((cause) =>
+                        setError(
+                          cause instanceof Error
+                            ? cause.message
+                            : "Wallet connection failed",
+                        ),
+                      );
                   }}
                 >
                   <Image
@@ -121,11 +131,15 @@ export function WalletButton({
                 </button>
               ))}
             </div>
-            {wallet.connecting && (
+            {connecting && (
               <button
                 className="terminal-button full"
                 onClick={() => {
-                  wallet.select(null);
+                  if (!connection)
+                    throw new Error(
+                      "Wallet connection provider is unavailable",
+                    );
+                  connection.reset();
                   setOpen(false);
                 }}
               >
