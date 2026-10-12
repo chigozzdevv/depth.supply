@@ -18,6 +18,8 @@ mock.module("@/shared/depth/session", () => ({
   }),
 }));
 const { Positions } = await import("@/components/trade/positions");
+const { Pnl } = await import("@/components/trade/pnl");
+const { positionPnl } = await import("@depthhq/sdk");
 const position = {
   id: "sample",
   status: "ready" as const,
@@ -67,4 +69,41 @@ test("collateral without exposure is not presented as a closable position", () =
   assert.match(html, /20\.00.*?USDC/);
   assert.match(html, /Release margin/);
   assert.doesNotMatch(html, /Close position|Review operation|Entry price/);
+});
+
+test("the position table and share card retain a sub-cent loss and its collateral return", () => {
+  const small = {
+    ...position,
+    position: 27_750_000n,
+    entryPriceE8: 10_808_000_000n,
+    collateral: 1_000_000n,
+  };
+  const view = {
+    ...market,
+    market: { ...market.market!, oracle_price_e8: "10804000000" },
+  };
+  const result = positionPnl(small, 10_804_000_000n, 0n);
+  assert.equal(result.net, -1_110n);
+  assert.equal(result.returnBps, -11n);
+  const table = renderToStaticMarkup(
+    <Positions account={{ ...account, position: small }} view={view} />,
+  );
+  const card = renderToStaticMarkup(
+    <Pnl
+      card={{
+        result,
+        environment: "devnet",
+        transaction: async () => {
+          throw new Error("Not requested during rendering");
+        },
+      }}
+      open={false}
+      onClose={() => {}}
+    />,
+  );
+  assert.match(table, /-0\.00111 USDC/);
+  assert.match(card, /-0\.00111 USDC/);
+  assert.match(card, /-0\.11<span class="pnl-percent">%<\/span>/);
+  assert.doesNotMatch(table, /-0\.00 USDC/);
+  assert.doesNotMatch(card, /-0\.00 USDC/);
 });
