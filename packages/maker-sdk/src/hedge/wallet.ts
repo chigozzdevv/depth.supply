@@ -5,8 +5,50 @@ export type EthereumProvider = {
 };
 export async function connect_hyperliquid(
   provider: EthereumProvider,
+  options: { timeoutMs?: number; signal?: AbortSignal } = {},
 ): Promise<AbstractViemJsonRpcAccount> {
-  const accounts = await provider.request({ method: "eth_requestAccounts" });
+  const timeoutMs = options.timeoutMs ?? 60_000;
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300_000)
+    throw new RangeError("Wallet timeout must be 1 to 300000 milliseconds");
+  const request = (input: Parameters<EthereumProvider["request"]>[0]) =>
+    new Promise<unknown>((resolve, reject) => {
+      const signal = options.signal;
+      if (signal?.aborted) {
+        reject(new Error("Wallet connection cancelled"));
+        return;
+      }
+      let settled = false;
+      const finish = (action: () => void) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", abort);
+        action();
+      };
+      const abort = () =>
+        finish(() => reject(new Error("Wallet connection cancelled")));
+      const timer = setTimeout(
+        () =>
+          finish(() =>
+            reject(
+              new Error(
+                "Wallet did not respond. Open the extension and resolve its pending request.",
+              ),
+            ),
+          ),
+        timeoutMs,
+      );
+      signal?.addEventListener("abort", abort, { once: true });
+      try {
+        provider.request(input).then(
+          (value) => finish(() => resolve(value)),
+          (cause) => finish(() => reject(cause)),
+        );
+      } catch (cause) {
+        finish(() => reject(cause));
+      }
+    });
+  const accounts = await request({ method: "eth_requestAccounts" });
   if (
     !Array.isArray(accounts) ||
     typeof accounts[0] !== "string" ||
@@ -15,7 +57,7 @@ export async function connect_hyperliquid(
     throw new Error("The Ethereum wallet did not provide an account");
   const address = accounts[0] as `0x${string}`;
   const check = async () => {
-    const current = await provider.request({ method: "eth_accounts" });
+    const current = await request({ method: "eth_accounts" });
     if (
       !Array.isArray(current) ||
       typeof current[0] !== "string" ||
@@ -29,7 +71,7 @@ export async function connect_hyperliquid(
       return [address];
     },
     async getChainId() {
-      const chain = await provider.request({ method: "eth_chainId" });
+      const chain = await request({ method: "eth_chainId" });
       if (
         typeof chain !== "string" ||
         !/^0x[0-9a-fA-F]+$/.test(chain) ||
@@ -40,7 +82,7 @@ export async function connect_hyperliquid(
     },
     async signTypedData(params) {
       await check();
-      const signature = await provider.request({
+      const signature = await request({
         method: "eth_signTypedData_v4",
         params: [
           address,
