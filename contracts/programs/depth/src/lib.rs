@@ -150,6 +150,10 @@ pub mod depth {
         backstop::renew_backstop_handler(ctx, expiry)
     }
 
+    pub fn renew_quote(ctx: Context<RenewQuote>, expiry: i64) -> Result<()> {
+        quote::renew_quote_handler(ctx, expiry)
+    }
+
     pub fn init_offer_backstop_comp_def(ctx: Context<InitOfferBackstopCompDef>) -> Result<()> {
         backstop::init_offer_backstop_comp_def_handler(ctx)
     }
@@ -557,6 +561,22 @@ pub mod depth {
         reserve::init_reserve_quote_comp_def_handler(ctx)
     }
 
+    pub fn init_rotate_quote_comp_def(ctx: Context<InitRotateQuoteCompDef>) -> Result<()> {
+        rotation::init_rotate_quote_comp_def_handler(ctx)
+    }
+
+    pub fn rotate_quote(ctx: Context<RotateQuote>, computation_offset: u64) -> Result<()> {
+        rotation::rotate_quote_handler(ctx, computation_offset)
+    }
+
+    #[arcium_callback(encrypted_ix = "rotate_quote")]
+    pub fn rotate_quote_callback(
+        ctx: Context<RotateQuoteCallback>,
+        output: SignedComputationOutputs<RotateQuoteOutput>,
+    ) -> Result<()> {
+        rotation::rotate_quote_callback_handler(ctx, output)
+    }
+
     pub fn init_release_quote_comp_def(ctx: Context<InitReleaseQuoteCompDef>) -> Result<()> {
         reserve::init_release_quote_comp_def_handler(ctx)
     }
@@ -582,6 +602,10 @@ pub mod depth {
         successor_nonce: u64,
     ) -> Result<()> {
         reserve::begin_quote_replacement_handler(ctx, successor_nonce)
+    }
+
+    pub fn reset_quote_replacement(ctx: Context<ResetQuoteReplacement>) -> Result<()> {
+        reserve::reset_quote_replacement_handler(ctx)
     }
 
     pub fn release_quote(ctx: Context<ReleaseQuote>, computation_offset: u64) -> Result<()> {

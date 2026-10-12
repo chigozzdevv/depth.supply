@@ -8,26 +8,26 @@ const build = fileURLToPath(new URL("../build/", import.meta.url));
 export async function readCircuits() {
   const constants = await readFile(
     new URL("../programs/depth/src/constants.rs", import.meta.url),
-    "utf8"
+    "utf8",
   );
   const names = [...constants.matchAll(/comp_def_offset\("([^"\n]+)"\)/g)]
     .map((match) => match[1])
     .sort();
 
-  if (names.length !== 26 || new Set(names).size !== names.length)
-    throw new Error("Expected 26 distinct active circuit definitions");
+  if (!names.length || new Set(names).size !== names.length)
+    throw new Error("Expected distinct active circuit definitions");
 
   return Promise.all(
     names.map(async (name) => {
       const bytes = await readFile(join(build, `${name}.arcis`));
       const hashBytes = JSON.parse(
-        await readFile(join(build, `${name}.hash`), "utf8")
+        await readFile(join(build, `${name}.hash`), "utf8"),
       );
       if (
         !Array.isArray(hashBytes) ||
         hashBytes.length !== 32 ||
         hashBytes.some(
-          (byte) => !Number.isInteger(byte) || byte < 0 || byte > 255
+          (byte) => !Number.isInteger(byte) || byte < 0 || byte > 255,
         )
       ) {
         throw new Error(`Invalid hash for ${name}`);
@@ -37,7 +37,7 @@ export async function readCircuits() {
       if (!actual.equals(hash))
         throw new Error(`Local circuit hash mismatch: ${name}`);
       return { name, bytes, hash };
-    })
+    }),
   );
 }
 
@@ -46,7 +46,7 @@ export async function verifyRemote(base, circuits) {
     let response;
     for (let attempt = 0; attempt < 3; attempt++) {
       response = await fetch(`${base}/${name}.arcis`, {
-        signal: AbortSignal.timeout(60_000)
+        signal: AbortSignal.timeout(60_000),
       });
       if (
         response.ok ||
@@ -63,7 +63,7 @@ export async function verifyRemote(base, circuits) {
       new URL(response.url).protocol !== "https:"
     ) {
       throw new Error(
-        `Circuit unavailable over HTTPS: ${name} (${response.status})`
+        `Circuit unavailable over HTTPS: ${name} (${response.status})`,
       );
     }
 

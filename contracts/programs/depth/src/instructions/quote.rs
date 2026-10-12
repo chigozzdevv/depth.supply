@@ -168,6 +168,63 @@ pub(crate) fn snapshot_compatible(quote: &QuoteRecord, market: &Market) -> bool 
                 * u128::from((market.config.max_quote_deviation_bps / 4).min(25))
 }
 
+#[derive(Accounts)]
+pub struct RenewQuote<'info> {
+    pub actor: Signer<'info>,
+    #[account(seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    pub grant: Option<Box<Account<'info, OperatorGrant>>>,
+    #[account(mut, constraint = quote.market == market.key() @ ErrorCode::WrongMarket,
+        seeds = [b"quote", quote.market.as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()], bump = quote.bump)]
+    pub quote: Box<Account<'info, QuoteRecord>>,
+}
+
+pub fn renew_quote_handler(ctx: Context<RenewQuote>, expiry: i64) -> Result<()> {
+    let market = &ctx.accounts.market;
+    let quote = &mut ctx.accounts.quote;
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        quote.status == QuoteStatus::Active && quote.expiry > now,
+        ErrorCode::WrongQuoteStatus
+    );
+    require!(
+        market.status != MarketStatus::Paused && market.status != MarketStatus::Settling,
+        ErrorCode::InvalidQuote
+    );
+    require!(snapshot_compatible(quote, market), ErrorCode::InvalidQuote);
+    require!(
+        expiry > quote.expiry
+            && expiry.saturating_sub(now) <= i64::from(market.config.max_quote_lifetime_seconds),
+        ErrorCode::InvalidQuote
+    );
+    require!(
+        market.oracle_timestamp > 0
+            && now >= market.oracle_timestamp
+            && now.saturating_sub(market.oracle_timestamp)
+                <= i64::from(market.config.max_oracle_age_seconds),
+        ErrorCode::StaleOracle
+    );
+    require!(
+        ctx.accounts.actor.key() == quote.maker || ctx.accounts.actor.key() == quote.operator,
+        ErrorCode::Unauthorized
+    );
+    let version = authorize_operator(
+        ctx.accounts.actor.key(),
+        quote.maker,
+        quote.market,
+        quote.capacity,
+        expiry,
+        false,
+        ctx.accounts.grant.as_deref(),
+    )?;
+    require!(
+        ctx.accounts.actor.key() == quote.maker || version == quote.operator_version,
+        ErrorCode::Unauthorized
+    );
+    quote.expiry = expiry;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn submit_quote_handler(
     ctx: Context<SubmitQuote>,
@@ -195,8 +252,7 @@ pub fn submit_quote_handler(
     );
     require!(tier_count > 0 && tier_count <= 4, ErrorCode::InvalidQuote);
     require!(
-        capacity >= market.config.quote_tiers[usize::from(tier_count - 1)]
-            && capacity <= market.config.max_account_notional,
+        capacity >= market.config.quote_tiers[0] && capacity <= market.config.max_account_notional,
         ErrorCode::InvalidQuote
     );
     require!(

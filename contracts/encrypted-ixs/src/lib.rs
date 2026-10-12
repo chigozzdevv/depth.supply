@@ -1303,6 +1303,76 @@ mod circuits {
     }
 
     #[instruction]
+    pub fn rotate_quote(
+        encrypted: Enc<Mxe, Pack<MarketState>>,
+        balance_cipher: Enc<Mxe, Pack<QuoteBalance>>,
+        maximum_reserve: u64,
+        maximum_capacity: u64,
+        required: u64,
+        next_capacity: u64,
+        max_notional: u64,
+        oracle_price: u64,
+        funding_index: i128,
+        initial_margin_bps: u16,
+        account: [u8; 32],
+        version: u64,
+        recovery_key: ArcisX25519Pubkey,
+    ) -> (
+        Enc<Mxe, Pack<MarketState>>,
+        Enc<Shared, Pack<MarketState>>,
+        [u8; 32],
+        bool,
+    ) {
+        let funding_index = normalize_funding(funding_index);
+        let current = encrypted.to_arcis().unpack();
+        let signed = current.position as i128;
+        let absolute = if signed < 0 { -signed } else { signed } as u128;
+        let marked_value = absolute * oracle_price as u128;
+        let position_margin = (marked_value * initial_margin_bps as u128 + 999_999_999_999_999u128)
+            / 1_000_000_000_000_000u128;
+        let prior = balance_cipher.to_arcis().unpack();
+        let removal_valid = prior.remaining_margin <= maximum_reserve
+            && prior.remaining_capacity <= maximum_capacity
+            && current.reserved >= prior.remaining_margin;
+        let new_reserved = if removal_valid {
+            current.reserved as u128 - prior.remaining_margin as u128 + required as u128
+        } else {
+            u64::MAX as u128 + 1
+        };
+        let exposure = (marked_value + 99_999_999_999u128) / 100_000_000_000u128;
+        let unrealised =
+            signed * (oracle_price as i128 - current.entry_price as i128) / 100_000_000_000i128;
+        let funding_due =
+            signed * (funding_index - current.funding_checkpoint) / 100_000_000_000i128;
+        let equity = current.collateral as i128 + unrealised - funding_due;
+        let valid = removal_valid
+            && next_capacity > 0
+            && exposure + next_capacity as u128 <= max_notional as u128
+            && required > 0
+            && initial_margin_bps > 0
+            && initial_margin_bps <= 10_000
+            && oracle_price >= 100_000_000
+            && oracle_price <= 100_000_000_000_000
+            && funding_index >= -1_000_000_000_000_000_000i128
+            && funding_index <= 1_000_000_000_000_000_000i128
+            && equity >= 0
+            && new_reserved + position_margin <= equity as u128
+            && new_reserved <= u64::MAX as u128;
+        let mut state = current;
+        if valid {
+            state.reserved = new_reserved as u64;
+        }
+        state.salt = ArcisRNG::gen_uniform::<u128>();
+        let digest = market_hash(state, account, version + 1);
+        (
+            encrypted.owner.from_arcis(Pack::new(state)),
+            Shared::new(recovery_key).from_arcis(Pack::new(state)),
+            digest.reveal(),
+            valid.reveal(),
+        )
+    }
+
+    #[instruction]
     pub fn release_quote(
         encrypted: Enc<Mxe, Pack<MarketState>>,
         balance_cipher: Enc<Mxe, Pack<QuoteBalance>>,

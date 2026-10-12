@@ -15,6 +15,7 @@ pub const COMP_DEF_OFFSET_DEBIT_MARKET: u32 = comp_def_offset("debit_market_v2")
 pub const COMP_DEF_OFFSET_CREDIT_MARKET: u32 = comp_def_offset("credit_market");
 pub const COMP_DEF_OFFSET_PREPARE_QUOTE: u32 = comp_def_offset("prepare_quote");
 pub const COMP_DEF_OFFSET_RESERVE_QUOTE: u32 = comp_def_offset("reserve_quote_v2");
+pub const COMP_DEF_OFFSET_ROTATE_QUOTE: u32 = comp_def_offset("rotate_quote");
 pub const COMP_DEF_OFFSET_RELEASE_QUOTE: u32 = comp_def_offset("release_quote");
 pub const COMP_DEF_OFFSET_MATCH_ORDER: u32 = comp_def_offset("match_order");
 pub const COMP_DEF_OFFSET_OPEN_CLEARING: u32 = comp_def_offset("open_clearing");
