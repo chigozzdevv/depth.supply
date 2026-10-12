@@ -249,6 +249,10 @@ export class BotStore {
           record.filledSize > record.size ||
           !Number.isSafeInteger(record.completedAt) ||
           record.completedAt < record.nonce ||
+          (record.filledAt !== undefined &&
+            (!Number.isSafeInteger(record.filledAt) ||
+              record.filledAt < record.nonce - 1000 ||
+              record.filledAt > record.completedAt + 1000)) ||
           (record.orderId !== undefined &&
             (!Number.isSafeInteger(record.orderId) || record.orderId < 0))
         )

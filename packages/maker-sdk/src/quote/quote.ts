@@ -313,18 +313,25 @@ export class QuoteHandle {
             ])
             .rpc({ commitment: "confirmed" });
         } catch (error) {
+          const receipt = await this.status();
+          if (
+            ["reserving", "active", "filled", "cancelled", "rejected"].includes(
+              receipt.status,
+            )
+          )
+            return receipt;
           const code = (
             error as {
               error?: { errorCode?: { code?: string } };
             }
           ).error?.errorCode?.code;
           if (
-            (code !== "WrongMarketAccountStatus" &&
-              code !== "WrongOrderStatus") ||
-            Date.now() >= deadline
+            code !== "WrongMarketAccountStatus" &&
+            code !== "WrongOrderStatus"
           ) {
             throw error;
           }
+          if (Date.now() >= deadline) return receipt;
           await new Promise((resolve) => setTimeout(resolve, pollMs));
           continue;
         }

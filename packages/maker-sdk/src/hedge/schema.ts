@@ -35,6 +35,10 @@ function order(value: unknown, receipt = false): boolean {
     amount(value.filledSize) &&
     BigInt(value.filledSize) >= 0n &&
     BigInt(value.filledSize) <= BigInt(value.size) &&
+    (value.filledAt === undefined ||
+      (integer(value.filledAt) &&
+        value.filledAt >= value.nonce - 1000 &&
+        value.filledAt <= value.completedAt + 1000)) &&
     optional(value.orderId, integer) &&
     optional(value.averagePriceE8, amount) &&
     optional(value.fee, amount) &&

@@ -37,6 +37,7 @@ export type HedgeReceipt = {
   status: "filled" | "cancelled" | "rejected" | "open" | "unknown";
   orderId?: number;
   filledSize: bigint;
+  filledAt?: number;
   averagePriceE8?: bigint;
   fee?: bigint;
   hashes?: string[];

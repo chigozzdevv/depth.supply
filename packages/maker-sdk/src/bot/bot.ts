@@ -128,15 +128,22 @@ export class MakerBot {
   }
   private async hedgeTick() {
     if (!this.hedge) return;
-    const account = await this.maker.read<{
+    type InventoryAccount = {
       status: Record<string, unknown>;
       version: { toString(): string };
       pendingComputation?: PublicKey;
-    }>("MarketAccount", this.maker.marketAccount(), "finalized");
-    const confirmed = await this.maker.read<typeof account>(
-      "MarketAccount",
-      this.maker.marketAccount(),
-    );
+    };
+    const [account, confirmed] = await Promise.all([
+      this.maker.read<InventoryAccount>(
+        "MarketAccount",
+        this.maker.marketAccount(),
+        "finalized",
+      ),
+      this.maker.read<InventoryAccount>(
+        "MarketAccount",
+        this.maker.marketAccount(),
+      ),
+    ]);
     const write = this.state!.quoteWrite;
     if (
       !this.state!.hedge?.pending &&
@@ -219,21 +226,25 @@ export class MakerBot {
     ) {
       const prior = this.position;
       this.position = await this.maker.position.summary({ timeoutMs: 0 });
-      const fresh = await this.maker.read<typeof account>(
-        "MarketAccount",
-        this.maker.marketAccount(),
-        "finalized",
-      );
-      const latest = await this.maker.read<typeof account>(
-        "MarketAccount",
-        this.maker.marketAccount(),
-      );
-      ready =
-        "ready" in fresh.status &&
-        "ready" in latest.status &&
-        fresh.version.toString() === latest.version.toString() &&
-        this.position.status === "ready" &&
-        this.position.version === BigInt(fresh.version.toString());
+      ready = false;
+      if (this.position.status === "ready") {
+        const [fresh, latest] = await Promise.all([
+          this.maker.read<InventoryAccount>(
+            "MarketAccount",
+            this.maker.marketAccount(),
+            "finalized",
+          ),
+          this.maker.read<InventoryAccount>(
+            "MarketAccount",
+            this.maker.marketAccount(),
+          ),
+        ]);
+        ready =
+          "ready" in fresh.status &&
+          "ready" in latest.status &&
+          fresh.version.toString() === latest.version.toString() &&
+          this.position.version === BigInt(fresh.version.toString());
+      }
       if (ready) {
         this.inventoryVersion = this.position.version;
         if (write && this.position.version >= write.version) {
@@ -347,7 +358,10 @@ export class MakerBot {
       await this.cancel(true);
       return snapshot.reason ?? "hedge reconciliation pending";
     }
-    this.state!.inventoryPendingSince = undefined;
+    if (this.state!.inventoryPendingSince !== undefined) {
+      this.state!.inventoryPendingSince = undefined;
+      await this.store.save(this.state!);
+    }
     const [book, costs] = await Promise.all([
       this.hedge.adapter.book(),
       this.hedge.adapter.costs(),

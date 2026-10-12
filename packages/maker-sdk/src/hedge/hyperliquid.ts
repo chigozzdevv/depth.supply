@@ -286,6 +286,9 @@ export class HyperliquidAdapter implements HedgeAdapter {
           (fill.side === "B") !== order.buy ||
           units(fill.sz, 9) <= 0n ||
           units(fill.px, 8) <= 0n ||
+          !Number.isSafeInteger(fill.time) ||
+          fill.time < order.nonce - 1000 ||
+          fill.time > Date.now() + 1000 ||
           fill.feeToken !== "USDC" ||
           !/^0x[0-9a-fA-F]{64}$/.test(fill.hash),
       )
@@ -313,6 +316,9 @@ export class HyperliquidAdapter implements HedgeAdapter {
             : "cancelled",
       orderId: detail.order.oid,
       filledSize,
+      filledAt: matching.length
+        ? Math.max(...matching.map((fill) => fill.time))
+        : undefined,
       averagePriceE8: filledSize ? cost / filledSize : undefined,
       fee: matching.reduce((sum, fill) => sum + units(fill.fee, 6), 0n),
       hashes: [...new Set(matching.map((fill) => fill.hash))],

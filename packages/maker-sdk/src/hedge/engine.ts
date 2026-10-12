@@ -126,7 +126,7 @@ export class HedgeEngine {
       )
         throw new Error("External leverage exceeds hedge policy");
       const latest = state.history[state.history.length - 1];
-      if (latest && account.timestamp < latest.completedAt)
+      if (latest && account.timestamp < (latest.filledAt ?? latest.completedAt))
         return result(
           "pending",
           "Waiting for the external account to include the confirmed hedge",
@@ -242,7 +242,11 @@ export class HedgeEngine {
       }
       return result(
         receipt.status === "rejected" ? "blocked" : "pending",
-        receipt.reason ?? "Hedge submitted; reconciling confirmed exposure",
+        receipt.status === "rejected"
+          ? (receipt.reason ?? "Hedge rejected")
+          : state.pending
+            ? "Hedge confirmation pending"
+            : "Hedge submitted; reconciling confirmed exposure",
         account.position,
       );
     } catch (error) {
