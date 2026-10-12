@@ -212,7 +212,6 @@ export async function journal(path: string, resume = false) {
     "trade_close_submitted",
     "trader_release_requested",
     "trader_withdrawal_requested",
-    "trade_recovery_required",
     "renew_backstop",
     "release_backstop",
     "resume_market",

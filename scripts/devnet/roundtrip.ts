@@ -292,13 +292,20 @@ export async function runHostedRoundTrip(
         !view.snapshot.pending
       ) {
         const history = view.snapshot.history.filter(
-          (order) => order.status === "filled",
+          (order) =>
+            order.status === "filled" &&
+            order.nonce >= Number(nonce) &&
+            order.orderId !== undefined &&
+            order.filledSize !== "0" &&
+            order.hashes?.length,
         );
         if (
           (leg === "open" &&
+            history.some((order) => order.buy && !order.reduceOnly) &&
             BigInt(view.snapshot.depthPosition) < 0n &&
             BigInt(view.snapshot.externalPosition) > 0n) ||
           (leg === "close" &&
+            history.some((order) => !order.buy && order.reduceOnly) &&
             BigInt(view.snapshot.depthPosition) === 0n &&
             BigInt(view.snapshot.externalPosition) === 0n)
         ) {
@@ -307,12 +314,16 @@ export async function runHostedRoundTrip(
             leg,
             depthPosition: view.snapshot.depthPosition,
             externalPosition: view.snapshot.externalPosition,
-            orders: history.map(({ cloid, orderId, buy, filledSize }) => ({
-              cloid,
-              orderId,
-              buy,
-              filledSize,
-            })),
+            orders: history.map(
+              ({ cloid, orderId, buy, filledSize, filledAt, hashes }) => ({
+                cloid,
+                orderId,
+                buy,
+                filledSize,
+                filledAt,
+                hashes,
+              }),
+            ),
           });
           return;
         }
@@ -381,13 +392,26 @@ export async function runHostedRoundTrip(
     });
   };
   await execute("open");
-  await waitHedge("open");
-  if (afterOpen) {
+  if (
+    !records.some(
+      (entry) => entry.stage === "hedge_balanced" && entry.leg === "open",
+    )
+  )
+    await waitHedge("open");
+  if (
+    afterOpen &&
+    !records.some((entry) => entry.stage === "maker_restarted")
+  ) {
     await afterOpen();
     await maker.hedges.authorize();
   }
   await execute("close");
-  await waitHedge("close");
+  if (
+    !records.some(
+      (entry) => entry.stage === "hedge_balanced" && entry.leg === "close",
+    )
+  )
+    await waitHedge("close");
   const position = await depth.position.summary({ timeoutMs: 180_000 });
   assert.equal(position.status, "ready");
   assert.equal(position.position, 0n);
