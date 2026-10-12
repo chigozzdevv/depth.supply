@@ -273,6 +273,35 @@ test("confirmed fills are not hedged twice while the external account snapshot i
   assert.equal(f.orders.length, 1);
 });
 
+test("exchange fill time permits a caught-up account before local receipt completion", async () => {
+  const f = fixture();
+  const engine = new HedgeEngine(f.adapter, policy);
+  const submit = f.adapter.submit;
+  f.adapter.submit = async (order) => ({
+    ...(await submit(order)),
+    filledAt: 99950,
+    reason: "filled",
+  });
+  const submitted = await f.tick(engine, -2_000_000_000n);
+  assert.equal(
+    submitted.reason,
+    "Hedge submitted; reconciling confirmed exposure",
+  );
+  assert.equal(f.state.history[0].reason, "filled");
+  assert.equal(f.state.history[0].completedAt, 100000);
+  const read = f.adapter.account;
+  f.adapter.account = async () => ({ ...(await read()), timestamp: 99960 });
+  assert.equal((await f.tick(engine, -2_000_000_000n)).phase, "balanced");
+  assert.equal(f.orders.length, 1);
+  f.adapter.account = async () => ({
+    ...(await read()),
+    timestamp: 99949,
+    position: 0n,
+  });
+  assert.equal((await f.tick(engine, -2_000_000_000n)).phase, "pending");
+  assert.equal(f.orders.length, 1);
+});
+
 test("freshness uses the response time when external reads advance the clock", async () => {
   const f = fixture();
   const engine = new HedgeEngine(f.adapter, policy);
@@ -488,6 +517,7 @@ test("the adapter deduplicates partial fills, waits for incomplete full fills an
     fee: "0.04",
     feeToken: "USDC",
     hash: `0x${"3".repeat(64)}`,
+    time: order.nonce,
   };
   let status = "canceled";
   let side = "B";
@@ -535,10 +565,14 @@ test("the adapter deduplicates partial fills, waits for incomplete full fills an
     assert.equal(receipt.status, "cancelled");
     assert.equal(receipt.filledSize, 1_000_000_000n);
     assert.equal(receipt.fee, 40000n);
+    assert.equal(receipt.filledAt, fill.time);
     assert.deepEqual(receipt.hashes, [fill.hash]);
     status = "filled";
     assert.equal((await adapter.receipt(order)).status, "unknown");
     status = "canceled";
+    fill.time = order.nonce - 1001;
+    await assert.rejects(adapter.receipt(order), /does not match/);
+    fill.time = order.nonce;
     side = "A";
     await assert.rejects(adapter.receipt(order), /does not match/);
   } finally {

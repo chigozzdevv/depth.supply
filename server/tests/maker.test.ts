@@ -125,6 +125,15 @@ test("hedging stays opt-in, requires its own agent key and rejects cross-network
   };
   assert.equal(hedgeConfig(env)!.network, "testnet");
   assert.equal(hedgeConfig(env)!.policy.ratioBps, 10000);
+  assert.equal(hedgeConfig(env)!.policy.maxUnhedgedMs, 90000);
+  assert.equal(
+    hedgeConfig({
+      ...env,
+      DEPTH_ENVIRONMENT: "mainnet-beta",
+      HYPERLIQUID_NETWORK: "mainnet",
+    })!.policy.maxUnhedgedMs,
+    15000,
+  );
   assert.throws(
     () => hedgeConfig({ ...env, HYPERLIQUID_NETWORK: "mainnet" }),
     /networks must match/,

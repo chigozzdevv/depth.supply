@@ -1,4 +1,8 @@
-import { DEPTH_PROGRAM_ID, marketAddress } from "@depthhq/bindings";
+import {
+  DEPTH_PROGRAM_ID,
+  fundingFresh,
+  marketAddress,
+} from "@depthhq/bindings";
 import { Connection, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
@@ -8,6 +12,17 @@ import { MarketService } from "@/features/market/market.service";
 import { OperationService } from "@/features/operation/operation.service";
 import { QuoteService } from "@/features/quote/quote.service";
 import { RecoveryService } from "@/features/recovery/recovery.service";
+
+test("funding remains current through one due interval and stops at the contract's missed-interval boundary", () => {
+  assert.equal(fundingFresh(1000, 3600, 4599), true);
+  assert.equal(fundingFresh(1000, 3600, 4600), true);
+  assert.equal(fundingFresh(1000, 3600, 8199), true);
+  assert.equal(fundingFresh(1000, 3600, 8200), false);
+  assert.equal(fundingFresh(1000, 3600, 20000), false);
+  assert.equal(fundingFresh(1000, 3600, 999), false);
+  assert.equal(fundingFresh(0, 3600, 1000), false);
+  assert.equal(fundingFresh(1000, 0, 1000), false);
+});
 
 function chainWithRead(
   read: (address: PublicKey, name: string) => Promise<unknown>,

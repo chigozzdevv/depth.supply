@@ -126,6 +126,7 @@ test("quote activation waits for private validation and stays pending until rese
   let status = "validating";
   let makerReady = false;
   let submitted = 0;
+  let raced = false;
   const now = Math.floor(Date.now() / 1000);
   const client = {
     options: { maker, wallet: { publicKey: maker } },
@@ -170,6 +171,8 @@ test("quote activation waits for private validation and stays pending until rese
           accountsPartial: () => ({
             remainingAccounts: () => ({
               rpc: async () => {
+                if (raced)
+                  throw { error: { errorCode: { code: "WrongOrderStatus" } } };
                 submitted += 1;
                 status = "reserving";
                 return "reserve-signature";
@@ -188,6 +191,10 @@ test("quote activation waits for private validation and stays pending until rese
   assert.equal((await handle.activate({ timeoutMs: 0 })).status, "validated");
   assert.equal(submitted, 0);
   makerReady = true;
+  raced = true;
+  assert.equal((await handle.activate({ timeoutMs: 0 })).status, "validated");
+  assert.equal(submitted, 0);
+  raced = false;
   const reserved = await handle.activate({ timeoutMs: 0 });
   assert.equal(reserved.status, "reserving");
   assert.equal(handle.reserveSignature, "reserve-signature");

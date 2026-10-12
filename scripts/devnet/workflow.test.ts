@@ -100,6 +100,30 @@ test("proof writes serialize concurrent settlement and SDK events", async () => 
   }
 });
 
+test("a reported preflight failure can restart while recorded transaction intents still require recovery", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-preflight-"));
+  const path = join(directory, "proof.json");
+  try {
+    const failure = {
+      stage: "trade_recovery_required",
+      error: "Preflight failed",
+    };
+    await writeJson(path, proof("failed", [failure]));
+    const fresh = await journal(path);
+    assert.deepEqual(fresh.proof.previousRuns?.at(-1)?.results, [failure]);
+    await writeJson(
+      path,
+      proof("failed", [
+        { stage: "trade_open_requested", nonce: "123" },
+        failure,
+      ]),
+    );
+    await assert.rejects(journal(path), /needs recovery or reconciliation/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("a reconciled failed proof stays in history when a new run begins", async () => {
   const directory = await mkdtemp(join(tmpdir(), "depth-workflow-"));
   const path = join(directory, "proof.json");

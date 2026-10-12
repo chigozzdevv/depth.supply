@@ -123,7 +123,11 @@ test("stale oracle, missed funding and market incidents stop new maker quotes", 
   const now = Math.floor(Date.now() / 1000);
   assert.equal(quoteHealth(current, now + 301), "oracle stale");
   current.oracleTimestamp = new anchor.BN(now + 3601);
-  assert.equal(quoteHealth(current, now + 3601), "funding overdue");
+  assert.equal(quoteHealth(current, now + 3601), undefined);
+  current.oracleTimestamp = new anchor.BN(now + 7199);
+  assert.equal(quoteHealth(current, now + 7199), undefined);
+  current.oracleTimestamp = new anchor.BN(now + 7200);
+  assert.equal(quoteHealth(current, now + 7200), "funding overdue");
   current.incident = { makerDefault: {} };
   assert.equal(quoteHealth(current, now), "market paused");
 });
@@ -962,4 +966,90 @@ test("funding reprices only when it changes the rounded execution cost", () => {
     before,
     executionCosts(policy, { takerFeeBps: 4.5, hourlyFundingBps: 0.6 }),
   );
+});
+
+test("a confirmed Hyperliquid receipt retains funded liquidity while its account reconciles", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-confirmed-bot-"));
+  const setup = fixture();
+  setup.quoteWrites();
+  let external = 0n;
+  const adapter: HedgeAdapter = {
+    identity: "hyperliquid:testnet:confirmed:SOL",
+    address: "maker",
+    network: "testnet",
+    sizeStep: 1000n,
+    minNotional: 10_000_000n,
+    account: async () => ({
+      timestamp: Date.now(),
+      position: external,
+      availableMargin: 100_000_000n,
+      leverage: 1,
+      openOrders: [],
+    }),
+    book: async () => ({
+      timestamp: Date.now(),
+      bids: [{ priceE8: 9_999_000_000n, size: 10_000_000_000n }],
+      asks: [{ priceE8: 10_001_000_000n, size: 10_000_000_000n }],
+    }),
+    costs: async () => ({ takerFeeBps: 4, hourlyFundingBps: 0 }),
+    price: (value) => value,
+    submit: async (order) => {
+      external += order.buy ? order.size : -order.size;
+      return {
+        status: "filled",
+        filledSize: order.size,
+        filledAt: Date.now(),
+        reason: "filled",
+      };
+    },
+    receipt: async () => {
+      throw new Error("A confirmed hedge must not be resubmitted");
+    },
+    cancel: async () => {},
+  };
+  const bot = await MakerBot.create({
+    maker: setup.client,
+    policy,
+    stateDirectory: directory,
+    hedge: new HedgeEngine(adapter, {
+      ratioBps: 10000,
+      thresholdNotional: 1_000_000n,
+      maxUnhedgedNotional: 200_000_000n,
+      maxOrderNotional: 100_000_000n,
+      batchMs: 1,
+      maxUnhedgedMs: 90000,
+      maxSlippageBps: 10,
+      maxPriceAgeMs: 5000,
+      orderTtlMs: 3000,
+      maxLeverage: 1,
+    }),
+  });
+  try {
+    await bot.tick();
+    for (const quote of setup.quotes.values()) quote.status = "validated";
+    await bot.tick();
+    setup.finishWrite(true);
+    await bot.tick();
+    setup.finalize();
+    const active = [...setup.quotes.values()][0];
+    setup.inventory(-200_000_000n, false);
+    await bot.tick();
+    setup.finalize();
+    await bot.tick();
+    await new Promise((resolve) => setTimeout(resolve, 2));
+    await bot.tick();
+    assert.equal(
+      bot.hedge!.snapshot!.reason,
+      "Hedge submitted; reconciling confirmed exposure",
+    );
+    assert.equal(active.status, "active");
+    assert.equal((await bot.store.load()).hedge!.history.length, 1);
+    await bot.tick();
+    assert.equal(bot.hedge!.snapshot!.phase, "balanced");
+    assert.equal(active.status, "active");
+    assert.equal((await bot.store.load()).inventoryPendingSince, undefined);
+  } finally {
+    await bot.close();
+    await rm(directory, { recursive: true, force: true });
+  }
 });
