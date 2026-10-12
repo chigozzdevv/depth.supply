@@ -5,6 +5,44 @@ import { RpcTransport } from "@/shared/chain/transport";
 import { rpcRoute } from "@/shared/http/rpc";
 import { setTimeout as sleep } from "node:timers/promises";
 
+test("RPC relays preserve u64 account metadata and decimal tokens through cached HTTP replies", async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (_input, init) => {
+    const { id } = JSON.parse(String(init?.body));
+    calls++;
+    return new Response(
+      `{"jsonrpc":"2.0","id":${id},"result":{"rentEpoch":18446744073709551615,"lamports":9007199254740993,"uiAmount":0.1234567890123456789,"text":"18446744073709551615"}}`,
+    );
+  };
+  const app = Fastify();
+  rpcRoute(app, new RpcTransport("https://rpc.example.test", 100));
+  try {
+    for (const id of [1, 2]) {
+      const response = await app.inject({
+        method: "POST",
+        url: "/rpc",
+        payload: {
+          jsonrpc: "2.0",
+          id,
+          method: "getAccountInfo",
+          params: ["account"],
+        },
+      });
+      assert.equal(response.statusCode, 200);
+      assert.match(response.body, /"rentEpoch":18446744073709551615/);
+      assert.match(response.body, /"lamports":9007199254740993/);
+      assert.match(response.body, /"uiAmount":0.1234567890123456789/);
+      assert.match(response.body, /"text":"18446744073709551615"/);
+      assert.equal(JSON.parse(response.body).id, id);
+    }
+    assert.equal(calls, 1);
+  } finally {
+    await app.close();
+    globalThis.fetch = original;
+  }
+});
+
 test("shared RPC coalesces reads with independent request IDs and never caches transaction submissions", async () => {
   const original = globalThis.fetch;
   const calls: string[] = [];
