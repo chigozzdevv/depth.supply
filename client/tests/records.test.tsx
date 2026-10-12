@@ -43,6 +43,7 @@ test("positions display PnL directly while sharing remains a separate action", (
   );
   assert.match(html, /\+20\.00 USDC/);
   assert.match(html, /aria-label="Share position PnL"/);
+  assert.match(html, /aria-label="Position slippage limit"[^>]*value="0.5"/);
   assert.doesNotMatch(html, />PnL card</);
   assert.doesNotMatch(html, /<dialog[^>]*\sopen/);
   const stale = renderToStaticMarkup(

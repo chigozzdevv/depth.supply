@@ -7,7 +7,7 @@ import { AccountPrompt } from "@/components/demo/prompt";
 import type { AccountView } from "@/shared/depth/account";
 import type { MarketView } from "@/shared/depth/market";
 import { decimal, pnlAmount, units } from "@/shared/depth/format";
-import { positionPnl, type AmountSelector } from "@depthhq/sdk";
+import { DepthError, positionPnl, type AmountSelector } from "@depthhq/sdk";
 import { tradeFeeBps } from "@/shared/depth/terms";
 import { Pnl, type PnlCard } from "@/components/trade/pnl";
 
@@ -99,6 +99,7 @@ function Details({
   const session = useDepth();
   const [action, setAction] = useState("reduce");
   const [amount, setAmount] = useState("25%");
+  const [slippage, setSlippage] = useState("0.5");
   const [review, setReview] = useState(false);
   const [error, setError] = useState("");
   const position = account.position;
@@ -133,18 +134,29 @@ function Details({
     const sdk = session.trader;
     if (!sdk || !position || !view.market || !view.app) return;
     let value: AmountSelector;
+    let slippageBps = 0;
     try {
       value =
-        amount === "all" || /^(?:10|25|50|100)%$/.test(amount)
-          ? (amount as AmountSelector)
-          : units(amount, action === "reduce" ? 9 : 6);
+        action === "close" || action === "reverse"
+          ? "all"
+          : amount === "all" || /^(?:10|25|50|100)%$/.test(amount)
+            ? (amount as AmountSelector)
+            : units(amount, action === "reduce" ? 9 : 6);
+      if (["reduce", "close", "reverse"].includes(action)) {
+        slippageBps = Number(units(slippage, 2));
+        if (slippageBps < 1 || slippageBps > 500)
+          throw new Error("Slippage must be between 0.01% and 5%");
+      }
     } catch (cause) {
-      setError(String(cause));
+      setError(
+        cause instanceof Error ? cause.message : "Invalid position operation",
+      );
       return;
     }
+    setError("");
     const terms = {
       marketId: "SOL-USD" as const,
-      slippageBps: 50,
+      slippageBps,
       maxFee: fee > 0n ? fee : 1n,
       validForSeconds: view.market.max_order_queue_seconds,
     };
@@ -170,7 +182,19 @@ function Details({
                   margin: 0n,
                 })
               : await sdk.trade.reduce({ ...terms, amount: value });
-        await operation.confirm();
+        try {
+          await operation.confirm();
+        } catch (cause) {
+          if (cause instanceof DepthError && cause.code === "ORDER_REJECTED") {
+            setError(
+              action === "close"
+                ? "Close did not fill. Your position is still open."
+                : "Position update did not fill. Your position is unchanged.",
+            );
+            return;
+          }
+          throw cause;
+        }
         session.notice("Trade confirmed. Reading private PnL.");
         const read = async (): Promise<PnlCard> => ({
           result: await operation.pnl(),
@@ -351,6 +375,24 @@ function Details({
             placeholder="25%, all, or exact amount"
           />
         )}
+        {["reduce", "close", "reverse"].includes(action) && (
+          <label className="position-slippage">
+            Slippage
+            <div className="input-unit compact">
+              <input
+                aria-label="Position slippage limit"
+                inputMode="decimal"
+                value={slippage}
+                disabled={Boolean(session.busy)}
+                onChange={(event) => {
+                  setSlippage(event.target.value);
+                  setReview(false);
+                }}
+              />
+              <span>%</span>
+            </div>
+          </label>
+        )}
         <button
           className="terminal-button"
           disabled={
@@ -373,7 +415,7 @@ function Details({
               ? "Close the full position."
               : `${action === "reduce" ? "Reduce exposure by" : action === "add" ? "Add margin of" : "Remove margin of"} ${amount}${/^(?:all|\d+%)$/.test(amount) ? "" : action === "reduce" ? " SOL" : " USDC"}.`}{" "}
           {["reduce", "close", "reverse"].includes(action) &&
-            `Slippage limit 0.5%. Fee cap ${decimal(fee > 0n ? fee : 1n, 6, 6)} USDC.`}
+            `Slippage limit ${slippage}%. Fee cap ${decimal(fee > 0n ? fee : 1n, 6, 6)} USDC.`}
         </p>
       )}
       {error && (

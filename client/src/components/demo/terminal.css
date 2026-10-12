@@ -810,9 +810,26 @@
 }
 .position-controls {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 16px;
   flex-wrap: wrap;
+}
+.position-slippage {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--terminal-muted);
+  font-size: 12px;
+}
+.position-slippage .input-unit {
+  width: 88px;
+}
+.position-controls .position-slippage input {
+  min-width: 0;
+  padding: 10px 0 10px 12px;
+  background: transparent;
+  border: 0;
 }
 .position-value > div,
 .position-pnl {
