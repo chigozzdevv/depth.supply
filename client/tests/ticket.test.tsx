@@ -42,6 +42,7 @@ mock.module("@solana/wallet-adapter-react", () => ({
 }));
 const { Ticket } = await import("@/components/trade/ticket");
 const { QuoteTicket } = await import("@/components/maker/ticket");
+const { MakerPanel } = await import("@/components/maker/panel");
 const { WalletButton } = await import("@/components/demo/wallet");
 const { Funds } = await import("@/components/demo/funds");
 const { Shell } = await import("@/components/demo/shell");
@@ -73,7 +74,15 @@ const account = {
 function buttons(): string[] {
   return [
     renderToStaticMarkup(<Ticket view={view} account={account} />),
-    renderToStaticMarkup(<QuoteTicket view={view} quotes={[]} />),
+    renderToStaticMarkup(
+      <QuoteTicket
+        view={view}
+        quotes={[]}
+        blocked={false}
+        checkManual={async () => {}}
+        onAutomatic={() => {}}
+      />,
+    ),
   ].map(
     (html) =>
       [
@@ -117,6 +126,39 @@ test("trade and quote actions reflect connection readiness without showing a wal
     assert.match(button, /Wallet unavailable/);
     assert.match(button, /disabled/);
   }
+});
+
+test("maker modes share a panel and retain separate mounted forms", () => {
+  session = { connected: false, verifying: false, busy: "" };
+  const html = renderToStaticMarkup(
+    <MakerPanel view={view} quotes={[]} mode="manual" onMode={() => {}} />,
+  );
+  assert.match(html, /aria-label="Quote mode"/);
+  assert.match(html, /id="maker-manual-tab"[^>]*aria-selected="true"/);
+  assert.match(html, /id="maker-automatic-tab"[^>]*aria-selected="false"/);
+  assert.match(html, /id="maker-manual-panel"[^>]*role="tabpanel"/);
+  assert.match(html, /id="maker-automatic-panel"[^>]*hidden=""/);
+  assert.equal([...html.matchAll(/Connect maker wallet/g)].length, 2);
+  assert.match(html, /Connect maker wallet/);
+});
+
+test("a running maker routes manual quoting to automation without exposing a publish action", () => {
+  session = { connected: true, verifying: false, busy: "", maker: {} };
+  const html = renderToStaticMarkup(
+    <QuoteTicket
+      view={view}
+      quotes={[]}
+      blocked={true}
+      checkManual={async () => {
+        throw new Error("Pause automation before publishing a manual quote");
+      }}
+      onAutomatic={() => {}}
+    />,
+  );
+  assert.match(html, /Manage automation/);
+  assert.match(html, /<select[^>]*disabled=""/);
+  assert.equal([...html.matchAll(/<input[^>]*disabled=""/g)].length, 4);
+  assert.doesNotMatch(html, /Review quote|Sign and publish/);
 });
 
 test("the connect-wallet control is shown only before a wallet connects", () => {
