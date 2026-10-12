@@ -21,7 +21,12 @@ export function registerHttp(app: FastifyInstance): void {
     ) {
       return reply.code(400).send({ error: "invalid_request" });
     }
-    request.log.error(error);
+    request.log.error({
+      message: (error instanceof Error
+        ? error.message
+        : "Request failed"
+      ).replace(/(?:https?|wss?):\/\/[^\s]+/g, "[RPC endpoint]"),
+    });
     return reply.code(503).send({ error: "rpc_unavailable" });
   });
 

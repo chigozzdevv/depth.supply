@@ -14,6 +14,13 @@ async function main(): Promise<void> {
   const transport = new RpcTransport(
     config.rpcUrl,
     Number(process.env.SOLANA_RPC_RPS ?? "3"),
+    (process.env.DEPTH_ENVIRONMENT ?? "devnet") === "devnet" &&
+      config.rpcUrl !== "https://api.devnet.solana.com"
+      ? {
+          url: "https://api.devnet.solana.com",
+          genesis: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+        }
+      : undefined,
   );
   const connection = chainConnection(config.rpcUrl, transport.fetch);
   const sponsor = viewConfig();
