@@ -44,8 +44,16 @@ const arciumCli = upgrade ? undefined : resolveArcium("deploy");
 
 const rpc = process.env.SOLANA_RPC_URL;
 const circuitBase = process.env.DEPTH_CIRCUIT_BASE_URL?.replace(/\/+$/, "");
-if (!rpc || new URL(rpc).protocol !== "https:") {
-  throw new Error("SOLANA_RPC_URL must be an HTTPS devnet endpoint");
+if (!rpc) throw new Error("SOLANA_RPC_URL is required");
+const rpcUrl = new URL(rpc);
+if (
+  rpcUrl.protocol !== "https:" &&
+  !(
+    rpcUrl.protocol === "http:" &&
+    ["127.0.0.1", "localhost", "[::1]"].includes(rpcUrl.hostname)
+  )
+) {
+  throw new Error("SOLANA_RPC_URL must use HTTPS or a loopback proxy");
 }
 if (!circuitBase || new URL(circuitBase).protocol !== "https:") {
   throw new Error("DEPTH_CIRCUIT_BASE_URL must be an HTTPS URL");
@@ -121,6 +129,7 @@ if (upgrade) {
     throw new Error("Upgrade requires an existing upgradeable Depth program");
   const programData = await connection.getAccountInfo(
     new PublicKey(existing.data.subarray(4)),
+    { commitment: "confirmed", dataSlice: { offset: 0, length: 45 } },
   );
   if (
     !programData?.owner.equals(loader) ||
@@ -129,7 +138,13 @@ if (upgrade) {
     !new PublicKey(programData.data.subarray(13, 45)).equals(signer.publicKey)
   )
     throw new Error("Deployment signer is not the program upgrade authority");
-  const allocated = programData.data.length - 45;
+  if (
+    programData.data.length !== 45 ||
+    !Number.isSafeInteger(programData.space) ||
+    programData.space < 45
+  )
+    throw new Error("ProgramData allocation size is unavailable");
+  const allocated = programData.space - 45;
   if (allocated < programSize) {
     extension = Math.max(10_240, programSize - allocated);
     required += Math.max(
