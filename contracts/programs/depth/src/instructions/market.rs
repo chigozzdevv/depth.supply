@@ -236,6 +236,10 @@ pub fn refresh_oracle_handler(ctx: Context<RefreshOracle>) -> Result<()> {
         ctx.accounts.market.status != MarketStatus::Settling,
         ErrorCode::MarketNotActive
     );
+    require!(
+        ctx.accounts.market.pending_orders == 0,
+        ErrorCode::WrongOrderStatus
+    );
     let price = read_price(
         &ctx.accounts.price_update.to_account_info(),
         &ctx.accounts.market.config,

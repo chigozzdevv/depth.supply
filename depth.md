@@ -603,8 +603,16 @@ when their last waiting client disconnects.
 
 Preparation validates prices inside a narrower oracle band, reserving up to
 25 bps for price movement before admission. Admission rejects larger movement
-or a changed market policy, while reservation callbacks and trades retain their
-exact snapshot checks. The published execution deviation limit remains unchanged.
+or a changed market policy, while reservation callbacks retain their exact
+snapshot checks. The published execution deviation limit remains unchanged.
+
+Trade encryption uses the final consistent quote-and-oracle snapshot. A verified
+oracle update may advance while the trader approves the wallet transaction,
+provided the original reference is still within the market's age limit and the
+policy revision is unchanged. The encrypted execution-price limit, fee cap,
+position version, quote accounts, and absolute expiry remain binding. Admission
+records the current verified oracle snapshot, and oracle refreshes are blocked
+until the admitted order clears; callbacks retain exact snapshot checks.
 
 Terminal quotes with no attached orders can be closed by their maker owner or
 original quote payer. The original payer receives rent through the operator close

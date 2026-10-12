@@ -212,7 +212,12 @@ pub fn submit_order_handler<'info>(
     let market = &mut ctx.accounts.market;
     require!(
         market.revision == expected_revision
-            && market.oracle_timestamp == expected_oracle_timestamp,
+            && oracle_snapshot_valid(
+                market.oracle_timestamp,
+                expected_oracle_timestamp,
+                clock.unix_timestamp,
+                market.config.max_oracle_age_seconds,
+            ),
         ErrorCode::StaleMarketSnapshot
     );
     require!(
@@ -411,6 +416,13 @@ pub fn submit_order_handler<'info>(
     Ok(())
 }
 
+fn oracle_snapshot_valid(current: i64, expected: i64, now: i64, max_age: u32) -> bool {
+    expected > 0
+        && current >= expected
+        && now >= current
+        && now.saturating_sub(expected) <= i64::from(max_age)
+}
+
 fn initialize_fee_recovery<'info>(
     trader: &Signer<'info>,
     fee_info: &AccountInfo<'info>,
@@ -551,4 +563,25 @@ pub fn cancel_order_handler(ctx: Context<CancelOrder>) -> Result<()> {
     account.pending_computation = Pubkey::default();
     market.clear_pending(order.key())?;
     Ok(())
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::oracle_snapshot_valid;
+
+    #[test]
+    fn fresh_oracle_advances_keep_the_original_freshness_deadline() {
+        assert!(oracle_snapshot_valid(100, 100, 110, 600));
+        assert!(oracle_snapshot_valid(109, 100, 110, 600));
+        assert!(oracle_snapshot_valid(700, 100, 700, 600));
+    }
+
+    #[test]
+    fn old_future_and_missing_snapshots_are_rejected() {
+        assert!(!oracle_snapshot_valid(100, 101, 110, 600));
+        assert!(!oracle_snapshot_valid(111, 100, 110, 600));
+        assert!(!oracle_snapshot_valid(700, 100, 701, 600));
+        assert!(!oracle_snapshot_valid(100, 0, 110, 600));
+        assert!(!oracle_snapshot_valid(100, -1, 110, 600));
+    }
 }
