@@ -60,21 +60,22 @@ type Job = {
 };
 const priority = (method: string) =>
   [
-    "sendTransaction",
     "getSignatureStatuses",
     "getLatestBlockhash",
     "getBlockHeight",
-    "simulateTransaction",
+    "isBlockhashValid",
   ].includes(method)
     ? 0
-    : [
-          "getProgramAccounts",
-          "getSignaturesForAddress",
-          "getTransaction",
-          "getTokenAccountsByOwner",
-        ].includes(method)
-      ? 2
-      : 1;
+    : ["sendTransaction", "simulateTransaction"].includes(method)
+      ? 1
+      : [
+            "getProgramAccounts",
+            "getSignaturesForAddress",
+            "getTransaction",
+            "getTokenAccountsByOwner",
+          ].includes(method)
+        ? 3
+        : 2;
 
 export class RpcTransport {
   private nextStart = 0;
@@ -93,13 +94,16 @@ export class RpcTransport {
     private readonly url: string,
     private readonly rps = 3,
     private readonly fallback?: { url: string; genesis: string },
+    private readonly maxQueued = 32,
   ) {
     if (!Number.isSafeInteger(rps) || rps < 1 || rps > 100)
       throw new Error("SOLANA_RPC_RPS must be 1 to 100");
+    if (!Number.isSafeInteger(maxQueued) || maxQueued < 16 || maxQueued > 1024)
+      throw new Error("RPC queue limit must be 16 to 1024");
     if (fallback) {
       if (fallback.url === url)
         throw new Error("Fallback RPC must be a different endpoint");
-      this.backup = new RpcTransport(fallback.url, 3);
+      this.backup = new RpcTransport(fallback.url, 3, undefined, maxQueued);
     }
   }
   private pump() {
@@ -132,7 +136,10 @@ export class RpcTransport {
   }
   private slot(method: string, signal: AbortSignal) {
     signal.throwIfAborted();
-    if (this.jobs.length >= (priority(method) === 0 ? 32 : 24))
+    if (
+      this.jobs.length >=
+      (priority(method) === 0 ? this.maxQueued + 16 : this.maxQueued)
+    )
       throw new Error("RPC request queue is full");
     return new Promise<void>((resolve, reject) => {
       const abort = () => {

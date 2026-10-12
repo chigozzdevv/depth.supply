@@ -21,6 +21,7 @@ async function main(): Promise<void> {
           genesis: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
         }
       : undefined,
+    Number(process.env.SOLANA_RPC_QUEUE_LIMIT ?? "32"),
   );
   const connection = chainConnection(config.rpcUrl, transport.fetch);
   const sponsor = viewConfig();

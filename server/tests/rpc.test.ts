@@ -153,6 +153,52 @@ test("confirmation bypasses queued scans while scans remain rate bounded", async
   }
 });
 
+test("confirmations bypass upload writes while the upload queue stays bounded", async () => {
+  const original = globalThis.fetch;
+  const calls: string[] = [];
+  globalThis.fetch = async (_input, init) => {
+    const body = JSON.parse(String(init?.body));
+    calls.push(body.method);
+    return Response.json({ jsonrpc: "2.0", id: body.id, result: null });
+  };
+  try {
+    const relay = new RpcTransport(
+      "https://rpc.example.test",
+      100,
+      undefined,
+      512,
+    );
+    const writes = [1, 2, 3].map((id) =>
+      relay.request({
+        jsonrpc: "2.0",
+        id,
+        method: "sendTransaction",
+        params: [`signed-${id}`],
+      }),
+    );
+    await sleep(1);
+    await relay.request({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "getSignatureStatuses",
+      params: [["signature"]],
+    });
+    await Promise.all(writes);
+    assert.deepEqual(calls, [
+      "sendTransaction",
+      "getSignatureStatuses",
+      "sendTransaction",
+      "sendTransaction",
+    ]);
+    assert.throws(
+      () => new RpcTransport("https://rpc.example.test", 100, undefined, 1025),
+      /queue limit/,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("aborted readers do not cancel shared reads and abandoned queued work never reaches the provider", async () => {
   const original = globalThis.fetch;
   const calls: number[] = [];
