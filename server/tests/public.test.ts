@@ -246,3 +246,36 @@ test("chain reader identifies only Depth account discriminators", async () => {
   );
   assert.equal(result, undefined);
 });
+
+test("readiness follows an atomic quote rotation without reporting a false empty book", async () => {
+  const prior = PublicKey.unique(),
+    next = PublicKey.unique();
+  const base = {
+    status: { active: {} },
+    incident: { none: {} },
+    oracleTimestamp: BigInt(Math.floor(Date.now() / 1000)),
+    lastFundingTimestamp: BigInt(Math.floor(Date.now() / 1000)),
+    activeQuoteCount: 1,
+    activeQuotes: [prior],
+    config: { maxOracleAgeSeconds: 300, fundingIntervalSeconds: 3600 },
+  };
+  let batches = 0;
+  const chain = chainWithRead(async () => ({ value: base, slot: 1 }));
+  chain.readBatch = async () => {
+    const market = { ...base, activeQuotes: [next] };
+    return [
+      { value: market, slot: 2 },
+      {
+        value: {
+          market: marketAddress(),
+          status: ++batches === 1 ? { cancelled: {} } : { active: {} },
+          expiry: BigInt(Math.floor(Date.now() / 1000) + 60),
+        },
+        slot: 2,
+      },
+    ];
+  };
+  const result = await new MarketService(chain).health();
+  assert.equal(result?.liveQuotes, 1);
+  assert.equal(batches, 2);
+});

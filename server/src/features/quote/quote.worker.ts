@@ -3,6 +3,7 @@ import {
   DEPTH_PROGRAM_ID,
   accountOffsets,
   quoteQueueAddress,
+  quoteBounds,
 } from "@depthhq/bindings";
 import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
@@ -16,7 +17,12 @@ type MarketState = {
   quotedNotional: anchor.BN;
   revision: anchor.BN;
   oracleTimestamp: anchor.BN;
-  config: { maxMarketNotional: anchor.BN };
+  oraclePriceE8: anchor.BN;
+  config: {
+    maxMarketNotional: anchor.BN;
+    maxQuoteDeviationBps: number;
+    maxOracleAgeSeconds: number;
+  };
 };
 
 type QueueState = {
@@ -34,6 +40,7 @@ type QuoteState = {
   expiry: anchor.BN;
   marketRevision: anchor.BN;
   oracleTimestamp: anchor.BN;
+  oracleReferenceE8: anchor.BN;
   attachedOrders: number;
 };
 
@@ -73,7 +80,7 @@ export class QuoteWorker {
         !quote.market.equals(this.chain.market) ||
         status(quote.status) !== "active"
       ) {
-        throw new Error("Active quote pointer is inconsistent");
+        return undefined;
       }
       activeCapacity += BigInt(quote.capacity.toString());
     }
@@ -107,7 +114,7 @@ export class QuoteWorker {
       return { stage: "release_quote", signature };
     }
     for (const { id, quote } of active) {
-      if (quote.expiry.toNumber() <= now) {
+      if (quote.expiry.toNumber() <= now && this.owns(quote)) {
         const signature = await this.chain.program.methods
           .stopQuote()
           .accountsPartial({
@@ -131,10 +138,18 @@ export class QuoteWorker {
     ) {
       throw new Error("Waiting quote pointer is inconsistent");
     }
+    if (!this.owns(quote)) return undefined;
+    const reference = BigInt(quote.oracleReferenceE8.toString());
+    const price = BigInt(market.oraclePriceE8.toString());
+    const drift = price > reference ? price - reference : reference - price;
     if (
       quote.expiry.toNumber() <= now ||
       !quote.marketRevision.eq(market.revision) ||
-      !quote.oracleTimestamp.eq(market.oracleTimestamp)
+      quote.oracleTimestamp.gt(market.oracleTimestamp) ||
+      reference <= 0n ||
+      drift * 10_000n >
+        reference *
+          BigInt(quoteBounds(market.config.maxQuoteDeviationBps).driftBps)
     ) {
       const signature = await this.chain.program.methods
         .stopQuote()
@@ -149,6 +164,9 @@ export class QuoteWorker {
       return { stage: "stop_quote", signature };
     }
     if (
+      now - market.oracleTimestamp.toNumber() >
+        market.config.maxOracleAgeSeconds -
+          Math.min(60, Math.floor(market.config.maxOracleAgeSeconds / 2)) ||
       market.activeQuoteCount >= 4 ||
       BigInt(market.quotedNotional.toString()) +
         BigInt(quote.capacity.toString()) >
@@ -224,11 +242,18 @@ export class QuoteWorker {
       );
       if (
         status(account.status) === "closing" &&
+        this.owns(account) &&
         account.attachedOrders === 0
       ) {
         return { id: entry.pubkey, account };
       }
     }
     return undefined;
+  }
+  private owns(quote: QuoteState) {
+    return (
+      quote.maker.equals(this.chain.wallet.publicKey) ||
+      quote.operator.equals(this.chain.wallet.publicKey)
+    );
   }
 }

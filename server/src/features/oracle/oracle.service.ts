@@ -16,12 +16,14 @@ export type OracleMarket = {
 };
 
 export class OracleService {
+  deferred = false;
   constructor(
     private readonly chain: ChainSigner,
     private readonly address: PublicKey,
   ) {}
 
   async advance(): Promise<string | undefined> {
+    this.deferred = false;
     const market = await this.chain.read<OracleMarket>(
       "Market",
       this.chain.market,
@@ -31,7 +33,10 @@ export class OracleService {
         "Configured Pyth account does not match the market oracle",
       );
     }
-    if (market.pendingOrders !== 0 || "settling" in market.status) return;
+    if (market.pendingOrders !== 0 || "settling" in market.status) {
+      this.deferred = true;
+      return;
+    }
     const info = await this.chain.connection.getAccountInfo(
       this.address,
       "confirmed",
@@ -39,7 +44,10 @@ export class OracleService {
     if (!info) throw new Error("Configured Pyth price account is missing");
     const timestamp = BigInt(priceTimestamp(info));
     if (timestamp <= BigInt(market.oracleTimestamp.toString())) return;
-    if (await this.hasSnapshotComputation()) return;
+    if (await this.hasSnapshotComputation()) {
+      this.deferred = true;
+      return;
+    }
     try {
       return await this.chain.program.methods
         .refreshOracle()

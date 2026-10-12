@@ -74,11 +74,13 @@ test("oracle updates respect the settlement lock and reject unverified feeds", a
   } as unknown as ChainSigner;
   const service = new OracleService(chain, priceAccount);
   assert.equal(await service.advance(), undefined);
+  assert.equal(service.deferred, true);
   pendingOrders = 0;
   marketOracle = PublicKey.unique();
   await assert.rejects(service.advance(), /does not match the market oracle/);
   marketOracle = priceAccount;
   assert.equal(await service.advance(), "oracle-signature");
+  assert.equal(service.deferred, false);
   timestamp = 100;
   assert.equal(await service.advance(), undefined);
   data.writeBigInt64LE(101n, 93);
@@ -182,7 +184,7 @@ test("quote worker admits the waiting head only after market capacity is availab
   const chain = {
     market,
     protocol: PublicKey.unique(),
-    wallet: { publicKey: PublicKey.unique() },
+    wallet: { publicKey: maker },
     read: async (name: string, id: PublicKey) => {
       if (name === "Market")
         return {
@@ -193,7 +195,12 @@ test("quote worker admits the waiting head only after market capacity is availab
           quotedNotional: new anchor.BN(1_000),
           revision: new anchor.BN(2),
           oracleTimestamp: new anchor.BN(now),
-          config: { maxMarketNotional: new anchor.BN(2_000) },
+          oraclePriceE8: new anchor.BN(10000),
+          config: {
+            maxMarketNotional: new anchor.BN(2_000),
+            maxQuoteDeviationBps: 200,
+            maxOracleAgeSeconds: 300,
+          },
         };
       if (name === "QuoteQueue")
         return {
@@ -210,6 +217,7 @@ test("quote worker admits the waiting head only after market capacity is availab
         expiry: new anchor.BN(now + 60),
         marketRevision: new anchor.BN(2),
         oracleTimestamp: new anchor.BN(now),
+        oracleReferenceE8: new anchor.BN(10000),
       };
     },
     queue: async () => ({}),
@@ -252,7 +260,7 @@ test("quote worker releases closing collateral using the quote discriminator", a
   const chain = {
     market,
     protocol: PublicKey.unique(),
-    wallet: { publicKey: PublicKey.unique() },
+    wallet: { publicKey: maker },
     read: async (name: string) =>
       name === "Market"
         ? {

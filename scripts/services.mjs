@@ -31,6 +31,10 @@ const read = () =>
 await mkdir(directory, { recursive: true, mode: 0o700 });
 const current = await read();
 if (action === "start") {
+  if (process.env.PYTH_ORACLE_MODE === "hermes" && !process.env.PYTH_API_KEY)
+    throw new Error(
+      "PYTH_API_KEY is required to supervise the Hermes publisher",
+    );
   if (current && alive(current.pid)) {
     console.info(`Depth services already running (${current.pid})`);
   } else {
@@ -120,6 +124,13 @@ if (action === "start") {
       "http://127.0.0.1:3100/demo/trade",
     ],
   ];
+  if (process.env.PYTH_ORACLE_MODE === "hermes")
+    definitions.splice(1, 0, [
+      "publisher",
+      bun,
+      ["--env-file=.env.local", "server/src/features/oracle/oracle.worker.ts"],
+      `http://127.0.0.1:${process.env.DEPTH_PUBLISH_HEALTH_PORT ?? 8788}/healthz`,
+    ]);
   const children = new Map();
   let stopping = false;
   const timers = new Set();
@@ -184,6 +195,7 @@ if (action === "start") {
     for (const [name, timeout] of [
       ["client", 10_000],
       ["maker", 240_000],
+      ["publisher", 60_000],
       ["keeper", 30_000],
       ["api", 30_000],
     ]) {

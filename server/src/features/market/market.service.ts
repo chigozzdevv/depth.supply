@@ -15,6 +15,54 @@ import type {
 export class MarketService {
   constructor(private readonly chain: ChainClient) {}
 
+  async health() {
+    const address = marketAddress(this.chain.programId);
+    let current = (await this.chain.read<MarketAccount>(address, "Market"))
+      ?.value;
+    if (!current) return;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const ids = current.activeQuotes.slice(0, current.activeQuoteCount);
+      const [market, ...quotes] = await this.chain.readBatch([
+        { address, name: "Market" },
+        ...ids.map((address) => ({ address, name: "QuoteRecord" })),
+      ]);
+      if (!market) return;
+      current = market.value as MarketAccount;
+      if (
+        current.activeQuoteCount !== ids.length ||
+        current.activeQuotes
+          .slice(0, current.activeQuoteCount)
+          .some((id, index) => !id.equals(ids[index]))
+      )
+        continue;
+      const now = Math.floor(Date.now() / 1000);
+      const liveQuotes = quotes.filter((record) => {
+        if (!record) throw new Error("Market quote snapshot is unavailable");
+        const quote = record.value as {
+          market: PublicKey;
+          status: Record<string, unknown>;
+          expiry: { toString(): string };
+        };
+        if (!quote.market.equals(address))
+          throw new Error("Quote belongs to another market");
+        return (
+          variant(quote.status) === "active" &&
+          Number(quote.expiry.toString()) > now
+        );
+      }).length;
+      return {
+        status: variant(current.status),
+        incident: variant(current.incident),
+        oracleTimestamp: Number(integer(current.oracleTimestamp)),
+        lastFundingTimestamp: Number(integer(current.lastFundingTimestamp)),
+        maxOracleAgeSeconds: current.config.maxOracleAgeSeconds,
+        fundingIntervalSeconds: current.config.fundingIntervalSeconds,
+        liveQuotes,
+      };
+    }
+    throw new Error("Market changed while reading its quote snapshot");
+  }
+
   async get(): Promise<PublicMarket | undefined> {
     const address = marketAddress(this.chain.programId);
     const [account, queue] = await Promise.all([

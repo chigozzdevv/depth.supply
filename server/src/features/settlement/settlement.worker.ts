@@ -64,7 +64,7 @@ while (running) {
     if (!progress) {
       if (Date.now() - lastOracle >= config.oracleIntervalMs) {
         const signature = await oracle.advance();
-        lastOracle = Date.now();
+        if (!oracle.deferred) lastOracle = Date.now();
         if (signature) process.stdout.write(`refresh_oracle ${signature}\n`);
       }
       const service = services[serviceOffset];

@@ -1,5 +1,4 @@
 import Fastify, { LogController, type FastifyInstance } from "fastify";
-import { PublicKey } from "@solana/web3.js";
 import { appRoute } from "@/features/app/app.route";
 import { AppService } from "@/features/app/app.service";
 import { deploymentRoute } from "@/features/deployment/deployment.route";
@@ -40,11 +39,13 @@ export function buildApp(
   registerHttp(app);
   if (transport) rpcRoute(app, transport);
   app.get("/ready", async (_request, reply) => {
-    const market = await new MarketService(chain).get();
+    const market = await new MarketService(chain).health();
     const ports = [
       process.env.DEPTH_KEEPER_HEALTH_PORT ?? "8786",
       process.env.DEPTH_MAKER_HEALTH_PORT ?? "8789",
     ];
+    if (process.env.PYTH_ORACLE_MODE === "hermes")
+      ports.push(process.env.DEPTH_PUBLISH_HEALTH_PORT ?? "8788");
     const workers = await Promise.all(
       ports.map(async (port) => {
         try {
@@ -59,25 +60,15 @@ export function buildApp(
       }),
     );
     const now = Math.floor(Date.now() / 1000);
-    const quotes = market
-      ? await Promise.all(
-          market.active_quote_ids.map((id) =>
-            new QuoteService(chain).get(new PublicKey(id)),
-          ),
-        )
-      : [];
-    const liveQuotes = quotes.filter(
-      (quote) => quote?.status === "active" && Number(quote.expiry) > now,
-    ).length;
+    const liveQuotes = market?.liveQuotes ?? 0;
     const oracleFresh = Boolean(
       market &&
-      now >= Number(market.oracle_timestamp) &&
-      now - Number(market.oracle_timestamp) <= market.max_oracle_age_seconds,
+      now >= market.oracleTimestamp &&
+      now - market.oracleTimestamp <= market.maxOracleAgeSeconds,
     );
     const fundingFresh = Boolean(
       market &&
-      now <=
-        Number(market.last_funding_timestamp) + market.funding_interval_seconds,
+      now <= market.lastFundingTimestamp + market.fundingIntervalSeconds,
     );
     const ready = Boolean(
       market &&
@@ -96,6 +87,7 @@ export function buildApp(
       liveQuotes,
       keeper: workers[0],
       maker: workers[1],
+      ...(ports.length > 2 ? { publisher: workers[2] } : {}),
     };
   });
   viewRoute(app, views);

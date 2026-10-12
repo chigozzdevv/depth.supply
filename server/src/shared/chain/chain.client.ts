@@ -70,4 +70,26 @@ export class ChainClient {
       slot: result.context.slot,
     };
   }
+
+  async readBatch(
+    requests: Array<{ address: PublicKey; name: string }>,
+  ): Promise<Array<ChainAccount<unknown> | undefined>> {
+    const result = await this.connection.getMultipleAccountsInfoAndContext(
+      requests.map(({ address }) => address),
+      "confirmed",
+    );
+    return result.value.map((info, index) => {
+      if (!info) return undefined;
+      if (!info.owner.equals(this.programId))
+        throw new Error("Account is not owned by Depth");
+      const name = requests[index].name;
+      return {
+        value: this.coder.decode(
+          name[0].toLowerCase() + name.slice(1),
+          info.data,
+        ),
+        slot: result.context.slot,
+      };
+    });
+  }
 }

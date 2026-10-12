@@ -1,16 +1,16 @@
 import * as anchor from "@anchor-lang/core";
 import { createServer } from "node:http";
-import { Connection } from "@solana/web3.js";
+import { chainConnection } from "@/shared/chain/connection";
 import { OraclePublisher } from "@/features/oracle/oracle.publisher";
 import { priceTimestamp } from "@/features/oracle/oracle.price";
 import { publisherConfig } from "@/shared/config/env";
 
 const config = publisherConfig();
-const connection = new Connection(config.rpcUrl, "confirmed");
+const connection = chainConnection(`${config.serviceUrl}/rpc`);
 const publisher = new OraclePublisher(
   connection,
   new anchor.Wallet(config.keypair),
-  config
+  config,
 );
 let running = true;
 let delayMs = config.intervalMs;
@@ -22,7 +22,7 @@ const server = createServer(async (request, response) => {
   }
   try {
     const publishTime = priceTimestamp(
-      await connection.getAccountInfo(config.priceAccount, "confirmed")
+      await connection.getAccountInfo(config.priceAccount, "confirmed"),
     );
     const ageSeconds = Math.floor(Date.now() / 1_000) - publishTime;
     const healthy =
@@ -57,13 +57,15 @@ while (running) {
     if (published) {
       process.stdout.write(
         `pyth_sol_usd ${published.publishTime} ${published.signatures.join(
-          ","
-        )}\n`
+          ",",
+        )}\n`,
       );
     }
     delayMs = config.intervalMs;
   } catch (error) {
-    process.stderr.write(`${String(error)}\n`);
+    process.stderr.write(
+      `${String(error).replace(/(?:https?|wss?):\/\/[^\s]+/g, "[RPC endpoint]")}\n`,
+    );
     delayMs = Math.min(delayMs * 2, 60_000);
   }
   await new Promise((resolve) => setTimeout(resolve, delayMs));
