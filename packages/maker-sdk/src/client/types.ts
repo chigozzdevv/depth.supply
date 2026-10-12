@@ -57,6 +57,7 @@ export type QuoteState = {
   expiry: anchor.BN;
   attachedOrders: number;
   pendingComputation?: PublicKey;
+  balanceNonce: number[];
   marketRevision: anchor.BN;
   oracleTimestamp: anchor.BN;
   oracleReferenceE8: anchor.BN;

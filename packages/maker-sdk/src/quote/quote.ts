@@ -11,6 +11,7 @@ export type QuoteSnapshot = {
   status: string;
   maxCapacity: bigint;
   attachedOrders: number;
+  expiresAt: number;
   replacementNonce?: bigint;
 };
 
@@ -21,6 +22,7 @@ function name(value: Record<string, unknown>): string {
 export class QuoteHandle {
   reserveSignature?: string;
   releaseSignature?: string;
+  priorId?: PublicKey;
   private balanceView?: Awaited<ReturnType<MakerClient["requestQuoteView"]>>;
 
   constructor(
@@ -36,10 +38,49 @@ export class QuoteHandle {
       status: name(state.status),
       maxCapacity: BigInt(state.capacity.toString()),
       attachedOrders: state.attachedOrders,
+      expiresAt: state.expiry.toNumber(),
       ...(state.replacementNonce == null
         ? {}
         : { replacementNonce: BigInt(state.replacementNonce.toString()) }),
     };
+  }
+
+  async renew(input: { validForSeconds: number }): Promise<QuoteSnapshot> {
+    const market = await this.client.read<MarketState>(
+      "Market",
+      this.client.marketAddress,
+    );
+    if (
+      !Number.isSafeInteger(input.validForSeconds) ||
+      input.validForSeconds < 1 ||
+      input.validForSeconds > market.config.maxQuoteLifetimeSeconds
+    )
+      throw new RangeError("Quote duration is outside market policy");
+    const expiry = Math.floor(Date.now() / 1000) + input.validForSeconds;
+    const before = await this.status();
+    if (before.status !== "active")
+      throw new Error("Only active quotes can be renewed");
+    if (before.expiresAt >= expiry) return before;
+    const actor = this.client.options.wallet.publicKey;
+    try {
+      await this.client.program.methods
+        .renewQuote(new anchor.BN(expiry))
+        .accountsPartial({
+          actor,
+          market: this.client.marketAddress,
+          quote: this.id,
+          grant: actor.equals(this.client.options.maker)
+            ? this.client.program.programId
+            : this.client.grantAddress(),
+        })
+        .rpc({ commitment: "confirmed" });
+    } catch (error) {
+      const receipt = await this.status();
+      if (receipt.status !== "active" || receipt.expiresAt < expiry)
+        throw error;
+      return receipt;
+    }
+    return this.status();
   }
 
   async capacity(): Promise<bigint> {
@@ -62,6 +103,18 @@ export class QuoteHandle {
         return snapshot.remainingCapacity;
     }
     throw new Error("Quote balance changed while the private view was running");
+  }
+
+  async reservation(): Promise<bigint | undefined> {
+    const view =
+      this.balanceView ?? (await this.client.requestQuoteView(this.id));
+    this.balanceView = view;
+    const snapshot = await view.wait({ timeoutMs: 0 });
+    if (snapshot.status === "pending") return;
+    await view.deferClose();
+    this.balanceView = undefined;
+    if (snapshot.status === "ready" && "remainingMargin" in snapshot)
+      return snapshot.remainingMargin;
   }
 
   async confirm(
@@ -146,11 +199,34 @@ export class QuoteHandle {
         return snapshot;
       }
       if (snapshot.status === "validated" || snapshot.status === "waiting") {
+        if (this.priorId && snapshot.status === "validated") {
+          const prior = await this.client.options.connection.getAccountInfo(
+            this.priorId,
+            "confirmed",
+          );
+          if (prior) {
+            const previous = await this.client.quote.get(this.priorId).status();
+            if (previous.status === "active") {
+              const quote = await this.client.quoteState(this.id);
+              return this.client.quote
+                .replacement(this.priorId, BigInt(quote.nonce.toString()))
+                .rotate(this);
+            }
+          }
+        }
         const market = await this.client.read<MarketState>(
           "Market",
           this.client.marketAddress,
         );
         const quote = await this.client.quoteState(this.id);
+        const now = Math.floor(Date.now() / 1000);
+        const age = now - market.oracleTimestamp.toNumber();
+        if (
+          age >
+          market.config.maxOracleAgeSeconds -
+            Math.min(Math.floor(market.config.maxOracleAgeSeconds / 2), 60)
+        )
+          return snapshot;
         const reference = BigInt(quote.oracleReferenceE8.toString());
         const price = BigInt(market.oraclePriceE8.toString());
         const drift = price > reference ? price - reference : reference - price;
@@ -273,6 +349,22 @@ export class QuoteHandle {
     const grant = actor.equals(this.client.options.maker)
       ? undefined
       : this.client.grantAddress();
+    if (snapshot.status === "reserving") {
+      await this.cancelStep(
+        () =>
+          this.client.program.methods
+            .cancelQuoteReserve()
+            .accountsPartial({
+              actor,
+              grant: grant ?? this.client.program.programId,
+              quote: this.id,
+              marketAccount: this.client.marketAccount(),
+            })
+            .rpc({ commitment: "confirmed" }),
+        ["validated", "active", "cancelled"],
+      );
+      return this.cancel();
+    }
     if (snapshot.status === "validating" || snapshot.status === "validated") {
       return this.cancelStep(
         () =>

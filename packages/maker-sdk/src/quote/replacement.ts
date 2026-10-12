@@ -4,7 +4,10 @@ import { PublicKey } from "@solana/web3.js";
 import { Buffer } from "buffer";
 import type { MakerClient } from "@/client/client";
 import type { QuoteRequest } from "@/client/types";
+import type { MarketState } from "@/client/types";
 import type { QuoteHandle, QuoteSnapshot } from "@/quote/quote";
+import { randomBytes } from "@/chain/random";
+import { quoteBounds } from "@depthhq/bindings";
 
 export type ReplacementSnapshot = {
   prior?: QuoteSnapshot;
@@ -84,10 +87,12 @@ export class QuoteReplacement {
     if (input.clientNonce !== undefined && input.clientNonce !== this.nonce)
       throw new Error("Replacement terms use a different client nonce");
     await this.begin();
-    return this.client.quote.publish({
+    const handle = await this.client.quote.publish({
       ...input,
       clientNonce: this.nonce,
     } as QuoteRequest);
+    handle.priorId = this.priorId;
+    return handle;
   }
 
   async begin(): Promise<void> {
@@ -129,6 +134,109 @@ export class QuoteReplacement {
     }
   }
 
+  async rotate(
+    handle = this.client.quote.get(this.nextId),
+  ): Promise<QuoteSnapshot> {
+    const snapshot = await handle.status();
+    if (
+      ["reserving", "active", "filled", "cancelled", "rejected"].includes(
+        snapshot.status,
+      )
+    )
+      return snapshot;
+    if (snapshot.status !== "validated") return snapshot;
+    const [prior, quote, market, account] = await Promise.all([
+      this.client.quote.get(this.priorId).status(),
+      this.client.quoteState(this.nextId),
+      this.client.read<MarketState>("Market", this.client.marketAddress),
+      this.client.read<{ status: Record<string, unknown> }>(
+        "MarketAccount",
+        this.client.marketAccount(),
+      ),
+    ]);
+    if (prior.status !== "active") return handle.activate({ timeoutMs: 0 });
+    const reference = BigInt(quote.oracleReferenceE8.toString());
+    const price = BigInt(market.oraclePriceE8.toString());
+    const drift = price > reference ? price - reference : reference - price;
+    if (
+      !quote.marketRevision.eq(market.revision) ||
+      market.oracleTimestamp.lt(quote.oracleTimestamp) ||
+      reference <= 0n ||
+      drift * 10_000n >
+        reference *
+          BigInt(quoteBounds(market.config.maxQuoteDeviationBps).driftBps) ||
+      quote.expiry.toNumber() <= Math.floor(Date.now() / 1000)
+    )
+      return handle.cancel();
+    if (
+      market.pendingOrders > 0 ||
+      !("ready" in account.status) ||
+      prior.attachedOrders > 0
+    )
+      return snapshot;
+    const age =
+      Math.floor(Date.now() / 1000) - market.oracleTimestamp.toNumber();
+    if (
+      age >
+      market.config.maxOracleAgeSeconds -
+        Math.min(60, Math.floor(market.config.maxOracleAgeSeconds / 2))
+    )
+      return snapshot;
+    const offset = new anchor.BN(randomBytes(8), "le");
+    const actor = this.client.options.wallet.publicKey;
+    try {
+      handle.reserveSignature = await this.client.program.methods
+        .rotateQuote(offset)
+        .accountsPartial({
+          ...(await this.client.queue("rotate_quote", offset)),
+          payer: actor,
+          market: this.client.marketAddress,
+          marketAccount: this.client.marketAccount(),
+          quote: this.nextId,
+          prior: this.priorId,
+          grant: actor.equals(this.client.options.maker)
+            ? this.client.program.programId
+            : this.client.grantAddress(),
+        })
+        .rpc({ commitment: "confirmed" });
+    } catch (error) {
+      const receipt = await handle.status();
+      if (["reserving", "active"].includes(receipt.status)) return receipt;
+      const code = (error as { error?: { errorCode?: { code?: string } } })
+        .error?.errorCode?.code;
+      if (["WrongMarketAccountStatus", "WrongOrderStatus"].includes(code ?? ""))
+        return receipt;
+      throw error;
+    }
+    return handle.status();
+  }
+
+  async discard(): Promise<void> {
+    const next = this.client.quote.get(this.nextId);
+    const snapshot = await next.cancel();
+    if (!["cancelled", "rejected"].includes(snapshot.status))
+      throw new Error("Successor cancellation is still pending");
+    const prior = await this.client.quoteState(this.priorId);
+    if (prior.replacementNonce == null) return;
+    const actor = this.client.options.wallet.publicKey;
+    try {
+      await this.client.program.methods
+        .resetQuoteReplacement()
+        .accountsPartial({
+          actor,
+          quote: this.priorId,
+          successor: this.nextId,
+          grant: actor.equals(this.client.options.maker)
+            ? this.client.program.programId
+            : this.client.grantAddress(),
+        })
+        .rpc({ commitment: "confirmed" });
+    } catch (error) {
+      if ((await this.client.quoteState(this.priorId)).replacementNonce != null)
+        throw error;
+    }
+  }
+
   async resume(
     input: QuoteRequest,
     options: { timeoutMs?: number; pollMs?: number } = {},
@@ -149,6 +257,7 @@ export class QuoteReplacement {
     const deadline = Date.now() + timeoutMs;
     const previous = this.client.quote.get(this.priorId);
     const next = await this.prepare(input);
+    next.priorId = this.priorId;
     for (;;) {
       const snapshot = await next.status();
       if (
@@ -179,6 +288,10 @@ export class QuoteReplacement {
     for (;;) {
       const snapshot = await previous.status();
       if (["cancelled", "filled", "rejected"].includes(snapshot.status)) break;
+      if (snapshot.status === "active") {
+        await this.rotate(next);
+        return next;
+      }
       if (["active", "closing"].includes(snapshot.status)) {
         if (snapshot.status === "active" || snapshot.attachedOrders === 0)
           await previous.cancel();

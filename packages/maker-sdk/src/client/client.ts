@@ -16,6 +16,7 @@ import {
   protocolAddress,
   SOL_USD_MARKET_ID,
   quoteBounds,
+  quoteSizes,
 } from "@depthhq/bindings";
 import { DepthView } from "@depthhq/sdk/views";
 import { DepthRecovery } from "@depthhq/sdk/recovery";
@@ -97,6 +98,7 @@ function stateName(value: Record<string, unknown>): string {
 }
 
 export class MakerClient {
+  private marketView?: DepthView;
   readonly hedges: MakerAccess;
   readonly automation: MakerAutomation;
   readonly provider: anchor.AnchorProvider;
@@ -697,14 +699,14 @@ export class MakerClient {
       input.validForSeconds > market.config.maxQuoteLifetimeSeconds
     )
       throw new RangeError("Quote duration is outside market policy");
-    const tiers = market.config.quoteTiers
-      .map((size) => BigInt(size.toString()))
-      .filter((size) => size > 0n && size <= input.maxCapacity)
-      .map((size) => ({
-        size,
-        bidE8: input.bidE8,
-        askE8: input.askE8,
-      }));
+    const tiers = quoteSizes(
+      market.config.quoteTiers.map((size) => BigInt(size.toString())),
+      input.maxCapacity,
+    ).map((size) => ({
+      size,
+      bidE8: input.bidE8,
+      askE8: input.askE8,
+    }));
     if (!tiers.length)
       throw new RangeError("Capacity is below the first quote tier");
     return {
@@ -897,9 +899,13 @@ export class MakerClient {
       ): Promise<PositionSnapshot> => {
         if (this.options.wallet.publicKey.equals(this.options.maker))
           return (await this.owned()).position.summary(options);
-        const view = await this.requestMarketView();
+        const view = this.marketView ?? (await this.requestMarketView());
+        this.marketView = view;
         const result = (await view.wait(options)) as PositionSnapshot;
-        if (result.status !== "pending") await view.deferClose();
+        if (result.status !== "pending") {
+          this.marketView = undefined;
+          await view.deferClose();
+        }
         return result;
       },
     };
@@ -992,7 +998,7 @@ export class MakerClient {
     });
     u64(input.maxCapacity, "maxCapacity");
     if (
-      input.maxCapacity < input.tiers.at(-1)!.size ||
+      input.maxCapacity < input.tiers[0].size ||
       input.maxCapacity > BigInt(market.config.maxAccountNotional.toString()) ||
       input.maxCapacity > BigInt(market.config.maxMarketNotional.toString())
     ) {
