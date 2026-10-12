@@ -50,19 +50,21 @@ export class AutomationFunding {
       !status &&
       (await this.connection.getBlockHeight("finalized")) >
         transaction.lastValidBlockHeight &&
-      !// Jito's transitive web3 declarations omit this supported RPC method.
-      (
-        await (
-          this.connection as Connection & {
-            isBlockhashValid(
-              blockhash: string,
-              config: { commitment: "finalized" },
-            ): Promise<{ value: boolean }>;
-          }
-        ).isBlockhashValid(transaction.blockhash, {
-          commitment: "finalized",
-        })
-      ).value
+      !(
+        // Jito's transitive web3 declarations omit this supported RPC method.
+        (
+          await (
+            this.connection as Connection & {
+              isBlockhashValid(
+                blockhash: string,
+                config: { commitment: "finalized" },
+              ): Promise<{ value: boolean }>;
+            }
+          ).isBlockhashValid(transaction.blockhash, {
+            commitment: "finalized",
+          })
+        ).value
+      )
     )
       result = "expired";
     if (result !== "pending") {

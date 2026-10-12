@@ -1,4 +1,5 @@
 import * as anchor from "@anchor-lang/core";
+import { chainConnection } from "@/shared/chain/connection";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { create_depth_maker, automationConfig } from "@depthhq/maker-sdk";
 import {
@@ -33,7 +34,9 @@ export function automationFactory(options: {
     const config = automationConfig(record.config);
     const maker = await create_depth_maker({
       environment: record.environment,
-      rpcUrl: options.rpcUrl,
+      connection: chainConnection(
+        `${options.serviceUrl.replace(/\/+$/, "")}/rpc`,
+      ),
       serviceUrl: options.serviceUrl,
       wallet: new anchor.Wallet(
         Keypair.fromSecretKey(Buffer.from(record.operatorSecret, "base64")),
@@ -143,11 +146,34 @@ export class AutomationRunner {
     { attempts: number; after: number }
   >();
   private closing = false;
+  private readonly startedAt = new Map<string, number>();
   constructor(
     readonly store: AutomationStore,
     private readonly factory: AutomationFactory,
   ) {}
   has = (owner: string) => this.bots.has(owner) || this.tasks.has(owner);
+  health(now = Date.now()) {
+    const workers = this.store
+      .list()
+      .filter((record) => record.desired === "running")
+      .map((record) => {
+        const started = this.startedAt.get(record.owner);
+        const stalled = started !== undefined && now - started > 240_000;
+        const healthy =
+          !stalled &&
+          record.phase !== "blocked" &&
+          now - record.updatedAt < 240_000;
+        return {
+          owner: record.owner,
+          healthy,
+          stalled,
+          phase: record.phase,
+          updatedAt: record.updatedAt,
+          reason: record.reason,
+        };
+      });
+    return { healthy: workers.every((worker) => worker.healthy), workers };
+  }
   async tick() {
     const records = this.store
       .list()
@@ -165,9 +191,11 @@ export class AutomationRunner {
           (this.retries.get(record.owner)?.after ?? 0) > Date.now()
         )
           return;
-        const task = this.advance(record.owner).finally(() =>
-          this.tasks.delete(record.owner),
-        );
+        this.startedAt.set(record.owner, Date.now());
+        const task = this.advance(record.owner).finally(() => {
+          this.tasks.delete(record.owner);
+          this.startedAt.delete(record.owner);
+        });
         this.tasks.set(record.owner, task);
         return task;
       }),

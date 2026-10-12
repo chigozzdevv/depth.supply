@@ -83,3 +83,4 @@ export type {
 } from "@/chain/manifest";
 
 export { ViewSession } from "@/view/session";
+export { HttpConnection } from "@/chain/connection";

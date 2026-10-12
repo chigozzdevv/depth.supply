@@ -9,7 +9,7 @@ import {
 import { automationConfig } from "@/shared/config/env";
 import { makerRoute } from "@/features/maker/maker.route";
 import { MakerService } from "@/features/maker/maker.service";
-import { Connection } from "@solana/web3.js";
+import { chainConnection } from "@/shared/chain/connection";
 import { AutomationFunding } from "@/features/automation/funding.service";
 
 const config = automationConfig();
@@ -21,7 +21,7 @@ const store = await AutomationStore.open(
 const runner = new AutomationRunner(store, automationFactory(config));
 const funding = new AutomationFunding(
   store,
-  new Connection(config.rpcUrl, "confirmed"),
+  chainConnection(`${config.serviceUrl.replace(/\/+$/, "")}/rpc`),
 );
 const service = new AutomationService(store, runner.has, funding);
 const app = Fastify({ bodyLimit: 1024 });
@@ -53,8 +53,9 @@ app.get("/healthz", (_request, reply) => {
     !fundingError &&
     updatedAt > 0 &&
     Date.now() - updatedAt < 240000;
-  reply.code(healthy ? 200 : 503);
-  return { healthy, updatedAt };
+  const workers = runner.health();
+  reply.code(healthy && workers.healthy ? 200 : 503);
+  return { healthy: healthy && workers.healthy, updatedAt, workers };
 });
 const stop = () => {
   running = false;

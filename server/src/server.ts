@@ -1,4 +1,5 @@
-import { Connection } from "@solana/web3.js";
+import { chainConnection } from "@/shared/chain/connection";
+import { RpcTransport } from "@/shared/chain/transport";
 import { buildApp } from "@/app";
 import { ChainClient } from "@/shared/chain/chain.client";
 import * as anchor from "@anchor-lang/core";
@@ -10,7 +11,11 @@ import { serverConfig, viewConfig } from "@/shared/config/env";
 
 async function main(): Promise<void> {
   const config = serverConfig();
-  const connection = new Connection(config.rpcUrl, "confirmed");
+  const transport = new RpcTransport(
+    config.rpcUrl,
+    Number(process.env.SOLANA_RPC_RPS ?? "3"),
+  );
+  const connection = chainConnection(config.rpcUrl, transport.fetch);
   const sponsor = viewConfig();
   const views = sponsor
     ? new ViewService(
@@ -21,7 +26,7 @@ async function main(): Promise<void> {
         ),
       )
     : undefined;
-  const app = buildApp(new ChainClient(connection), true, views);
+  const app = buildApp(new ChainClient(connection), true, views, transport);
   process.once("SIGTERM", () => {
     void app.close();
   });
@@ -32,6 +37,8 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error) => {
-  process.stderr.write(`${String(error)}\n`);
+  process.stderr.write(
+    `${String(error).replace(/(?:https?|wss?):\/\/[^\s]+/g, "[RPC endpoint]")}\n`,
+  );
   process.exitCode = 1;
 });

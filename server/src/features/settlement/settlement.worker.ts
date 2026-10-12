@@ -1,5 +1,6 @@
 import * as anchor from "@anchor-lang/core";
-import { Connection } from "@solana/web3.js";
+import Fastify from "fastify";
+import { chainConnection } from "@/shared/chain/connection";
 import { Keeper } from "@/features/settlement/settlement.keeper";
 import { keeperConfig } from "@/shared/config/env";
 
@@ -8,16 +9,19 @@ import { RiskService } from "@/features/risk/risk.service";
 import { FeeService } from "@/features/fee/fee.service";
 import { FundingService } from "@/features/funding/funding.service";
 import { QuoteWorker } from "@/features/quote/quote.worker";
+import { MaintenanceService } from "@/features/maintenance/maintenance.service";
 
 const config = keeperConfig();
 const wallet = new anchor.Wallet(config.keypair);
-const keeper = new Keeper(new Connection(config.rpcUrl, "confirmed"), wallet);
+const keeper = new Keeper(chainConnection(`${config.serviceUrl}/rpc`), wallet);
 const oracle = new OracleService(keeper, config.priceAccount);
 const risk = new RiskService(keeper);
 const fees = new FeeService(keeper);
 const funding = new FundingService(keeper);
 const quotes = new QuoteWorker(keeper);
+const maintenance = new MaintenanceService(keeper, config.demoMaintenance);
 const services = [
+  { advance: () => maintenance.advance() },
   { advance: () => funding.advance() },
   { advance: () => quotes.advance() },
   {
@@ -44,6 +48,15 @@ process.once("SIGTERM", () => {
 });
 let delayMs = config.keeperIntervalMs ?? 2000;
 let lastError = "";
+let updatedAt = 0;
+const app = Fastify();
+app.get("/healthz", (_request, reply) => {
+  const healthy =
+    running && !lastError && updatedAt > 0 && Date.now() - updatedAt < 240_000;
+  reply.code(healthy ? 200 : 503).header("cache-control", "no-store");
+  return { healthy, updatedAt, error: lastError || undefined };
+});
+await app.listen({ host: "127.0.0.1", port: config.healthPort });
 
 while (running) {
   try {
@@ -61,13 +74,16 @@ while (running) {
     }
     delayMs = config.keeperIntervalMs ?? 2000;
     lastError = "";
+    updatedAt = Date.now();
     if (progress) {
       process.stdout.write(
         `${progress.stage} ${progress.order} ${progress.signature}\n`,
       );
     }
   } catch (error) {
-    const message = String(error);
+    const message = String(error)
+      .replace(/(?:https?|wss?):\/\/[^\s]+/g, "[RPC endpoint]")
+      .slice(0, 400);
     if (message !== lastError) {
       process.stderr.write(`${message}\n`);
       lastError = message;
@@ -76,3 +92,4 @@ while (running) {
   }
   await new Promise((resolve) => setTimeout(resolve, delayMs));
 }
+await app.close();

@@ -2,6 +2,9 @@
   "name": "depth-workspace",
   "private": true,
   "scripts": {
+    "services:start": "node --env-file-if-exists=.env.local scripts/services.mjs start",
+    "services:stop": "node scripts/services.mjs stop",
+    "services:status": "node scripts/services.mjs status",
     "dev": "pnpm --filter @depthhq/client dev",
     "maker": "pnpm --filter @depthhq/server maker",
     "build": "node scripts/build-package.mjs bindings schema sdk maker-sdk && pnpm --filter @depthhq/client build",

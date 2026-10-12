@@ -18,11 +18,11 @@ function request(origin: string, host: string, forwarded?: string): Request {
 
 test("RPC accepts the browser host when Next normalizes its internal URL", async () => {
   const previousFetch = globalThis.fetch;
-  const previousRpc = process.env.SOLANA_RPC_URL;
-  process.env.SOLANA_RPC_URL = "https://rpc.example.test";
+  const previousRpc = process.env.DEPTH_SERVICE_URL;
+  process.env.DEPTH_SERVICE_URL = "https://api.example.test";
   let calls = 0;
   globalThis.fetch = async (url, init) => {
-    assert.equal(url, "https://rpc.example.test");
+    assert.equal(url, "https://api.example.test/rpc");
     assert.equal(JSON.parse(init!.body as string).method, "getGenesisHash");
     calls += 1;
     return Response.json({ jsonrpc: "2.0", id: 1, result: "devnet-genesis" });
@@ -47,8 +47,8 @@ test("RPC accepts the browser host when Next normalizes its internal URL", async
     assert.equal(calls, 3);
   } finally {
     globalThis.fetch = previousFetch;
-    if (previousRpc === undefined) delete process.env.SOLANA_RPC_URL;
-    else process.env.SOLANA_RPC_URL = previousRpc;
+    if (previousRpc === undefined) delete process.env.DEPTH_SERVICE_URL;
+    else process.env.DEPTH_SERVICE_URL = previousRpc;
   }
 });
 

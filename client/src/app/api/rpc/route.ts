@@ -59,9 +59,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "invalid_rpc_request" }, { status: 400 });
   }
   try {
-    const url = process.env.SOLANA_RPC_URL;
-    if (!url)
-      return Response.json({ error: "rpc_unconfigured" }, { status: 503 });
+    const url = `${(process.env.DEPTH_SERVICE_URL ?? "http://127.0.0.1:8787").replace(/\/+$/, "")}/rpc`;
     return await relayRpc(
       url,
       text,

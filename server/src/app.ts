@@ -1,4 +1,5 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { LogController, type FastifyInstance } from "fastify";
+import { PublicKey } from "@solana/web3.js";
 import { appRoute } from "@/features/app/app.route";
 import { AppService } from "@/features/app/app.service";
 import { deploymentRoute } from "@/features/deployment/deployment.route";
@@ -22,14 +23,81 @@ import { registerHttp } from "@/shared/http/http.plugin";
 
 import { viewRoute } from "@/features/view/view.route";
 import type { ViewService } from "@/features/view/view.service";
+import type { RpcTransport } from "@/shared/chain/transport";
+import { rpcRoute } from "@/shared/http/rpc";
 
 export function buildApp(
   chain: ChainClient,
   logger = true,
   views?: ViewService,
+  transport?: RpcTransport,
 ): FastifyInstance {
-  const app = Fastify({ logger, bodyLimit: 1_024 });
+  const app = Fastify({
+    logger,
+    logController: new LogController({ disableRequestLogging: true }),
+    bodyLimit: 1_024,
+  });
   registerHttp(app);
+  if (transport) rpcRoute(app, transport);
+  app.get("/ready", async (_request, reply) => {
+    const market = await new MarketService(chain).get();
+    const ports = [
+      process.env.DEPTH_KEEPER_HEALTH_PORT ?? "8786",
+      process.env.DEPTH_MAKER_HEALTH_PORT ?? "8789",
+    ];
+    const workers = await Promise.all(
+      ports.map(async (port) => {
+        try {
+          const response = await fetch(`http://127.0.0.1:${port}/healthz`, {
+            signal: AbortSignal.timeout(5000),
+          });
+          const value = (await response.json()) as { healthy?: boolean };
+          return Boolean(response.ok && value.healthy);
+        } catch {
+          return false;
+        }
+      }),
+    );
+    const now = Math.floor(Date.now() / 1000);
+    const quotes = market
+      ? await Promise.all(
+          market.active_quote_ids.map((id) =>
+            new QuoteService(chain).get(new PublicKey(id)),
+          ),
+        )
+      : [];
+    const liveQuotes = quotes.filter(
+      (quote) => quote?.status === "active" && Number(quote.expiry) > now,
+    ).length;
+    const oracleFresh = Boolean(
+      market &&
+      now >= Number(market.oracle_timestamp) &&
+      now - Number(market.oracle_timestamp) <= market.max_oracle_age_seconds,
+    );
+    const fundingFresh = Boolean(
+      market &&
+      now <=
+        Number(market.last_funding_timestamp) + market.funding_interval_seconds,
+    );
+    const ready = Boolean(
+      market &&
+      market.status === "active" &&
+      market.incident === "none" &&
+      oracleFresh &&
+      fundingFresh &&
+      liveQuotes &&
+      workers.every(Boolean),
+    );
+    reply.code(ready ? 200 : 503);
+    return {
+      ready,
+      oracleFresh,
+      fundingFresh,
+      liveQuotes,
+      keeper: workers[0],
+      maker: workers[1],
+    };
+  });
   viewRoute(app, views);
   deploymentRoute(app, new DeploymentService(deploymentPaths()));
   marketRoute(app, new MarketService(chain));

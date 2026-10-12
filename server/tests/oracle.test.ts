@@ -63,7 +63,7 @@ test("publisher leaves a recently updated verified feed alone", async () => {
   assert.equal(await publisher.advance(), undefined);
 });
 
-test("oracle refresh preserves pending quote snapshots until expiry", async () => {
+test("oracle refresh preserves reservation snapshots while preparation uses bounded price movement", async () => {
   const now = Math.floor(Date.now() / 1_000);
   const price = priceAccount();
   price.data.writeBigInt64LE(BigInt(now), 93);
@@ -132,19 +132,15 @@ test("oracle refresh preserves pending quote snapshots until expiry", async () =
   } as unknown as ChainSigner;
   const service = new OracleService(chain, oracle);
 
-  assert.equal(await service.advance(), undefined);
+  assert.equal(await service.advance(), "oracle-signature");
   quoteStatus = enumValues.QuoteStatus.Validated;
-  assert.equal(await service.advance(), undefined);
+  assert.equal(await service.advance(), "oracle-signature");
   quoteStatus = enumValues.QuoteStatus.Reserving;
   assert.equal(await service.advance(), undefined);
-  assert.equal(refreshes, 0);
+  assert.equal(refreshes, 2);
   assert.deepEqual(
     queriedStatuses,
-    new Set([
-      enumValues.QuoteStatus.Validating,
-      enumValues.QuoteStatus.Validated,
-      enumValues.QuoteStatus.Reserving,
-    ]),
+    new Set([enumValues.QuoteStatus.Reserving]),
   );
 
   expiry = now - 1;
@@ -156,7 +152,7 @@ test("oracle refresh preserves pending quote snapshots until expiry", async () =
     quoteStatus = status;
     assert.equal(await service.advance(), "oracle-signature");
   }
-  assert.equal(refreshes, 3);
+  assert.equal(refreshes, 5);
 
   expiry = now + 60;
   for (const status of [
@@ -166,7 +162,7 @@ test("oracle refresh preserves pending quote snapshots until expiry", async () =
     quoteStatus = status;
     assert.equal(await service.advance(), "oracle-signature");
   }
-  assert.equal(refreshes, 5);
+  assert.equal(refreshes, 7);
 });
 
 test("oracle refresh accepts a confirmed competing refresh and preserves other failures", async () => {

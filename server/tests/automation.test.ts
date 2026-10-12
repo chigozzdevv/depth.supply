@@ -339,6 +339,8 @@ test("two makers start independently, pause only their own quotes, and restore r
     await service.command(alice, 1, "start");
     await runner.tick();
     assert.equal(calls.get(alice), 2);
+    assert.equal(runner.health().healthy, true);
+    assert.equal(runner.health(Date.now() + 240_001).healthy, false);
     assert.equal(service.summary(alice)!.operator, store.get(alice)!.operator);
   } finally {
     await runner.close();

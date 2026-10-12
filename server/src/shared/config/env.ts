@@ -8,11 +8,14 @@ export type ServerConfig = { rpcUrl: string; host: string; port: number };
 export type OracleMode = "sponsored" | "hermes";
 export type KeeperConfig = {
   rpcUrl: string;
+  serviceUrl: string;
   keypair: Keypair;
   priceAccount: PublicKey;
   oracleMode: OracleMode;
   oracleIntervalMs: number;
   keeperIntervalMs?: number;
+  healthPort: number;
+  demoMaintenance: boolean;
 };
 export type PublisherConfig = KeeperConfig & {
   apiKey: string;
@@ -169,9 +172,22 @@ export function keeperConfig(
     oracleMode: mode,
     oracleIntervalMs: interval,
     keeperIntervalMs,
+    healthPort: servicePort(env.DEPTH_KEEPER_HEALTH_PORT ?? "8786"),
+    demoMaintenance: env.DEPTH_DEMO_MAINTENANCE === "true",
     rpcUrl: url,
+    serviceUrl: rpcUrl(
+      env.DEPTH_SERVICE_URL ?? "http://127.0.0.1:8787",
+      "DEPTH_SERVICE_URL",
+    ).replace(/\/+$/, ""),
     keypair: loadSigner("keeper", { env }),
   };
+}
+
+function servicePort(value: string) {
+  const port = Number(value);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65535)
+    throw new Error("Worker health port is invalid");
+  return port;
 }
 
 export function publisherConfig(
