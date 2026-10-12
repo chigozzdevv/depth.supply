@@ -15,7 +15,6 @@ export function WalletButton({
   const wallet = useWallet();
   const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
-  const requested = useRef(false);
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -23,17 +22,8 @@ export function WalletButton({
     else dialog.current?.close();
   }, [open]);
   useEffect(() => {
-    if (!requested.current || !wallet.wallet) return;
-    requested.current = false;
-    void wallet
-      .connect()
-      .then(() => setOpen(false))
-      .catch((cause) =>
-        setError(
-          cause instanceof Error ? cause.message : "Wallet connection failed",
-        ),
-      );
-  }, [wallet]);
+    if (wallet.connected) dialog.current?.close();
+  }, [wallet.connected]);
   const available = wallet.wallets.filter(
     (item) =>
       item.readyState === WalletReadyState.Installed ||
@@ -49,10 +39,10 @@ export function WalletButton({
         }}
       >
         {!wallet.connected && <Wallet size={15} />}
-        {wallet.connecting
-          ? "Connecting…"
-          : wallet.publicKey
-            ? short(wallet.publicKey.toBase58())
+        {wallet.publicKey
+          ? short(wallet.publicKey.toBase58())
+          : wallet.connecting
+            ? "Connecting…"
             : label}
       </button>
       <dialog
@@ -105,17 +95,18 @@ export function WalletButton({
                 <button
                   key={adapter.name}
                   className="wallet-option"
+                  disabled={
+                    wallet.connecting &&
+                    wallet.wallet?.adapter.name === adapter.name
+                  }
                   onClick={() => {
                     setError("");
-                    requested.current = true;
-                    wallet.select(adapter.name);
                     if (wallet.wallet?.adapter.name === adapter.name) {
-                      requested.current = false;
                       void wallet
                         .connect()
                         .then(() => setOpen(false))
                         .catch((cause) => setError(String(cause)));
-                    }
+                    } else wallet.select(adapter.name);
                   }}
                 >
                   <Image
@@ -130,6 +121,17 @@ export function WalletButton({
                 </button>
               ))}
             </div>
+            {wallet.connecting && (
+              <button
+                className="terminal-button full"
+                onClick={() => {
+                  wallet.select(null);
+                  setOpen(false);
+                }}
+              >
+                Cancel connection
+              </button>
+            )}
             {available.length === 0 && (
               <p>
                 Open this page in a Solana wallet browser or enable its
