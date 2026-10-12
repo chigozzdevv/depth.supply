@@ -318,6 +318,62 @@ async function main() {
       previous.status !== "complete",
       "The preceding proof is already complete",
     );
+    const opening = previous.results.find(
+      ({ stage }) => stage === "trade_open_submitted",
+    );
+    if (
+      opening &&
+      !previous.results.some(({ stage }) =>
+        [
+          "trade_close_requested",
+          "trader_deposit_requested",
+          "trader_allocation_requested",
+        ].includes(stage ?? ""),
+      )
+    ) {
+      const context = await restoreRoundTrip(
+        maker,
+        previous.results,
+        20_000_000n,
+      );
+      const order = await maker.read<{
+        trader: PublicKey;
+        status: Record<string, unknown>;
+        kind: Record<string, unknown>;
+      }>("OrderRecord", new PublicKey(String(opening.order)));
+      assert.ok(
+        order.trader.equals(context.depth.options.wallet.publicKey) &&
+          "trade" in order.kind,
+      );
+      assert.ok(
+        "rejected" in order.status || "cancelled" in order.status,
+        "Reconcile requires a terminal rejected opening order",
+      );
+      assert.equal(
+        await connection.getAccountInfo(
+          context.depth.trade.operation(context.nonce + 1n).id,
+        ),
+        null,
+      );
+      const position = await context.depth.position.summary({
+        timeoutMs: 90_000,
+      });
+      assert.equal(position.status, "ready");
+      assert.equal(position.position, 0n);
+      assert.equal(position.collateral, context.initialCollateral);
+      assert.equal(position.reserved, context.initialReserved);
+      previous.status = "failed";
+      previous.updatedAt = new Date().toISOString();
+      previous.results.push({
+        stage: "reconciled",
+        at: previous.updatedAt,
+        order: opening.order,
+        reason: "Opening order rejected without exposure or funding changes",
+      });
+      await writeJson(workflowPath(), previous);
+      console.info(JSON.stringify(previous.results.at(-1)));
+      return;
+    }
     const allowedTraderStages = new Set([
       "trader_balance",
       "trader_deposit_requested",
