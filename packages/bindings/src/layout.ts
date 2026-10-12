@@ -83,7 +83,8 @@ export const accountOffsets = {
     "attached_orders": 513,
     "status": 515,
     "bump": 516,
-    "replacement_nonce": 517
+    "replacement_nonce": 517,
+    "oracle_reference_e8": 526
   },
   "BackstopOffer": {
     "maker": 8,

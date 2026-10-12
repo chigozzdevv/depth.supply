@@ -6,6 +6,7 @@ use crate::{
     constants::{COMP_DEF_OFFSET_RELEASE_QUOTE, COMP_DEF_OFFSET_RESERVE_QUOTE, SOL_USD_FEED_ID},
     error::ErrorCode,
     instructions::operator::authorize_operator,
+    instructions::quote::snapshot_compatible,
     state::{
         Market, MarketAccount, MarketAccountStatus, MarketStatus, OperatorGrant, Protocol,
         QuoteQueue, QuoteRecord, QuoteStatus,
@@ -346,11 +347,7 @@ pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64
         ErrorCode::WrongMarketAccountStatus
     );
     require!(account.version < u64::MAX, ErrorCode::RevisionOverflow);
-    require!(
-        quote.market_revision == market.revision
-            && quote.oracle_timestamp == market.oracle_timestamp,
-        ErrorCode::InvalidQuote
-    );
+    require!(snapshot_compatible(quote, market), ErrorCode::InvalidQuote);
     require!(quote.expiry > clock.unix_timestamp, ErrorCode::InvalidQuote);
     require!(market.active_quote_count < 4, ErrorCode::QuoteSnapshotFull);
     require!(
@@ -374,6 +371,7 @@ pub fn reserve_quote_handler(ctx: Context<ReserveQuote>, computation_offset: u64
         quote_queue.try_serialize(&mut &mut data[..])?;
     }
     quote.status = QuoteStatus::Reserving;
+    quote.oracle_timestamp = market.oracle_timestamp;
     quote.funding_index = market.funding_index;
     quote.pending_computation = ctx.accounts.computation_account.key();
     account.status = MarketAccountStatus::Reserving;
@@ -541,9 +539,7 @@ pub fn enqueue_quote_handler(ctx: Context<EnqueueQuote>) -> Result<()> {
         ErrorCode::WrongQuoteStatus
     );
     require!(
-        quote.market_revision == market.revision
-            && quote.oracle_timestamp == market.oracle_timestamp
-            && quote.expiry > Clock::get()?.unix_timestamp,
+        snapshot_compatible(quote, market) && quote.expiry > Clock::get()?.unix_timestamp,
         ErrorCode::InvalidQuote
     );
     ctx.accounts.quote_queue.enqueue(quote.key())?;
@@ -559,10 +555,7 @@ pub fn stop_quote_handler(ctx: Context<StopQuote>) -> Result<()> {
     let quote = &mut ctx.accounts.quote;
     let market = &mut ctx.accounts.market;
     if quote.status == QuoteStatus::Waiting {
-        if Clock::get()?.unix_timestamp < quote.expiry
-            && quote.market_revision == market.revision
-            && quote.oracle_timestamp == market.oracle_timestamp
-        {
+        if Clock::get()?.unix_timestamp < quote.expiry && snapshot_compatible(quote, market) {
             authorize_quote_actor(
                 ctx.accounts.actor.key(),
                 quote,

@@ -15,6 +15,17 @@ export const SOL_USD_FEED_ID = Buffer.from(
   "hex",
 );
 export const SOL_USD_MARKET_ID = "SOL-USD";
+
+export function quoteBounds(maximum: number) {
+  if (!Number.isSafeInteger(maximum) || maximum < 0 || maximum > 1000)
+    throw new RangeError("Quote deviation must be from 0 to 1000 basis points");
+  const driftBps = Math.min(Math.floor(maximum / 4), 25);
+  return {
+    driftBps,
+    preparationBps:
+      maximum - driftBps - Math.ceil((maximum * driftBps) / 10000),
+  };
+}
 export const PYTH_PUSH_ORACLE_ID = new PublicKey(
   "pythWSnswVUd12oZpeFP8e9CVaEqJg25g1Vtc2biRsT",
 );

@@ -416,6 +416,7 @@ pub struct QuoteRecord {
     pub status: QuoteStatus,
     pub bump: u8,
     pub replacement_nonce: Option<u64>,
+    pub oracle_reference_e8: u64,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, InitSpace)]

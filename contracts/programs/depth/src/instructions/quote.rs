@@ -135,9 +135,37 @@ pub struct CloseQuote<'info> {
     pub quote: Box<Account<'info, QuoteRecord>>,
 }
 
+#[derive(Accounts)]
+pub struct CloseOperatorQuote<'info> {
+    #[account(mut)]
+    pub operator: Signer<'info>,
+    #[account(
+        mut,
+        close = operator,
+        constraint = quote.operator == operator.key() @ ErrorCode::Unauthorized,
+        seeds = [b"quote", quote.market.as_ref(), quote.maker.as_ref(), quote.nonce.to_le_bytes().as_ref()],
+        bump = quote.bump,
+    )]
+    pub quote: Box<Account<'info, QuoteRecord>>,
+}
+
 pub fn init_prepare_quote_comp_def_handler(ctx: Context<InitPrepareQuoteCompDef>) -> Result<()> {
     init_depth_comp_def!(ctx.accounts, "prepare_quote")?;
     Ok(())
+}
+
+pub(crate) fn preparation_deviation(maximum: u16) -> u16 {
+    let buffer = (maximum / 4).min(25);
+    maximum - buffer - ((u32::from(maximum) * u32::from(buffer)).div_ceil(10_000) as u16)
+}
+
+pub(crate) fn snapshot_compatible(quote: &QuoteRecord, market: &Market) -> bool {
+    quote.market_revision == market.revision
+        && market.oracle_timestamp >= quote.oracle_timestamp
+        && quote.oracle_reference_e8 > 0
+        && u128::from(quote.oracle_reference_e8.abs_diff(market.oracle_price_e8)) * 10_000
+            <= u128::from(quote.oracle_reference_e8)
+                * u128::from((market.config.max_quote_deviation_bps / 4).min(25))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -215,6 +243,7 @@ pub fn submit_quote_handler(
     quote.tier_count = tier_count;
     quote.market_revision = market.revision;
     quote.oracle_timestamp = market.oracle_timestamp;
+    quote.oracle_reference_e8 = market.oracle_price_e8;
     quote.pending_computation = ctx.accounts.computation_account.key();
     quote.replacement_nonce = None;
     quote.status = QuoteStatus::Validating;
@@ -229,7 +258,7 @@ pub fn submit_quote_handler(
     }
     let args = args
         .plaintext_u64(market.oracle_price_e8)
-        .plaintext_u16(market.config.max_quote_deviation_bps)
+        .plaintext_u16(preparation_deviation(market.config.max_quote_deviation_bps))
         .plaintext_u8(tier_count)
         .plaintext_u64(capacity)
         .plaintext_u64(required_margin)
@@ -286,11 +315,12 @@ pub fn prepare_quote_callback_handler(
     );
     let clock = Clock::get()?;
     if result.field_2
-        && quote.market_revision == ctx.accounts.market.revision
-        && quote.oracle_timestamp == ctx.accounts.market.oracle_timestamp
+        && snapshot_compatible(quote, &ctx.accounts.market)
         && quote.expiry > clock.unix_timestamp
-        && clock.unix_timestamp >= quote.oracle_timestamp
-        && clock.unix_timestamp.saturating_sub(quote.oracle_timestamp)
+        && clock.unix_timestamp >= ctx.accounts.market.oracle_timestamp
+        && clock
+            .unix_timestamp
+            .saturating_sub(ctx.accounts.market.oracle_timestamp)
             <= i64::from(ctx.accounts.market.config.max_oracle_age_seconds)
     {
         quote.ciphertexts = result.field_0.ciphertexts;
@@ -298,6 +328,7 @@ pub fn prepare_quote_callback_handler(
         quote.balance_ciphertext = result.field_1.ciphertexts[0];
         quote.balance_nonce = result.field_1.nonce.to_le_bytes();
         quote.status = QuoteStatus::Validated;
+        quote.oracle_timestamp = ctx.accounts.market.oracle_timestamp;
     } else {
         quote.status = QuoteStatus::Rejected;
     }
@@ -335,15 +366,41 @@ pub fn cancel_prepared_quote_handler(ctx: Context<CancelPreparedQuote>) -> Resul
 }
 
 pub fn close_quote_handler(ctx: Context<CloseQuote>) -> Result<()> {
+    require_terminal_quote(&ctx.accounts.quote)
+}
+
+pub fn close_operator_quote_handler(ctx: Context<CloseOperatorQuote>) -> Result<()> {
+    require_terminal_quote(&ctx.accounts.quote)
+}
+
+fn require_terminal_quote(quote: &QuoteRecord) -> Result<()> {
     require!(
-        ctx.accounts.quote.status == QuoteStatus::Cancelled
-            || ctx.accounts.quote.status == QuoteStatus::Filled
-            || ctx.accounts.quote.status == QuoteStatus::Rejected,
+        quote.status == QuoteStatus::Cancelled
+            || quote.status == QuoteStatus::Filled
+            || quote.status == QuoteStatus::Rejected,
         ErrorCode::WrongQuoteStatus
     );
-    require!(
-        ctx.accounts.quote.attached_orders == 0,
-        ErrorCode::QuoteHasOrders
-    );
+    require!(quote.attached_orders == 0, ErrorCode::QuoteHasOrders);
     Ok(())
+}
+
+#[cfg(test)]
+mod snapshot_tests {
+    use super::preparation_deviation;
+
+    #[test]
+    fn preparation_buffer_preserves_the_full_market_price_bound() {
+        for maximum in 1u16..=1_000 {
+            let buffer = u128::from((maximum / 4).min(25));
+            let prepared = u128::from(preparation_deviation(maximum));
+            for reference in [100_000_000u128, 11_123_456_789u128, 100_000_000_000_000u128] {
+                let low = (reference * (10_000 - prepared)).div_ceil(10_000);
+                let high = reference * (10_000 + prepared) / 10_000;
+                let minimum = reference * (10_000 - buffer) / 10_000;
+                let maximum_price = (reference * (10_000 + buffer)).div_ceil(10_000);
+                assert!(low * 10_000 >= maximum_price * (10_000 - u128::from(maximum)));
+                assert!(high * 10_000 <= minimum * (10_000 + u128::from(maximum)));
+            }
+        }
+    }
 }

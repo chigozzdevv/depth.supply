@@ -3920,6 +3920,60 @@ export type Depth = {
       "args": []
     },
     {
+      "name": "closeOperatorQuote",
+      "discriminator": [
+        248,
+        101,
+        132,
+        145,
+        146,
+        204,
+        175,
+        5
+      ],
+      "accounts": [
+        {
+          "name": "operator",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "quote",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  113,
+                  117,
+                  111,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "quote.market",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.maker",
+                "account": "quoteRecord"
+              },
+              {
+                "kind": "account",
+                "path": "quote.nonce",
+                "account": "quoteRecord"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "closeQuote",
       "discriminator": [
         186,
@@ -11727,6 +11781,122 @@ export type Depth = {
               ]
             }
           }
+        }
+      ]
+    },
+    {
+      "name": "renewBackstop",
+      "discriminator": [
+        101,
+        28,
+        90,
+        215,
+        24,
+        141,
+        161,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "maker",
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "const",
+                "value": [
+                  239,
+                  13,
+                  139,
+                  111,
+                  218,
+                  44,
+                  235,
+                  164,
+                  29,
+                  161,
+                  93,
+                  64,
+                  149,
+                  209,
+                  218,
+                  57,
+                  42,
+                  13,
+                  47,
+                  142,
+                  208,
+                  198,
+                  199,
+                  188,
+                  15,
+                  76,
+                  250,
+                  200,
+                  194,
+                  128,
+                  181,
+                  109
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "offer",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  98,
+                  97,
+                  99,
+                  107,
+                  115,
+                  116,
+                  111,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "offer.market",
+                "account": "backstopOffer"
+              },
+              {
+                "kind": "account",
+                "path": "offer.maker",
+                "account": "backstopOffer"
+              },
+              {
+                "kind": "account",
+                "path": "offer.nonce",
+                "account": "backstopOffer"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "expiry",
+          "type": "i64"
         }
       ]
     },
@@ -22641,6 +22811,10 @@ export type Depth = {
             "type": {
               "option": "u64"
             }
+          },
+          {
+            "name": "oracleReferenceE8",
+            "type": "u64"
           }
         ]
       }

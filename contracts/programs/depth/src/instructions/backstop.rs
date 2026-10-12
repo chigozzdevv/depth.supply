@@ -14,6 +14,37 @@ use crate::{
     ArciumSignerAccount, ID, ID_CONST,
 };
 
+#[derive(Accounts)]
+pub struct RenewBackstop<'info> {
+    pub maker: Signer<'info>,
+    #[account(seeds = [b"market", SOL_USD_FEED_ID.as_ref()], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(mut, constraint = offer.maker == maker.key() @ ErrorCode::Unauthorized,
+        constraint = offer.market == market.key() @ ErrorCode::WrongMarket,
+        seeds = [b"backstop", offer.market.as_ref(), offer.maker.as_ref(), offer.nonce.to_le_bytes().as_ref()], bump = offer.bump)]
+    pub offer: Box<Account<'info, BackstopOffer>>,
+}
+
+pub fn renew_backstop_handler(ctx: Context<RenewBackstop>, expiry: i64) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        ctx.accounts.market.pending_orders == 0,
+        ErrorCode::WrongOrderStatus
+    );
+    require!(
+        ctx.accounts.market.backstop_offer == ctx.accounts.offer.key()
+            && ctx.accounts.offer.status == BackstopStatus::Active
+            && ctx.accounts.offer.expiry > now,
+        ErrorCode::InvalidBackstop
+    );
+    require!(
+        expiry > ctx.accounts.offer.expiry && expiry.saturating_sub(now) <= 86_400,
+        ErrorCode::InvalidBackstop
+    );
+    ctx.accounts.offer.expiry = expiry;
+    Ok(())
+}
+
 #[init_computation_definition_accounts("offer_backstop_v2", payer)]
 #[derive(Accounts)]
 pub struct InitOfferBackstopCompDef<'info> {

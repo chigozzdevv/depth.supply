@@ -146,6 +146,10 @@ pub mod depth {
         backstop::offer_backstop_handler(ctx, computation_offset, nonce, capacity, expiry)
     }
 
+    pub fn renew_backstop(ctx: Context<RenewBackstop>, expiry: i64) -> Result<()> {
+        backstop::renew_backstop_handler(ctx, expiry)
+    }
+
     pub fn init_offer_backstop_comp_def(ctx: Context<InitOfferBackstopCompDef>) -> Result<()> {
         backstop::init_offer_backstop_comp_def_handler(ctx)
     }
@@ -543,6 +547,10 @@ pub mod depth {
 
     pub fn close_quote(ctx: Context<CloseQuote>) -> Result<()> {
         quote::close_quote_handler(ctx)
+    }
+
+    pub fn close_operator_quote(ctx: Context<CloseOperatorQuote>) -> Result<()> {
+        quote::close_operator_quote_handler(ctx)
     }
 
     pub fn init_reserve_quote_comp_def(ctx: Context<InitReserveQuoteCompDef>) -> Result<()> {
