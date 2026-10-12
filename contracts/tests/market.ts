@@ -91,6 +91,25 @@ describe("SOL perpetual market", () => {
     const stranger = anchor.web3.Keypair.generate();
     await expectRejected(
       program.methods
+        .setOracleAge(300)
+        .accountsPartial({ market, protocol, authority })
+        .rpc()
+    );
+    await expectRejected(
+      program.methods
+        .setOracleAge(300)
+        .accountsPartial({ market, protocol, authority: stranger.publicKey })
+        .signers([stranger])
+        .rpc()
+    );
+    await expectRejected(
+      program.methods
+        .reviseMarket({ ...config, maxOracleAgeSeconds: 601 })
+        .accountsPartial({ market, protocol, authority })
+        .rpc()
+    );
+    await expectRejected(
+      program.methods
         .reviseMarket({ ...config, maxOracleAgeSeconds: 250 })
         .accountsPartial({ market, protocol, authority: stranger.publicKey })
         .signers([stranger])

@@ -349,6 +349,14 @@ describe("confidential trade settlement", () => {
             .rpc(options),
       ],
       [
+        "rotate_quote",
+        (a) =>
+          program.methods
+            .initRotateQuoteCompDef()
+            .accountsPartial(a)
+            .rpc(options),
+      ],
+      [
         "release_quote",
         (a) =>
           program.methods
@@ -1052,6 +1060,51 @@ describe("confidential trade settlement", () => {
         .signers([operator])
         .rpc()
     );
+
+    const renewedQuoteExpiry = new anchor.BN(
+      Math.floor(Date.now() / 1000) + 119
+    );
+    const beforeRenew = await program.account.quoteRecord.fetch(quote);
+    const beforeRenewAccount = await program.account.marketAccount.fetch(
+      makerState.marketAccount
+    );
+    await expectRejected(
+      program.methods
+        .renewQuote(renewedQuoteExpiry)
+        .accountsPartial({
+          actor: trader.publicKey,
+          market,
+          grant: null,
+          quote,
+        })
+        .signers([trader])
+        .rpc()
+    );
+    await expectRejected(
+      program.methods
+        .renewQuote(new anchor.BN(Math.floor(Date.now() / 1000) + 121))
+        .accountsPartial({ actor: authority, market, grant: null, quote })
+        .rpc()
+    );
+    await program.methods
+      .renewQuote(renewedQuoteExpiry)
+      .accountsPartial({
+        actor: operator.publicKey,
+        market,
+        grant: operatorGrant,
+        quote,
+      })
+      .signers([operator])
+      .rpc();
+    const afterRenew = await program.account.quoteRecord.fetch(quote);
+    expect(afterRenew.expiry.eq(renewedQuoteExpiry)).to.equal(true);
+    expect(afterRenew.balanceCiphertext).to.deep.equal(
+      beforeRenew.balanceCiphertext
+    );
+    expect(afterRenew.capacity.eq(beforeRenew.capacity)).to.equal(true);
+    expect(
+      await program.account.marketAccount.fetch(makerState.marketAccount)
+    ).to.deep.equal(beforeRenewAccount);
 
     const clearingState = await program.account.clearingAccount.fetch(clearing);
     const clearingCipher = new RescueCipher(
@@ -2029,58 +2082,6 @@ describe("confidential trade settlement", () => {
         await program.account.quoteRecord.fetch(quote)
       ).replacementNonce?.toString()
     ).to.equal(exitQuoteNonce.toString());
-    await program.methods
-      .stopQuote()
-      .accountsPartial({
-        actor: authority,
-        market,
-        quoteQueue,
-        grant: null,
-        quote,
-      })
-      .rpc(options);
-    offset = harness.offset();
-    await program.methods
-      .releaseQuote(offset)
-      .accountsPartial({
-        ...harness.queue(offset, "release_quote"),
-        payer: authority,
-        protocol,
-        market,
-        grant: null,
-        marketAccount: makerState.marketAccount,
-        quote,
-      })
-      .rpc(options);
-    await harness.finalize(offset);
-    expect(
-      (await program.account.market.fetch(market)).activeQuoteCount
-    ).to.equal(0);
-    expect(
-      (await program.account.quoteRecord.fetch(quote)).status
-    ).to.deep.equal({ cancelled: {} });
-    await expectRejected(
-      program.methods
-        .closeOperatorQuote()
-        .accountsPartial({ operator: authority, quote })
-        .rpc()
-    );
-    const quoteRent = (await provider.connection.getAccountInfo(quote))!
-      .lamports;
-    const operatorBeforeClose = await provider.connection.getBalance(
-      operator.publicKey
-    );
-    await program.methods
-      .closeOperatorQuote()
-      .accountsPartial({ operator: operator.publicKey, quote })
-      .signers([operator])
-      .rpc();
-    expect(await program.account.quoteRecord.fetchNullable(quote)).to.equal(
-      null
-    );
-    expect(await provider.connection.getBalance(operator.publicKey)).to.equal(
-      operatorBeforeClose + quoteRent
-    );
     const exitUpdate = await provider.connection.getAccountInfo(exitOracle);
     if (!exitUpdate) throw new Error("Exit oracle fixture is unavailable");
     const exitPublishMs = Number(exitUpdate.data.readBigInt64LE(93)) * 1_000;
@@ -2143,24 +2144,129 @@ describe("confidential trade settlement", () => {
     ).to.deep.equal({
       validated: {},
     });
+    const beforeRotationAccount = await program.account.marketAccount.fetch(
+      makerState.marketAccount
+    );
+    const beforeRotation = await unpackMarket(
+      makerCipher.decrypt(
+        beforeRotationAccount.recoveryCiphertexts.map((word) =>
+          Array.from(word)
+        ),
+        Uint8Array.from(beforeRotationAccount.recoveryNonce)
+      )
+    );
     offset = harness.offset();
     await program.methods
-      .reserveQuote(offset)
+      .rotateQuote(offset)
       .accountsPartial({
-        ...harness.queue(offset, "reserve_quote_v2"),
+        ...harness.queue(offset, "rotate_quote"),
         payer: authority,
-        protocol,
         market,
         grant: null,
         marketAccount: makerState.marketAccount,
         quote: exitQuote,
+        prior: quote,
       })
-      .remainingAccounts([
-        { pubkey: quoteQueue, isSigner: false, isWritable: true },
-      ])
+      .rpc(options);
+    const duringRotation = await program.account.market.fetch(market);
+    expect(duringRotation.activeQuoteCount).to.equal(1);
+    expect(duringRotation.activeQuotes[0].equals(quote)).to.equal(true);
+    expect(
+      (await program.account.quoteRecord.fetch(quote)).status
+    ).to.deep.equal({ active: {} });
+    await program.methods
+      .pauseMarket()
+      .accountsPartial({ actor: authority, protocol, market })
+      .rpc();
+    await harness.finalize(offset);
+    expect(
+      (await program.account.quoteRecord.fetch(exitQuote)).status
+    ).to.deep.equal({ validated: {} });
+    expect(
+      (await program.account.quoteRecord.fetch(quote)).status
+    ).to.deep.equal({ active: {} });
+    const refusedRotationAccount = await program.account.marketAccount.fetch(
+      makerState.marketAccount
+    );
+    expect(
+      refusedRotationAccount.version.eq(beforeRotationAccount.version)
+    ).to.equal(true);
+    expect(refusedRotationAccount.ciphertexts).to.deep.equal(
+      beforeRotationAccount.ciphertexts
+    );
+    expect(
+      (await program.account.market.fetch(market)).activeQuoteCount
+    ).to.equal(1);
+    await program.methods
+      .resumeMarket()
+      .accountsPartial({
+        authority,
+        protocol,
+        market,
+        clearing,
+        backstopOffer,
+        vault,
+      })
+      .rpc();
+    offset = harness.offset();
+    await program.methods
+      .rotateQuote(offset)
+      .accountsPartial({
+        ...harness.queue(offset, "rotate_quote"),
+        payer: authority,
+        market,
+        grant: null,
+        marketAccount: makerState.marketAccount,
+        quote: exitQuote,
+        prior: quote,
+      })
       .rpc(options);
     await harness.finalize(offset);
-
+    const afterRotationAccount = await program.account.marketAccount.fetch(
+      makerState.marketAccount
+    );
+    const afterRotation = await unpackMarket(
+      makerCipher.decrypt(
+        afterRotationAccount.recoveryCiphertexts.map((word) =>
+          Array.from(word)
+        ),
+        Uint8Array.from(afterRotationAccount.recoveryNonce)
+      )
+    );
+    expect(afterRotation.reserved).to.equal(100_110_000n);
+    expect(afterRotation.position).to.equal(beforeRotation.position);
+    expect(afterRotation.collateral).to.equal(beforeRotation.collateral);
+    const rotatedMarket = await program.account.market.fetch(market);
+    expect(rotatedMarket.activeQuoteCount).to.equal(1);
+    expect(rotatedMarket.activeQuotes[0].equals(exitQuote)).to.equal(true);
+    expect(
+      (await program.account.quoteRecord.fetch(quote)).status
+    ).to.deep.equal({ cancelled: {} });
+    expect(
+      (await program.account.quoteRecord.fetch(exitQuote)).status
+    ).to.deep.equal({ active: {} });
+    await expectRejected(
+      program.methods
+        .closeOperatorQuote()
+        .accountsPartial({ operator: authority, quote })
+        .rpc()
+    );
+    const quoteRent = (await provider.connection.getAccountInfo(quote))!
+      .lamports;
+    const operatorBeforeClose = await provider.connection.getBalance(
+      operator.publicKey
+    );
+    await program.methods
+      .closeOperatorQuote()
+      .accountsPartial({ operator: operator.publicKey, quote })
+      .signers([operator])
+      .rpc();
+    expect(await program.account.quoteRecord.fetchNullable(quote)).to.equal(
+      null
+    );
+    expect(await provider.connection.getBalance(operator.publicKey)).to.equal(
+      operatorBeforeClose + quoteRent
+    );
     const intentCases = [
       { intent: 0n, side: 255n, amount: 1_000_000n, stale: false },
       { intent: 1n, side: 255n, amount: 6_000_000n, stale: false },
