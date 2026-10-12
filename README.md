@@ -66,6 +66,18 @@ hedge, maker process recovery, position closure, and hedge unwind against the
 running services. Interrupted operations retain their IDs in the existing devnet
 journal and resume with `--hosted --resume`.
 
+`SOLANA_RPC_RPS` bounds shared RPC throughput and defaults to three requests per
+second. Set it below your provider's supported limit; ten is suitable for a
+Chainstack endpoint with a 25 RPS allowance. Submissions and confirmations take
+priority over scans, scans are limited to two per second, and concurrency is
+bounded. The devnet hedge reconciliation default is 90 seconds within a 100 USDC
+unhedged limit; `DEPTH_HEDGE_WAIT_MS` overrides that window. Mainnet's default
+remains 15 seconds.
+The devnet API uses Solana's public devnet RPC as a rate-limited fallback after
+connection failures. It verifies the fallback genesis hash, preserves signed
+transaction bytes, and retries the primary after a short cooldown. Mainnet does
+not use this automatic devnet fallback.
+
 The client uses Next.js, Tailwind CSS, Lucide icons, Solana Wallet Standard,
 and Lightweight Charts. `/demo/trade` supports funding, encrypted trades,
 position management, and canonical operation receipts. `/demo/maker` supports

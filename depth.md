@@ -590,6 +590,13 @@ Unresolved external receipts, stale
 external prices, or an exhausted risk budget stop quoting. Inventory reads poll
 without blocking the quote loop, reuse pending requests, and follow the canonical
 account version; reservation-only changes do not force another inventory read.
+The devnet demo allows 90 seconds for inventory finality and hedge reconciliation
+within a 100 USDC aggregate unhedged limit. Hedge submissions still begin after
+the five-second batching window once finalized inventory is available. Exchange
+fill timestamps, rather than local HTTP completion times, determine whether an
+external account snapshot includes a confirmed hedge. RPC scheduling prioritizes
+submissions and confirmations over scans, bounds concurrency, and drops requests
+when their last waiting client disconnects.
 
 Preparation validates prices inside a narrower oracle band, reserving up to
 25 bps for price movement before admission. Admission rejects larger movement
@@ -861,6 +868,9 @@ index and each account's encrypted checkpoint. Long payments equal short
 receipts after any published rounding rule. A funding update cannot draw new
 tokens from outside the vault or change the market's accepted formula without a
 versioned transition.
+Maker and client readiness use the same two-interval deadline; the first
+interval becoming due does not by itself cancel liquidity while the next
+verified oracle update advances funding.
 
 The oracle marks equity and drives liquidation. It does not automatically
 become the execution price. Entry and normal close prices come from maker
