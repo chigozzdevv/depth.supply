@@ -1,12 +1,62 @@
 import assert from "node:assert/strict";
 import { setTimeout as wait } from "node:timers/promises";
 import { test } from "node:test";
-import { EventEmitter, type Adapter } from "@solana/wallet-adapter-base";
-import { watchConnection } from "@/shared/depth/wallet";
+import {
+  EventEmitter,
+  type Adapter,
+  type WalletName,
+} from "@solana/wallet-adapter-base";
+import { connectWallet, watchConnection } from "@/shared/depth/wallet";
 
 function adapter(): Adapter {
   return Object.assign(new EventEmitter(), { connected: false }) as Adapter;
 }
+
+test("manual connection selects the adapter and calls connect before the click returns", async () => {
+  const wallet = adapter();
+  const name = "Phantom" as WalletName;
+  let selected: WalletName | undefined;
+  let connectCalls = 0;
+  let autoCalls = 0;
+  let resolve!: () => void;
+  const approval = new Promise<void>((done) => {
+    resolve = done;
+  });
+  Object.assign(wallet, {
+    name,
+    connect: () => {
+      assert.equal(selected, name);
+      connectCalls++;
+      return approval;
+    },
+    autoConnect: async () => {
+      autoCalls++;
+    },
+  });
+  const pending = connectWallet(wallet, (name) => {
+    selected = name;
+  });
+  assert.equal(connectCalls, 1);
+  assert.equal(autoCalls, 0);
+  assert.equal(pending, approval);
+  resolve();
+  await pending;
+});
+
+test("a rejected wallet approval reaches the connection dialog", async () => {
+  const wallet = adapter();
+  const rejected = new Error("User rejected the request");
+  Object.assign(wallet, {
+    name: "Phantom" as WalletName,
+    connect: async () => {
+      throw rejected;
+    },
+  });
+  await assert.rejects(
+    connectWallet(wallet, () => {}),
+    (error) => error === rejected,
+  );
+});
 
 test("an unanswered wallet connection expires once and removes its listeners", async () => {
   const wallet = adapter();
