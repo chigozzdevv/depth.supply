@@ -4,7 +4,7 @@ import { useState } from "react";
 import { Share2 } from "lucide-react";
 import type { ExecutionDetail, PendingItem } from "@depthhq/sdk";
 import { useDepth } from "@/shared/depth/session";
-import { decimal } from "@/shared/depth/format";
+import { decimal, pnlAmount } from "@/shared/depth/format";
 import { Pnl, type PnlCard } from "@/components/trade/pnl";
 
 export function Execution({ item }: { item: PendingItem }) {
@@ -53,10 +53,7 @@ export function Execution({ item }: { item: PendingItem }) {
       {pnl && (
         <div className="execution-pnl">
           <span>PnL</span>
-          <strong data-loss={pnl.net < 0n}>
-            {pnl.net > 0n ? "+" : ""}
-            {decimal(pnl.net)} USDC
-          </strong>
+          <strong data-loss={pnl.net < 0n}>{pnlAmount(pnl.net)} USDC</strong>
           <button
             aria-label="Share execution PnL"
             onClick={() => {

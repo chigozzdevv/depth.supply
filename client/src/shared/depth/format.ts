@@ -22,6 +22,13 @@ export function decimal(
     .slice(0, digits);
   return `${sign}${(amount / scale).toLocaleString("en-US")}${fraction ? `.${fraction}` : ""}`;
 }
+export function pnlAmount(value: bigint | undefined): string {
+  if (value === undefined) return "—";
+  const amount = value < 0n ? -value : value;
+  const small = amount > 0n && amount < 10_000n;
+  const formatted = decimal(value, 6, small ? 6 : 2);
+  return `${value > 0n ? "+" : ""}${small ? formatted.replace(/0+$/, "") : formatted}`;
+}
 export function short(value: string): string {
   return `${value.slice(0, 5)}…${value.slice(-4)}`;
 }

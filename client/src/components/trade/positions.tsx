@@ -6,7 +6,7 @@ import { useDepth } from "@/shared/depth/session";
 import { AccountPrompt } from "@/components/demo/prompt";
 import type { AccountView } from "@/shared/depth/account";
 import type { MarketView } from "@/shared/depth/market";
-import { decimal, units } from "@/shared/depth/format";
+import { decimal, pnlAmount, units } from "@/shared/depth/format";
 import { positionPnl, type AmountSelector } from "@depthhq/sdk";
 import { tradeFeeBps } from "@/shared/depth/terms";
 import { Pnl, type PnlCard } from "@/components/trade/pnl";
@@ -68,8 +68,7 @@ export function Positions({
         <div className="position-pnl">
           <span>Execution PnL</span>
           <strong data-loss={card.result.net < 0n}>
-            {card.result.net > 0n ? "+" : ""}
-            {decimal(card.result.net)} USDC
+            {pnlAmount(card.result.net)} USDC
           </strong>
           <button
             aria-label="Share execution PnL"
@@ -306,9 +305,7 @@ function Details({
             <span>PnL</span>
             <div>
               <strong data-loss={valuation ? valuation.net < 0n : undefined}>
-                {valuation
-                  ? `${valuation.net > 0n ? "+" : ""}${decimal(valuation.net)} USDC`
-                  : "—"}
+                {valuation ? `${pnlAmount(valuation.net)} USDC` : "—"}
               </strong>
               <button
                 aria-label="Share position PnL"

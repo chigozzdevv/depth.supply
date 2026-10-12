@@ -3,7 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, ArrowUpRight, Download, X } from "lucide-react";
 import type { PositionPnl, SettlementTransaction } from "@depthhq/sdk";
-import { decimal, short, transactionUrl } from "@/shared/depth/format";
+import {
+  decimal,
+  pnlAmount,
+  short,
+  transactionUrl,
+} from "@/shared/depth/format";
 import "@/components/trade/pnl.css";
 
 export type PnlCard = {
@@ -19,8 +24,8 @@ const labels = {
   reversed: "Reversed position",
 };
 
-function signed(value: bigint, decimals = 6) {
-  return `${value > 0n ? "+" : ""}${decimal(value, decimals)}`;
+function percent(value: bigint) {
+  return `${value > 0n ? "+" : ""}${decimal(value, 2)}`;
 }
 
 export function Pnl({
@@ -136,13 +141,13 @@ export function Pnl({
                 {live ? "Return on collateral" : "Return on prior collateral"}
               </span>
               <div className="pnl-number">
-                {result.returnBps === null ? "—" : signed(result.returnBps, 2)}
+                {result.returnBps === null ? "—" : percent(result.returnBps)}
                 {result.returnBps !== null && (
                   <span className="pnl-percent">%</span>
                 )}
               </div>
               <div className="pnl-net">
-                <span>{signed(result.net)} USDC</span>
+                <span>{pnlAmount(result.net)} USDC</span>
                 <span
                   className="pnl-net-label"
                   title={
