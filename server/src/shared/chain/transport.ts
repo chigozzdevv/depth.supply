@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { rpcJson } from "@/shared/chain/json";
 
 type RpcRequest = {
   jsonrpc: "2.0";
@@ -8,6 +9,9 @@ type RpcRequest = {
 };
 const methods = new Set([
   "getGenesisHash",
+  "getVersion",
+  "getEpochInfo",
+  "getEpochSchedule",
   "getAccountInfo",
   "getMultipleAccounts",
   "getProgramAccounts",
@@ -176,7 +180,7 @@ export class RpcTransport {
         } else {
           if (!response.ok)
             throw new Error(`RPC provider returned HTTP ${response.status}`);
-          const result = (await response.json()) as Record<string, unknown>;
+          const result = rpcJson(await response.text());
           if (
             !result ||
             typeof result !== "object" ||
