@@ -8,6 +8,7 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { readCircuits, verifyRemote } from "./circuits.mjs";
+import { uploadBuffer } from "./upload.mjs";
 import { resolvePath } from "../../scripts/paths.mjs";
 import {
   createSigner,
@@ -235,10 +236,18 @@ if (!existing || upgrade) {
       rpc,
     ]);
   console.log("Uploading program through the configured RPC...");
+  const staged = upgrade && bufferAccount;
+  if (staged)
+    await uploadBuffer(
+      connection,
+      bufferKeypair.publicKey,
+      signer,
+      readFileSync(programPath),
+    );
   await run("solana", [
     "program",
     "deploy",
-    programPath,
+    ...(staged ? [] : [programPath]),
     "--program-id",
     programKeypairPath,
     "--buffer",
