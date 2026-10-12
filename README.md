@@ -397,9 +397,12 @@ Hyperliquid's [faucet](https://hyperliquid.gitbook.io/hyperliquid-docs/onboardin
 requires a prior mainnet deposit from the same address. An existing funded
 Hyperliquid testnet account can also transfer testnet USDC to it.
 
-Enable Hyperliquid in the maker **Automatic** setup and enter a funded account
-dedicated to this strategy. Connect its Ethereum wallet to approve the displayed
-agent, or approve that agent in Hyperliquid API wallets before completing setup.
+Enable Hyperliquid in the maker **Automatic** setup with a funded account
+dedicated to this strategy. **Connect Ethereum wallet** lets you choose an
+installed wallet and fills its account address without moving funds. Connection
+can be cancelled and times out after 60 seconds. **Approve with wallet** separately
+authorizes the displayed agent and sets hedge leverage; an agent can also be
+approved in Hyperliquid API wallets before completing setup.
 The worker receives only its agent key.
 Solana devnet pairs with Hyperliquid testnet, and Solana mainnet pairs with
 Hyperliquid mainnet. The SDK setup helper also accepts an owner wallet instead

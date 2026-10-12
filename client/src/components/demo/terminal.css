@@ -1247,11 +1247,13 @@
 .automation-connect {
   margin-block: 20px;
 }
-.automation-connect .field-label {
-  flex: 1;
-  min-width: 0;
-  width: 100%;
+.automation-account {
   flex-basis: 100%;
+  min-width: 0;
+  font-family: var(--font-mono), monospace;
+  font-size: 11px;
+  color: var(--terminal-text);
+  overflow-wrap: anywhere;
 }
 .automation-hedge > p {
   margin-top: 16px;

@@ -2,8 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, Pause, Play, Settings2 } from "lucide-react";
-import type { AutomationView, EthereumProvider } from "@depthhq/maker-sdk";
-import { connect_hyperliquid } from "@depthhq/maker-sdk";
+import type { AutomationView } from "@depthhq/maker-sdk";
 import { useDepth } from "@/shared/depth/session";
 import {
   automationDefaults,
@@ -13,8 +12,8 @@ import {
 } from "@/shared/depth/automation";
 import { decimal, short, transactionUrl } from "@/shared/depth/format";
 import { WalletButton } from "@/components/demo/wallet";
+import { HedgeWalletButton, type HedgeWallet } from "@/components/maker/wallet";
 
-type HedgeWallet = Awaited<ReturnType<typeof connect_hyperliquid>>;
 export function Automation({
   profile,
   onProfile,
@@ -127,25 +126,9 @@ export function Automation({
       }
     });
   }
-  async function connect() {
-    await session.run(
-      "Connect hedge wallet",
-      async () => {
-        const provider = (window as Window & { ethereum?: EthereumProvider })
-          .ethereum;
-        if (!provider)
-          throw new Error(
-            "Open this page in an Ethereum wallet browser or enable its extension",
-          );
-        const wallet = await connect_hyperliquid(provider);
-        const [account] = await wallet.getAddresses();
-        if (alive.current) {
-          setHedgeWallet(wallet);
-          update("account", account);
-        }
-      },
-      false,
-    );
+  function connected(wallet: HedgeWallet, address: string) {
+    setHedgeWallet(wallet);
+    update("account", address);
   }
   async function approve() {
     if (!profile || !privateView) return;
@@ -184,7 +167,7 @@ export function Automation({
   }
   const field = (
     label: string,
-    key: Exclude<keyof AutomationForm, "hedge">,
+    key: Exclude<keyof AutomationForm, "hedge" | "account">,
     unit: string,
   ) => (
     <label className="field-label" key={key}>
@@ -192,7 +175,7 @@ export function Automation({
       <div className="input-unit compact">
         <input
           aria-label={label}
-          inputMode={key === "account" ? "text" : "decimal"}
+          inputMode="decimal"
           value={form[key]}
           onChange={(event) => update(key, event.target.value)}
           disabled={Boolean(session.busy)}
@@ -295,16 +278,16 @@ export function Automation({
           {form.hedge && (
             <div className="automation-hedge">
               <div className="automation-connect">
-                {field("Hyperliquid account", "account", "")}
-                {!profile?.config.hedge && (
-                  <button
-                    type="button"
-                    className="terminal-button secondary"
-                    disabled={Boolean(session.busy)}
-                    onClick={connect}
-                  >
-                    Connect Ethereum wallet
-                  </button>
+                <HedgeWalletButton
+                  label={
+                    hedgeWallet ? "Change wallet" : "Connect Ethereum wallet"
+                  }
+                  disabled={Boolean(session.busy)}
+                  account={profile?.config.hedge?.account}
+                  onConnected={connected}
+                />
+                {form.account && (
+                  <span className="automation-account">{form.account}</span>
                 )}
               </div>
               <div className="automation-fields">
@@ -412,15 +395,19 @@ export function Automation({
                 </dl>
                 {profile.config.hedge && (
                   <div className="automation-connect">
-                    <button
-                      className="terminal-button secondary"
+                    <HedgeWalletButton
+                      label={
+                        hedgeWallet
+                          ? "Change Ethereum wallet"
+                          : "Connect account wallet"
+                      }
                       disabled={Boolean(session.busy)}
-                      onClick={connect}
-                    >
-                      {hedgeWallet
-                        ? "Change Ethereum wallet"
-                        : "Connect account wallet"}
-                    </button>
+                      account={profile.config.hedge.account}
+                      onConnected={connected}
+                    />
+                    <span className="automation-account">
+                      {profile.config.hedge.account}
+                    </span>
                     <a
                       href={
                         profile.environment === "devnet"
