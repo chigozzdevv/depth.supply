@@ -27,6 +27,10 @@ startup_wait = 180000
 bind_address = "127.0.0.1"
 
 [[test.validator.account]]
+address = "FMuJtGTEi7AXMqnbjJqccYnveoStnRspKd3MfdojMjsn"
+filename = "artifacts/localnet/price-entry.json"
+
+[[test.validator.account]]
 address = "3RW84c8AwWtLCVyETK2Xtruo9YsgFnMMt6uW2cDN4mzV"
 filename = "artifacts/localnet/price-update.json"
 

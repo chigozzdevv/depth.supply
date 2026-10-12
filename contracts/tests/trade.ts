@@ -35,6 +35,9 @@ const oracle = new PublicKey("3RW84c8AwWtLCVyETK2Xtruo9YsgFnMMt6uW2cDN4mzV");
 const secondOracle = new PublicKey(
   "Br7uuwx4Fpota9gQjs21GmY9bGXbxEgvcgMtPFVkTXKY"
 );
+const entryOracle = new PublicKey(
+  "FMuJtGTEi7AXMqnbjJqccYnveoStnRspKd3MfdojMjsn"
+);
 const exitOracle = new PublicKey(
   "4P2wc9Vmjo6TErDdKYwZAkQMeV8EhQiTKg24rQEMwTs5"
 );
@@ -827,6 +830,45 @@ describe("confidential trade settlement", () => {
     expect(
       (await program.account.backstopOffer.fetch(backstopOffer)).status
     ).to.deep.equal({ active: {} });
+    const originalBackstop = await program.account.backstopOffer.fetch(
+      backstopOffer
+    );
+    const renewedExpiry = originalBackstop.expiry.add(new anchor.BN(10));
+    await expectRejected(
+      program.methods
+        .renewBackstop(renewedExpiry)
+        .accountsPartial({
+          maker: operator.publicKey,
+          market,
+          offer: backstopOffer,
+        })
+        .signers([operator])
+        .rpc()
+    );
+    await expectRejected(
+      program.methods
+        .renewBackstop(new anchor.BN(Math.floor(Date.now() / 1000) + 86_401))
+        .accountsPartial({ maker: authority, market, offer: backstopOffer })
+        .rpc()
+    );
+    const reservedBeforeRenewal = await program.account.marketAccount.fetch(
+      makerState.marketAccount
+    );
+    await program.methods
+      .renewBackstop(renewedExpiry)
+      .accountsPartial({ maker: authority, market, offer: backstopOffer })
+      .rpc();
+    const renewedBackstop = await program.account.backstopOffer.fetch(
+      backstopOffer
+    );
+    expect(renewedBackstop.expiry.eq(renewedExpiry)).to.equal(true);
+    expect(renewedBackstop.capacity.eq(originalBackstop.capacity)).to.equal(
+      true
+    );
+    expect(renewedBackstop.margin.eq(originalBackstop.margin)).to.equal(true);
+    expect(
+      await program.account.marketAccount.fetch(makerState.marketAccount)
+    ).to.deep.equal(reservedBeforeRenewal);
 
     for (let tierCount = 1; tierCount <= 4; tierCount++) {
       const nonce = new anchor.BN(69 + tierCount);
@@ -1003,6 +1045,13 @@ describe("confidential trade settlement", () => {
     expect(
       (await program.account.quoteRecord.fetch(quote)).status
     ).to.deep.equal({ active: {} });
+    await expectRejected(
+      program.methods
+        .closeOperatorQuote()
+        .accountsPartial({ operator: operator.publicKey, quote })
+        .signers([operator])
+        .rpc()
+    );
 
     const clearingState = await program.account.clearingAccount.fetch(clearing);
     const clearingCipher = new RescueCipher(
@@ -1173,6 +1222,7 @@ describe("confidential trade settlement", () => {
       );
     };
     const orderNonce = new anchor.BN(501);
+    await selectOracle(entryOracle);
     const [order] = PublicKey.findProgramAddressSync(
       [
         Buffer.from("order"),
@@ -2009,6 +2059,28 @@ describe("confidential trade settlement", () => {
     expect(
       (await program.account.quoteRecord.fetch(quote)).status
     ).to.deep.equal({ cancelled: {} });
+    await expectRejected(
+      program.methods
+        .closeOperatorQuote()
+        .accountsPartial({ operator: authority, quote })
+        .rpc()
+    );
+    const quoteRent = (await provider.connection.getAccountInfo(quote))!
+      .lamports;
+    const operatorBeforeClose = await provider.connection.getBalance(
+      operator.publicKey
+    );
+    await program.methods
+      .closeOperatorQuote()
+      .accountsPartial({ operator: operator.publicKey, quote })
+      .signers([operator])
+      .rpc();
+    expect(await program.account.quoteRecord.fetchNullable(quote)).to.equal(
+      null
+    );
+    expect(await provider.connection.getBalance(operator.publicKey)).to.equal(
+      operatorBeforeClose + quoteRent
+    );
     const exitUpdate = await provider.connection.getAccountInfo(exitOracle);
     if (!exitUpdate) throw new Error("Exit oracle fixture is unavailable");
     const exitPublishMs = Number(exitUpdate.data.readBigInt64LE(93)) * 1_000;

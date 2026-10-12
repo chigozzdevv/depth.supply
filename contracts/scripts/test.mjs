@@ -28,7 +28,9 @@ const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
 const docker = execFileSync("which", ["docker"], { encoding: "utf8" }).trim();
 writeFileSync(
   join(shim, "docker"),
-  `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(fileURLToPath(import.meta.url))} --docker ${quote(docker)} "$@"\n`,
+  `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(
+    fileURLToPath(import.meta.url),
+  )} --docker ${quote(docker)} "$@"\n`,
   { mode: 0o700 },
 );
 runtime.env.PATH = `${shim}:${runtime.env.PATH}`;
@@ -44,6 +46,16 @@ if (address !== "3RW84c8AwWtLCVyETK2Xtruo9YsgFnMMt6uW2cDN4mzV") {
 function writeOracleFixture() {
   const now = BigInt(Math.floor(Date.now() / 1000));
   writePriceUpdate(address, 20_000_000_000n, 20_000_000n, now, "price-update");
+  const entryAddress = Keypair.fromSeed(
+    createHash("sha256").update("depth.oracle.entry.v1").digest(),
+  ).publicKey.toBase58();
+  writePriceUpdate(
+    entryAddress,
+    20_000_000_000n,
+    20_000_000n,
+    now + 50n,
+    "price-entry",
+  );
   const secondAddress = Keypair.fromSeed(
     createHash("sha256").update("depth.oracle.second.v1").digest(),
   ).publicKey.toBase58();
