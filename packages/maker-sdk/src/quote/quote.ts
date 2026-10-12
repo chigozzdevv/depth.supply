@@ -5,6 +5,7 @@ import type { MakerClient } from "@/client/client";
 import type { MarketState, QuoteQueueState } from "@/client/types";
 import { DepthError } from "@depthhq/sdk";
 import { quoteBounds } from "@depthhq/bindings";
+import { chainTime } from "@/chain/clock";
 
 export type QuoteSnapshot = {
   id: string;
@@ -56,7 +57,8 @@ export class QuoteHandle {
       input.validForSeconds > market.config.maxQuoteLifetimeSeconds
     )
       throw new RangeError("Quote duration is outside market policy");
-    const expiry = Math.floor(Date.now() / 1000) + input.validForSeconds;
+    const expiry =
+      (await chainTime(this.client.options.connection)) + input.validForSeconds;
     const before = await this.status();
     if (before.status !== "active")
       throw new Error("Only active quotes can be renewed");

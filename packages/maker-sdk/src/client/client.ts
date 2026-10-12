@@ -1,4 +1,5 @@
 import { Buffer } from "buffer";
+import { chainTime } from "@/chain/clock";
 import * as anchor from "@anchor-lang/core";
 import {
   getMXEAccAddress,
@@ -515,11 +516,12 @@ export class MakerClient {
           "Market",
           this.marketAddress,
         );
+        const time = await chainTime(this.options.connection);
         const input: QuoteInput =
           "tiers" in request
             ? request
-            : this.flatQuote(request, market, clientNonce);
-        this.validateQuote(input, market);
+            : this.flatQuote(request, market, clientNonce, time);
+        this.validateQuote(input, market, time);
         const grant = await this.grantFor(input.maxCapacity, input.expiresAt);
         const mxePublicKey = await getMXEPublicKey(
           this.provider,
@@ -690,6 +692,7 @@ export class MakerClient {
     input: Exclude<QuoteRequest, QuoteInput>,
     market: MarketState,
     clientNonce: bigint,
+    now: number,
   ): QuoteInput {
     if (input.marketId !== SOL_USD_MARKET_ID)
       throw new Error("Only SOL-USD is supported");
@@ -712,7 +715,7 @@ export class MakerClient {
     return {
       tiers,
       maxCapacity: input.maxCapacity,
-      expiresAt: Math.floor(Date.now() / 1_000) + input.validForSeconds,
+      expiresAt: now + input.validForSeconds,
       clientNonce,
     };
   }
@@ -966,8 +969,11 @@ export class MakerClient {
     },
   };
 
-  private validateQuote(input: QuoteInput, market: MarketState): void {
-    const now = Math.floor(Date.now() / 1_000);
+  private validateQuote(
+    input: QuoteInput,
+    market: MarketState,
+    now: number,
+  ): void {
     const reference = BigInt(market.oraclePriceE8.toString());
     const { preparationBps } = quoteBounds(market.config.maxQuoteDeviationBps);
     if (!["draft", "active"].includes(stateName(market.status)))

@@ -15,6 +15,7 @@ import {
 import type { PositionSnapshot } from "@depthhq/sdk";
 import { HedgeEngine } from "@/hedge/engine";
 import { validateBook } from "@/hedge/policy";
+import { chainTime } from "@/chain/clock";
 
 export type BotSnapshot = {
   phase: "active" | "pending" | "idle" | "stopped";
@@ -465,7 +466,42 @@ export class MakerBot {
         ),
         this.maker.options.connection.getAccountInfo(flow.nextId, "confirmed"),
       ]);
-      if (!prior && next) {
+      const successor = next && (await this.maker.quoteState(flow.nextId));
+      const predecessor =
+        prior &&
+        (await this.maker.quoteState(new PublicKey(state.replacement.prior)));
+      const completed =
+        predecessor &&
+        successor &&
+        terminal.has(Object.keys(predecessor.status)[0]) &&
+        "active" in successor.status &&
+        predecessor.replacementNonce?.toString() ===
+          state.replacement.nonce.toString();
+      if (successor && (!prior || completed)) {
+        if (
+          !successor.operator.equals(this.maker.options.wallet.publicKey) ||
+          !state.replacement.request ||
+          BigInt(successor.capacity.toString()) !==
+            state.replacement.request.maxCapacity
+        )
+          throw new Error(
+            "Recovered successor does not match this operator's checkpoint",
+          );
+        const risk = state.replacement.risk;
+        if (risk && "active" in successor.status) {
+          const account = await this.maker.read<{
+            status: Record<string, unknown>;
+            version: { toString(): string };
+          }>("MarketAccount", this.maker.marketAccount());
+          const version = BigInt(account.version.toString());
+          if ("ready" in account.status && version === risk.version + 1n) {
+            risk.version = version;
+            risk.balanceNonce = Buffer.from(successor.balanceNonce).toString(
+              "hex",
+            );
+            state.quoteWrite = undefined;
+          }
+        }
         state.quote = flow.nextId.toBase58();
         state.request = state.replacement.request;
         state.referencePrice = state.replacement.referencePrice;
@@ -816,14 +852,14 @@ export class MakerBot {
         });
         this.lastCleanup = Date.now();
       }
-      let [market, lamports] = await Promise.all([
+      let [market, lamports, now] = await Promise.all([
         this.maker.read<BotMarket>("Market", this.maker.marketAddress),
         this.maker.options.connection.getBalance(
           this.maker.options.wallet.publicKey,
           "confirmed",
         ),
+        chainTime(this.maker.options.connection),
       ]);
-      let now = Math.floor(Date.now() / 1000);
       const reason = this.stopping
         ? "shutdown"
         : (quoteHealth(market, now) ??
@@ -856,7 +892,7 @@ export class MakerBot {
           "Market",
           this.maker.marketAddress,
         );
-        now = Math.floor(Date.now() / 1000);
+        now = await chainTime(this.maker.options.connection);
         const changed = quoteHealth(market, now);
         if (changed) {
           const stopped = await this.cancel();
@@ -1068,7 +1104,38 @@ export class MakerBot {
           )
     )
       return;
-    const renewed = await handle.renew({ validForSeconds: duration });
+    let renewed;
+    try {
+      renewed = await handle.renew({ validForSeconds: duration });
+    } catch (error) {
+      const code = (error as { error?: { errorCode?: { code?: string } } })
+        .error?.errorCode?.code;
+      if (!["InvalidQuote", "WrongQuoteStatus"].includes(code ?? ""))
+        throw error;
+      const [latest, current] = await Promise.all([
+        this.maker.read<BotMarket>("Market", this.maker.marketAddress),
+        this.maker.quoteState(handle.id),
+      ]);
+      const currentPrice = BigInt(latest.oraclePriceE8.toString());
+      const quotedPrice = BigInt(current.oracleReferenceE8.toString());
+      const moved =
+        currentPrice > quotedPrice
+          ? currentPrice - quotedPrice
+          : quotedPrice - currentPrice;
+      if (
+        !("active" in current.status) ||
+        current.expiry.toNumber() <= Math.floor(Date.now() / 1000) ||
+        !current.marketRevision.eq(latest.revision) ||
+        quoteHealth(latest, Math.floor(Date.now() / 1000)) ||
+        moved * 10_000n >
+          quotedPrice *
+            BigInt(
+              Math.min(Math.floor(latest.config.maxQuoteDeviationBps / 4), 25),
+            )
+      )
+        return;
+      throw error;
+    }
     if (state.request) state.request.expiresAt = renewed.expiresAt;
     await this.store.save(state);
   }
