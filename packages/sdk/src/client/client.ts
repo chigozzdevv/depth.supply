@@ -44,6 +44,7 @@ import { encodeSide, u64 } from "@/trade/input";
 import { resolveAmount } from "@/trade/amount";
 import type { AmountSelector } from "@/trade/amount";
 import { tradeDeadline, tradeLimit } from "@/trade/terms";
+import { quoteSnapshot } from "@/trade/snapshot";
 import { TradeFlow } from "@/trade/flow";
 import { DepthView } from "@/view/view";
 import { ViewSession } from "@/view/session";
@@ -1113,21 +1114,55 @@ export class DepthClient {
     u64(position.collateral, "collateral");
     if (position.collateral === 0n)
       throw new Error("The market account has no collateral");
-    const quotes = market.state.activeQuotes.slice(
-      0,
-      market.state.activeQuoteCount,
-    );
-    if (quotes.length === 0) throw new Error("No active maker quote");
-    const keys = [market.state.backstopOffer, ...quotes];
-    const records = await this.options.connection.getMultipleAccountsInfo(
-      keys,
-      "confirmed",
-    );
-    records.forEach((info, index) => {
-      if (!info?.owner.equals(DEPTH_PROGRAM_ID)) {
-        throw new Error(`Market quote snapshot missing account ${index}`);
+    let keys: PublicKey[] = [];
+    const quoteDeadline = Date.now() + 60_000;
+    for (;;) {
+      try {
+        const snapshot = await quoteSnapshot(
+          this.options.connection,
+          this.program,
+          this.marketAddress,
+          market.state,
+        );
+        market = { ...market, state: snapshot.market };
+        deadline = tradeDeadline(
+          input,
+          Math.floor(Date.now() / 1_000),
+          market.state.config.maxOrderQueueSeconds,
+        );
+        this.validateTrade(
+          market.state,
+          protocol,
+          account,
+          app,
+          appId,
+          intent,
+          deadline,
+        );
+        if (!account.version.eq(new anchor.BN(position.version.toString())))
+          throw new Error("Private position changed while preparing the trade");
+        keys = snapshot.keys;
+        break;
+      } catch (error) {
+        if (
+          !(error instanceof Error) ||
+          ![
+            "Waiting for maker liquidity",
+            "Market is processing another order",
+            "Waiting for a fresh oracle update",
+            "Oracle update is stale",
+          ].includes(error.message) ||
+          Date.now() >= quoteDeadline
+        )
+          throw error;
+        [market, protocol, account, app] = await this.waitForMarket(
+          input,
+          appId,
+          intent,
+        );
+        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
-    });
+    }
     const mxePublicKey = await getMXEPublicKey(this.provider, DEPTH_PROGRAM_ID);
     if (!mxePublicKey) throw new Error("MXE public key is unavailable");
     const secret = x25519.utils.randomSecretKey();
@@ -1242,6 +1277,8 @@ export class DepthClient {
           ![
             "Waiting for maker liquidity",
             "Market is processing another order",
+            "Waiting for a fresh oracle update",
+            "Oracle update is stale",
           ].includes(error.message) ||
           Date.now() >= until
         )
@@ -1289,6 +1326,12 @@ export class DepthClient {
     if (age < 0 || age > market.config.maxOracleAgeSeconds) {
       throw new Error("Oracle update is stale");
     }
+    if (
+      age >
+      market.config.maxOracleAgeSeconds -
+        Math.min(60, Math.floor(market.config.maxOracleAgeSeconds / 2))
+    )
+      throw new Error("Waiting for a fresh oracle update");
     if (
       deadline <= now ||
       deadline - now > market.config.maxOrderQueueSeconds
