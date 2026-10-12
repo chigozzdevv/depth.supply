@@ -573,6 +573,9 @@ can inspect `maker.quote.list()` and recover a replacement with
 records the successor nonce onchain before rotation. If a successor quote was
 never submitted, the maker supplies fresh quote terms to resume publication.
 `maker.quote.get(quoteId).renew({ validForSeconds: 120 })` renews unchanged terms.
+Durations follow Solana's clock. A restarted worker adopts a completed successor
+from its onchain receipts before resuming, while an unrelated account mutation
+requires a fresh private inventory view.
 `replacement.discard()` cancels a failed successor and clears its link for another
 attempt while retaining the prior quote.
 

@@ -590,6 +590,9 @@ Unresolved external receipts, stale
 external prices, or an exhausted risk budget stop quoting. Inventory reads poll
 without blocking the quote loop, reuse pending requests, and follow the canonical
 account version; reservation-only changes do not force another inventory read.
+Quote durations use the confirmed Solana Clock sysvar. Restart recovery checks
+the predecessor's replacement nonce, the successor's operator and capacity,
+and the account version before adopting an already completed handover.
 The devnet demo allows 90 seconds for inventory finality and hedge reconciliation
 within a 100 USDC aggregate unhedged limit. Hedge submissions still begin after
 the five-second batching window once finalized inventory is available. Exchange
