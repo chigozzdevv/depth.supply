@@ -1,5 +1,5 @@
 import * as anchor from "@anchor-lang/core";
-import { RescueCipher, x25519 } from "@arcium-hq/client";
+import { getArciumProgram, RescueCipher, x25519 } from "@arcium-hq/client";
 import {
   DEPTH_PROGRAM_ID,
   circuits,
@@ -388,4 +388,161 @@ test("submission waits through quote replacement and validates the new market sn
     /Market is paused/,
   );
   assert.equal(reads, 3);
+});
+
+test("full closes encrypt the final oracle snapshot and preserve explicit price caps", async () => {
+  for (const explicit of [false, true]) {
+    const wallet = new anchor.Wallet(Keypair.generate());
+    const connection = new Connection("http://localhost:8899");
+    const Constructor = DepthClient as unknown as new (
+      options: DepthClient["options"],
+    ) => DepthClient;
+    const appId = PublicKey.unique();
+    const client = new Constructor({
+      wallet,
+      connection,
+      appId,
+      deployment: { localnet: true },
+    });
+    const mxeSecret = x25519.utils.randomSecretKey();
+    const mxeKey = x25519.getPublicKey(mxeSecret);
+    const arcium = getArciumProgram(client.provider);
+    const mxe = await arcium.coder.accounts.encode("mxeAccount", {
+      padding: 0,
+      cluster: 1,
+      keygenOffset: new anchor.BN(0),
+      keyRecoveryInitOffset: new anchor.BN(0),
+      mxeProgramId: DEPTH_PROGRAM_ID,
+      authority: null,
+      utilityPubkeys: {
+        set: [
+          {
+            x25519Pubkey: Array.from(mxeKey),
+            ed25519VerifyingKey: Array(32).fill(0),
+            elgamalPubkey: Array(32).fill(0),
+            pubkeyValidityProof: Array(64).fill(0),
+          },
+        ],
+      },
+      lutOffsetSlot: new anchor.BN(0),
+      computationDefinitions: [],
+      status: { active: {} },
+      bump: 1,
+      currentEpochRecoveryRewards: new anchor.BN(0),
+      recoveryRewardsEpoch: { 0: new anchor.BN(0) },
+    });
+    connection.getAccountInfo = async () => null;
+    connection.getAccountInfoAndContext = async () => ({
+      context: { slot: 1 },
+      value: {
+        owner: arcium.programId,
+        data: mxe,
+        lamports: 1,
+        executable: false,
+      },
+    });
+    const now = Math.floor(Date.now() / 1000);
+    const quote = PublicKey.unique();
+    const market = {
+      revision: new anchor.BN(1),
+      status: { active: {} },
+      pendingOrders: 0,
+      activeQuoteCount: 1,
+      activeQuotes: [quote],
+      backstopOffer: PublicKey.unique(),
+      oracleTimestamp: new anchor.BN(now),
+      oraclePriceE8: new anchor.BN(10_000_000_000),
+      config: { maxOracleAgeSeconds: 600, maxOrderQueueSeconds: 300 },
+    };
+    const latest = { ...market, oraclePriceE8: new anchor.BN(9_900_000_000) };
+    const position = {
+      id: client.position.id.toBase58(),
+      status: "ready" as const,
+      slot: 1,
+      version: 7n,
+      collateral: 20_000_000n,
+      position: 1_000_000_000n,
+    };
+    client.position.summary = async () => position;
+    const internal = client as unknown as {
+      ensureBalanceReady: () => Promise<void>;
+      ensureMarketReady: () => Promise<void>;
+      waitForMarket: () => Promise<unknown[]>;
+      queue: () => Promise<object>;
+    };
+    internal.ensureBalanceReady = internal.ensureMarketReady = async () => {};
+    internal.waitForMarket = async () => [
+      { state: market },
+      { tradingEnabled: true },
+      {
+        owner: wallet.publicKey,
+        market: marketAddress(),
+        status: { ready: {} },
+        version: new anchor.BN(7),
+      },
+      { app: appId, active: true, feeBps: 1, version: new anchor.BN(1) },
+    ];
+    internal.queue = async () => ({});
+    connection.getMultipleAccountsInfo = async () =>
+      [0, 1, 2].map((i) => ({
+        owner: DEPTH_PROGRAM_ID,
+        data: Buffer.from([i]),
+        lamports: 1,
+        executable: false,
+      }));
+    let submitted: unknown[] = [];
+    const builder = {
+      accountsPartial: () => builder,
+      remainingAccounts: () => builder,
+      rpc: async () => "submitted",
+    };
+    Object.defineProperty(client, "program", {
+      value: {
+        coder: {
+          accounts: {
+            decode: (name: string) =>
+              name === "market"
+                ? latest
+                : {
+                    status: { active: {} },
+                    expiry: new anchor.BN(now + 120),
+                    market: marketAddress(),
+                  },
+          },
+        },
+        methods: {
+          submitOrder: (...args: unknown[]) => {
+            submitted = args;
+            return builder;
+          },
+        },
+      },
+    });
+    const operation = await client.trade.close({
+      marketId: "SOL-USD",
+      maxFee: 100_000n,
+      validForSeconds: 300,
+      ...(explicit ? { worstPriceE8: 9_800_000_000n } : { slippageBps: 50 }),
+    });
+    assert.equal(operation.signature, "submitted");
+    const cipher = new RescueCipher(
+      x25519.getSharedSecret(
+        mxeSecret,
+        new Uint8Array(submitted[9] as number[]),
+      ),
+    );
+    const order = circuits.OrderInput.unpack(
+      cipher.decrypt(
+        submitted[8] as number[][],
+        (submitted[10] as anchor.BN).toArrayLike(Buffer, "le", 16),
+      ),
+    );
+    assert.equal(order.limit_price, explicit ? 9_800_000_000n : 9_850_500_000n);
+    assert.equal(order.side, -1n);
+    assert.equal(order.intent, 2n);
+    assert.equal(order.amount, 0n);
+    assert.equal(order.version, 7n);
+    assert.equal(order.margin, 20_000_000n);
+    assert.equal(order.max_fee, 100_000n);
+  }
 });
