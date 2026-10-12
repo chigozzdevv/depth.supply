@@ -11,6 +11,7 @@ import { pathToFileURL } from "node:url";
 import { resolvePath, settingPath } from "@/workspace";
 import { loadSigner as roleSigner } from "@/workspace/signers";
 import { ChainSigner } from "@/server/shared/chain/chain.signer";
+import { chainConnection } from "@/server/shared/chain/connection";
 
 export { setTimeout as sleep } from "node:timers/promises";
 
@@ -99,13 +100,24 @@ export async function loadSigner(
   return roleSigner(name);
 }
 
-export async function devnetConnection(): Promise<Connection> {
+export async function devnetConnection(service = false): Promise<Connection> {
   if (typeof process.loadEnvFile === "function") {
     try {
       process.loadEnvFile(resolvePath(".env.local"));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
+  }
+  if (service) {
+    const connection = chainConnection(
+      `${(process.env.DEPTH_SERVICE_URL ?? "http://127.0.0.1:8787").replace(/\/+$/, "")}/rpc`,
+    );
+    assert.equal(
+      await connection.getGenesisHash(),
+      devnetGenesis,
+      "RPC is not Solana devnet",
+    );
+    return connection;
   }
   const url = process.env.SOLANA_RPC_URL;
   assert.ok(url, "SOLANA_RPC_URL is required in the root .env.local");
@@ -154,8 +166,8 @@ export async function devnetConnection(): Promise<Connection> {
   return connection;
 }
 
-export async function devnetContext() {
-  const connection = await devnetConnection();
+export async function devnetContext(service = false) {
+  const connection = await devnetConnection(service);
   const owner = await loadSigner("deployer");
   const manifest = await readJson<SignedManifest>(
     settingPath(

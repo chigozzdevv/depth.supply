@@ -118,7 +118,9 @@ async function main() {
       "The round-trip proof requires a full hedge target",
     );
   }
-  const { owner, connection, wallet, maker, chain } = await devnetContext();
+  const { owner, connection, wallet, maker, chain } = await devnetContext(
+    args.includes("--hosted"),
+  );
   if (args.includes("--hosted")) {
     const run = await journal(workflowPath(), resume);
     try {
