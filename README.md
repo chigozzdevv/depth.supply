@@ -186,13 +186,17 @@ Hyperliquid agent for each connected maker. Store a random 32-byte hexadecimal
 pnpm maker
 ```
 
-In `/demo/maker`, open **Automation**, configure quote and inventory limits,
+In `/demo/maker`, select **Automatic** in the quote panel, configure quote and inventory limits,
 and review the operator before approving it with the owner wallet. Approval
 explicitly grants private inventory access and tops the operator up to its SOL
 reserve plus a 0.2 SOL operating budget. The owner funds market collateral
 through the existing account flow. Start, pause, and resume are independent for
 each maker; pause cancels available quotes and leaves existing positions open.
 Pending external receipts are reconciled without submitting replacement hedges.
+The **Manual** tab accepts bid and ask prices directly; publication checks that
+the maker's automation is paused. Switching tabs preserves form state and does
+not start or stop the worker. **Fills** shows Depth executions, while **Hedges**
+shows external execution receipts and Hyperliquid explorer links.
 Operator top-ups persist the owner's signed transaction before broadcasting;
 retries relay the same signature, and setup resumes after a browser or service
 restart without submitting a second payment. Funding receipts remain in status.
@@ -393,7 +397,7 @@ Hyperliquid's [faucet](https://hyperliquid.gitbook.io/hyperliquid-docs/onboardin
 requires a prior mainnet deposit from the same address. An existing funded
 Hyperliquid testnet account can also transfer testnet USDC to it.
 
-Enable Hyperliquid in the maker Automation setup and enter a funded account
+Enable Hyperliquid in the maker **Automatic** setup and enter a funded account
 dedicated to this strategy. Connect its Ethereum wallet to approve the displayed
 agent, or approve that agent in Hyperliquid API wallets before completing setup.
 The worker receives only its agent key.

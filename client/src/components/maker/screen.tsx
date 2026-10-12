@@ -10,12 +10,11 @@ import { MarketHeader } from "@/components/demo/market";
 import { Funds } from "@/components/demo/funds";
 import { Chart } from "@/components/trade/chart";
 import { Records } from "@/components/trade/records";
-import { QuoteTicket } from "@/components/maker/ticket";
+import { MakerPanel, type QuoteMode } from "@/components/maker/panel";
 import { Quotes } from "@/components/maker/quotes";
 import { Fills } from "@/components/maker/fills";
 import { Operators } from "@/components/maker/operators";
 import { Hedges } from "@/components/maker/hedges";
-import { Automation } from "@/components/maker/automation";
 import { useMarket } from "@/shared/depth/market";
 import { useAccount } from "@/shared/depth/account";
 import { useDepth } from "@/shared/depth/session";
@@ -28,6 +27,7 @@ function Screen() {
   const [interval, setInterval] = useState<CandleInterval>("15m");
   const candles = useCandles(view.data, interval);
   const [tab, setTab] = useState("quotes");
+  const [mode, setMode] = useState<QuoteMode>("manual");
   const [state, setState] = useState<{
     owner: string;
     items: QuoteSnapshot[];
@@ -114,38 +114,37 @@ function Screen() {
           />
         </div>
         <div className="maker-ticket">
-          <QuoteTicket view={view} quotes={current?.items ?? []} />
+          <MakerPanel
+            key={owner ?? "disconnected"}
+            view={view}
+            quotes={current?.items ?? []}
+            mode={mode}
+            onMode={setMode}
+          />
         </div>
         <section className="maker-records records-panel">
           <div className="records-heading">
             <div role="tablist" aria-label="Maker records">
-              {[
-                "quotes",
-                "fills",
-                "automation",
-                "hedges",
-                "account",
-                "operators",
-              ].map((value) => (
-                <button
-                  role="tab"
-                  aria-selected={tab === value}
-                  key={value}
-                  onClick={() => setTab(value)}
-                >
-                  {value === "quotes"
-                    ? "Quotes"
-                    : value === "fills"
-                      ? "Fills"
-                      : value === "automation"
-                        ? "Automation"
+              {["quotes", "fills", "hedges", "account", "operators"].map(
+                (value) => (
+                  <button
+                    role="tab"
+                    aria-selected={tab === value}
+                    key={value}
+                    onClick={() => setTab(value)}
+                  >
+                    {value === "quotes"
+                      ? "Quotes"
+                      : value === "fills"
+                        ? "Fills"
                         : value === "hedges"
                           ? "Hedges"
                           : value === "account"
                             ? "Account"
                             : "Operators"}
-                </button>
-              ))}
+                  </button>
+                ),
+              )}
             </div>
           </div>
           {tab === "quotes" ? (
@@ -156,8 +155,6 @@ function Screen() {
             />
           ) : tab === "fills" ? (
             <Fills />
-          ) : tab === "automation" ? (
-            <Automation />
           ) : tab === "hedges" ? (
             <Hedges />
           ) : tab === "account" ? (

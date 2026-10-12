@@ -12,9 +12,15 @@ import { WalletButton } from "@/components/demo/wallet";
 export function QuoteTicket({
   view,
   quotes,
+  blocked,
+  checkManual,
+  onAutomatic,
 }: {
   view: MarketView;
   quotes: { id: string; status: string }[];
+  blocked: boolean;
+  checkManual: () => Promise<void>;
+  onAutomatic: () => void;
 }) {
   const session = useDepth();
   const [bid, setBid] = useState("");
@@ -46,7 +52,7 @@ export function QuoteTicket({
     view.market.incident === "none" &&
     (view.market.status === "draft" || !view.fundingOverdue),
   );
-  function prepare() {
+  async function prepare() {
     try {
       if (!session.maker || !view.market || !allowed)
         throw new Error(view.error || "A fresh market oracle is required");
@@ -71,9 +77,9 @@ export function QuoteTicket({
         throw new Error(
           `Quote duration must be 1–${view.market.max_quote_lifetime_seconds} seconds`,
         );
-      setDraft({
+      const terms = {
         input: {
-          marketId: "SOL-USD",
+          marketId: "SOL-USD" as const,
           bidE8,
           askE8,
           maxCapacity,
@@ -81,9 +87,25 @@ export function QuoteTicket({
           clientNonce: nonce(),
         },
         prior,
-      });
-      setError("");
-      setReview(true);
+      };
+      await session.run(
+        "Checking quoting mode",
+        async () => {
+          try {
+            await checkManual();
+            setDraft(terms);
+            setError("");
+            setReview(true);
+          } catch (cause) {
+            setError(
+              cause instanceof Error
+                ? cause.message
+                : "Automation is unavailable",
+            );
+          }
+        },
+        false,
+      );
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Invalid quote");
     }
@@ -93,10 +115,11 @@ export function QuoteTicket({
     const maker = session.maker;
     const terms = draft;
     setReview(false);
-    setPending(true);
     await session.run(
       terms.prior ? "Replacing encrypted quote" : "Publishing encrypted quote",
       async () => {
+        await checkManual();
+        setPending(true);
         const quote = terms.prior
           ? await maker.quote.replace(new PublicKey(terms.prior), terms.input)
           : await maker.quote.publish(terms.input);
@@ -136,14 +159,11 @@ export function QuoteTicket({
       className="ticket-panel"
       aria-label="Publish encrypted maker quotes"
     >
-      <div className="ticket-heading">
-        <h2>Quote the market</h2>
-      </div>
       <label className="field-label">
         Publication
         <select
           value={prior}
-          disabled={pending}
+          disabled={pending || blocked}
           onChange={(event) => {
             setPrior(event.target.value);
             setReview(false);
@@ -167,7 +187,7 @@ export function QuoteTicket({
           <div className="input-unit">
             <input
               value={bid}
-              disabled={pending}
+              disabled={pending || blocked}
               inputMode="decimal"
               placeholder="0.00"
               onChange={(event) => {
@@ -183,7 +203,7 @@ export function QuoteTicket({
           <div className="input-unit">
             <input
               value={ask}
-              disabled={pending}
+              disabled={pending || blocked}
               inputMode="decimal"
               placeholder="0.00"
               onChange={(event) => {
@@ -200,7 +220,7 @@ export function QuoteTicket({
         <div className="input-unit">
           <input
             value={capacity}
-            disabled={pending}
+            disabled={pending || blocked}
             inputMode="decimal"
             placeholder="0.00"
             onChange={(event) => {
@@ -216,7 +236,7 @@ export function QuoteTicket({
         <div className="input-unit compact">
           <input
             value={duration}
-            disabled={pending}
+            disabled={pending || blocked}
             inputMode="numeric"
             onChange={(event) => {
               setDuration(event.target.value);
@@ -241,7 +261,15 @@ export function QuoteTicket({
           {error}
         </p>
       )}
-      {review ? (
+      {blocked && !pending ? (
+        <button
+          className="terminal-button secondary full"
+          onClick={onAutomatic}
+        >
+          Manage automation
+          <ArrowUpRight size={14} />
+        </button>
+      ) : review ? (
         <div className="trade-review">
           <p>
             Bid ${decimal(draft?.input.bidE8, 8, 4)} · Ask $
@@ -285,7 +313,7 @@ export function QuoteTicket({
               ? session.retry?.()
               : pending
                 ? void reconcile()
-                : prepare()
+                : void prepare()
           }
           title={
             session.maker && !pending && !allowed ? view.reason : undefined

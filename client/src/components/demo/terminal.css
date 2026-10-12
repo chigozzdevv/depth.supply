@@ -1128,7 +1128,52 @@
   gap: 8px;
 }
 .automation-panel {
-  padding: 22px;
+  padding: 16px;
+}
+.maker-panel {
+  height: 100%;
+  overflow-y: auto;
+  border: 1px solid var(--terminal-border);
+  border-radius: 4px;
+  background: var(--terminal-background);
+}
+.maker-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding-inline: 16px;
+  border-bottom: 1px solid var(--terminal-border);
+}
+.maker-modes button {
+  position: relative;
+  min-height: 44px;
+  padding: 12px 8px;
+  color: var(--terminal-muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.maker-modes [aria-selected="true"] {
+  color: var(--terminal-accent);
+}
+.maker-modes [aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  background: var(--terminal-accent);
+}
+.maker-modes button:focus-visible {
+  outline: 1px solid var(--terminal-accent);
+  outline-offset: -4px;
+}
+.maker-panel .ticket-panel {
+  height: auto;
+  overflow: visible;
+  border: 0;
+}
+.maker-panel .ticket-panel > .field-label:first-child {
+  margin-top: 0;
 }
 .automation-heading,
 .automation-heading > div,
@@ -1162,9 +1207,8 @@
 .automation-fields,
 .automation-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px 24px;
-  max-width: 900px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px 12px;
 }
 .automation-fields .field-label {
   margin-top: 0;
@@ -1175,7 +1219,7 @@
 .automation-summary > div {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 5px;
 }
 .automation-panel dt,
 .automation-panel p,
@@ -1205,7 +1249,9 @@
 }
 .automation-connect .field-label {
   flex: 1;
-  min-width: 240px;
+  min-width: 0;
+  width: 100%;
+  flex-basis: 100%;
 }
 .automation-hedge > p {
   margin-top: 16px;
@@ -1221,10 +1267,9 @@
   border: 1px solid var(--terminal-border);
 }
 .automation-review {
-  max-width: 680px;
   border: 1px solid var(--terminal-border);
   border-radius: 4px;
-  padding: 20px;
+  padding: 12px;
   margin-block: 20px;
 }
 .automation-review h4 {
@@ -1240,7 +1285,7 @@
   overflow-wrap: anywhere;
 }
 .automation-review select {
-  max-width: 240px;
+  width: 100%;
 }
 .automation-review .automation-controls {
   margin-top: 20px;
@@ -1263,6 +1308,10 @@
   color: var(--terminal-muted);
 }
 @media (max-width: 700px) {
+  .maker-panel {
+    height: auto;
+    overflow: visible;
+  }
   .automation-panel {
     padding: 16px;
   }

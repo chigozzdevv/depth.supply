@@ -1,4 +1,8 @@
-import type { AutomationConfig, AutomationView } from "@depthhq/maker-sdk";
+import type {
+  AutomationConfig,
+  AutomationView,
+  MakerClient,
+} from "@depthhq/maker-sdk";
 import { automationConfig, automationWire } from "@depthhq/maker-sdk";
 import { units } from "@/shared/depth/format";
 
@@ -19,6 +23,33 @@ export const automationDefaults = {
   leverage: "3",
 };
 export type AutomationForm = typeof automationDefaults;
+export function manualQuoteAllowed(profile: AutomationView | null) {
+  return (
+    !profile ||
+    (profile.desired === "paused" &&
+      ["configured", "paused"].includes(profile.phase) &&
+      profile.funding?.status !== "pending")
+  );
+}
+export async function readAutomation(
+  maker: Pick<MakerClient, "automation">,
+  authorize = false,
+) {
+  try {
+    return await maker.automation.summary();
+  } catch (cause) {
+    if (
+      !authorize ||
+      !(cause instanceof Error) ||
+      !/^Authorize (automation|access) with your maker wallet$/.test(
+        cause.message,
+      )
+    )
+      throw cause;
+    await maker.automation.authorize();
+    return maker.automation.summary();
+  }
+}
 const plain = (value: string, decimals = 6) => {
   const base = 10n ** BigInt(decimals);
   const amount = BigInt(value);

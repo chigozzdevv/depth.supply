@@ -12,12 +12,20 @@ import {
   type AutomationForm,
 } from "@/shared/depth/automation";
 import { decimal, short, transactionUrl } from "@/shared/depth/format";
+import { WalletButton } from "@/components/demo/wallet";
 
 type HedgeWallet = Awaited<ReturnType<typeof connect_hyperliquid>>;
-export function Automation() {
+export function Automation({
+  profile,
+  onProfile,
+  read,
+}: {
+  profile: AutomationView | null | undefined;
+  onProfile: (value: AutomationView | null | undefined) => void;
+  read: (authorize?: boolean) => Promise<AutomationView | null>;
+}) {
   const session = useDepth();
-  const [active, setActive] = useState(false);
-  const [profile, setProfile] = useState<AutomationView | null>(null);
+  const active = profile !== undefined;
   const [form, setForm] = useState({ ...automationDefaults });
   const [editing, setEditing] = useState(false);
   const [review, setReview] = useState(false);
@@ -35,14 +43,13 @@ export function Automation() {
   }, []);
   useEffect(() => {
     if (!active || !session.maker) return;
-    const maker = session.maker;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout>;
-    const read = async () => {
+    const poll = async () => {
       try {
-        const value = await maker.automation.summary();
+        const value = await read();
         if (!stopped) {
-          setProfile(value);
+          onProfile(value);
           setError("");
         }
       } catch (cause) {
@@ -52,18 +59,18 @@ export function Automation() {
               ? cause.message
               : "Automation status is unavailable",
           );
-          if (String(cause).includes("Authorize")) setActive(false);
+          if (String(cause).includes("Authorize")) onProfile(undefined);
         }
       } finally {
-        if (!stopped) timer = setTimeout(read, 5000);
+        if (!stopped) timer = setTimeout(poll, 5000);
       }
     };
-    void read();
+    void poll();
     return () => {
       stopped = true;
       clearTimeout(timer);
     };
-  }, [active, session.maker]);
+  }, [active, session.maker, read, onProfile]);
   const writable =
     !profile ||
     (profile.desired === "paused" &&
@@ -85,13 +92,12 @@ export function Automation() {
     await session.run(
       "Read automation",
       async () => {
-        await session.maker!.automation.authorize();
-        const value = await session.maker!.automation.summary();
+        const value = await read(true);
         if (alive.current) {
-          setProfile(value);
+          onProfile(value);
           if (value) setForm(automationForm(value));
           setEditing(!value);
-          setActive(true);
+          setError("");
         }
       },
       false,
@@ -112,7 +118,7 @@ export function Automation() {
         profile?.revision ?? 0,
       );
       if (alive.current) {
-        setProfile(value);
+        onProfile(value);
         setForm(automationForm(value));
         setEditing(false);
         setReview(true);
@@ -172,7 +178,7 @@ export function Automation() {
       action === "start" ? "Start automation" : "Pause automation",
       async () => {
         const value = await session.maker!.automation[action](profile.revision);
-        if (alive.current) setProfile(value);
+        if (alive.current) onProfile(value);
       },
     );
   }
@@ -198,13 +204,20 @@ export function Automation() {
   if (!active)
     return (
       <div className="records-empty">
-        <button
-          className="terminal-button"
-          disabled={!session.maker || Boolean(session.busy)}
-          onClick={open}
-        >
-          {profile ? "Reconnect automation" : "Set up automation"}
-        </button>
+        {!session.connected ? (
+          <WalletButton
+            label="Connect maker wallet"
+            className="terminal-button primary full"
+          />
+        ) : (
+          <button
+            className="terminal-button primary full"
+            disabled={!session.maker || Boolean(session.busy)}
+            onClick={open}
+          >
+            Set up automation
+          </button>
+        )}
         {error && <p>{error}</p>}
       </div>
     );
@@ -212,9 +225,9 @@ export function Automation() {
     <div className="automation-panel">
       <div className="automation-heading">
         <div>
-          <h3>Maker automation</h3>
           <span
             className="automation-state"
+            aria-label="Automation status"
             data-running={profile?.phase === "running"}
           >
             {profile?.phase ?? "Not configured"}
@@ -255,7 +268,7 @@ export function Automation() {
           Operator funding is pending. Approval can resume after confirmation.
         </p>
       )}
-      {editing ? (
+      {editing || !profile ? (
         <form
           onSubmit={(event) => {
             event.preventDefault();
@@ -472,7 +485,7 @@ export function Automation() {
                 >
                   Approve / renew operator
                 </button>
-                <p>Pause stops quotes; existing positions stay open.</p>
+                <p>Pause stops new quotes and hedges; positions stay open.</p>
               </div>
             )}
             {hashes.length > 0 && (
