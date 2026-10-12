@@ -6,6 +6,7 @@ import { Connection, Keypair, PublicKey } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { createPrivateKey, sign } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { resolvePath, settingPath } from "@/workspace";
 import { loadSigner as roleSigner } from "@/workspace/signers";
@@ -162,12 +163,24 @@ export async function devnetContext() {
       "deployments/devnet/manifest.json",
     )!,
   );
-  const wallet = new anchor.Wallet(owner);
+  const key = createPrivateKey({
+    key: Buffer.concat([
+      Buffer.from("302e020100300506032b657004220420", "hex"),
+      Buffer.from(owner.secretKey.subarray(0, 32)),
+    ]),
+    format: "der",
+    type: "pkcs8",
+  });
+  const wallet = Object.assign(new anchor.Wallet(owner), {
+    signMessage: async (message: Uint8Array) =>
+      new Uint8Array(sign(null, Buffer.from(message), key)),
+  });
   const maker = await createDepthMaker({
     environment: "devnet",
     connection,
     deployment: { manifest, trustedSigner: owner.publicKey },
     wallet,
+    serviceUrl: process.env.DEPTH_SERVICE_URL ?? "http://127.0.0.1:8787",
   });
   return {
     connection,

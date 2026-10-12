@@ -268,6 +268,136 @@ export async function roundTripBudget(
   return { remaining, ready: remaining >= 90 };
 }
 
+export async function runHostedRoundTrip(
+  maker: MakerClient,
+  record: Recorder,
+  records: ProofRecord[],
+  resume = false,
+  afterOpen?: () => Promise<void>,
+) {
+  await maker.hedges.authorize();
+  const context = resume
+    ? await restoreRoundTrip(maker, records, 20_000_000n)
+    : await prepareRoundTrip(maker, record, 20_000_000n);
+  const { depth, nonce } = context;
+  const waitHedge = async (leg: string) => {
+    const deadline = Date.now() + 300_000;
+    while (Date.now() < deadline) {
+      const view = await maker.hedges.summary();
+      assert.ok(view.enabled, "The managed maker must have hedging enabled");
+      if (
+        view.snapshot?.phase === "balanced" &&
+        view.snapshot.depthPosition !== undefined &&
+        view.snapshot.externalPosition !== undefined &&
+        !view.snapshot.pending
+      ) {
+        const history = view.snapshot.history.filter(
+          (order) => order.status === "filled",
+        );
+        if (
+          (leg === "open" &&
+            BigInt(view.snapshot.depthPosition) < 0n &&
+            BigInt(view.snapshot.externalPosition) > 0n) ||
+          (leg === "close" &&
+            BigInt(view.snapshot.depthPosition) === 0n &&
+            BigInt(view.snapshot.externalPosition) === 0n)
+        ) {
+          await record({
+            stage: "hedge_balanced",
+            leg,
+            depthPosition: view.snapshot.depthPosition,
+            externalPosition: view.snapshot.externalPosition,
+            orders: history.map(({ cloid, orderId, buy, filledSize }) => ({
+              cloid,
+              orderId,
+              buy,
+              filledSize,
+            })),
+          });
+          return;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+    throw new Error(`Managed maker hedge did not balance the ${leg} leg`);
+  };
+  const execute = async (leg: "open" | "close") => {
+    const id = nonce + (leg === "close" ? 1n : 0n);
+    const prior = records.find(
+      (entry) => entry.stage === `trade_${leg}_requested`,
+    );
+    if (!prior)
+      await record({
+        stage: `trade_${leg}_requested`,
+        nonce: id.toString(),
+        order: depth.trade.operation(id).id.toBase58(),
+      });
+    let operation = depth.trade.operation(id);
+    const exists = await depth.options.connection.getAccountInfo(
+      operation.id,
+      "confirmed",
+    );
+    if (!exists) {
+      const deadline = Date.now() + 180_000;
+      for (;;) {
+        const market = await depth.catalog.market(marketId);
+        if (
+          market.activeQuoteIds.length &&
+          (await depth.market()).state.pendingOrders === 0
+        )
+          break;
+        if (Date.now() >= deadline)
+          throw new Error("Managed maker has no available quote");
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
+      const terms = {
+        marketId,
+        slippageBps: defaults.slippageBps,
+        maxFee: defaults.maxFee,
+        validForSeconds: 300,
+        clientNonce: id,
+      } as const;
+      operation =
+        leg === "open"
+          ? await depth.trade.submit({
+              ...terms,
+              direction: "long",
+              notional: context.tradeNotional,
+              margin: 0n,
+            })
+          : await depth.trade.close(terms);
+      await record({
+        stage: `trade_${leg}_submitted`,
+        nonce: id.toString(),
+        order: operation.id.toBase58(),
+        signature: operation.signature,
+      });
+    }
+    const result = await operation.confirm({ timeoutMs: 300_000 });
+    assert.equal(result.snapshot.outcome, "filled");
+    await record({
+      stage: `trade_${leg}_filled`,
+      order: operation.id.toBase58(),
+    });
+  };
+  await execute("open");
+  await waitHedge("open");
+  if (afterOpen) {
+    await afterOpen();
+    await maker.hedges.authorize();
+  }
+  await execute("close");
+  await waitHedge("close");
+  const position = await depth.position.summary({ timeoutMs: 180_000 });
+  assert.equal(position.status, "ready");
+  assert.equal(position.position, 0n);
+  await record({
+    stage: "hosted_round_trip_complete",
+    trader: depth.options.wallet.publicKey.toBase58(),
+    nonce: nonce.toString(),
+  });
+}
+
 export async function runRoundTrip(
   context: RoundTripContext,
   quote: QuoteHandle,

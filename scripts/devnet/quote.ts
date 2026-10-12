@@ -42,6 +42,7 @@ import {
   roundTripBudget,
   restoreRoundTrip,
   runRoundTrip,
+  runHostedRoundTrip,
 } from "@/devnet/roundtrip";
 
 let hedgeStore: BotStore | undefined;
@@ -51,15 +52,20 @@ async function main() {
   const resume = args.includes("--resume");
   if (args.includes("--help")) {
     console.info(
-      "Usage: pnpm devnet:quote [--audit | --margin | --hedge [--resume] | --reconcile]\nRuns a real quote and trading proof; --resume restores the interrupted hedge proof; --reconcile verifies closed quotes and completed funding before another run.",
+      "Usage: pnpm devnet:quote [--audit | --margin | --hedge [--resume] | --hosted [--resume] | --reconcile]\nRuns a real quote and trading proof; --hosted uses the managed maker and keeper and checks worker recovery; --resume restores an interrupted proof; --reconcile verifies closed quotes and completed funding before another run.",
     );
     return;
   }
   assert.ok(
     args.every((arg) =>
-      ["--audit", "--margin", "--hedge", "--reconcile", "--resume"].includes(
-        arg,
-      ),
+      [
+        "--audit",
+        "--margin",
+        "--hedge",
+        "--hosted",
+        "--reconcile",
+        "--resume",
+      ].includes(arg),
     ),
     "Unknown quote argument",
   );
@@ -68,7 +74,7 @@ async function main() {
     "Choose one quote proof mode",
   );
   assert.ok(
-    !resume || args.includes("--hedge"),
+    !resume || args.includes("--hedge") || args.includes("--hosted"),
     "Resume requires the hedge proof mode",
   );
   const hedgeSettings = args.includes("--hedge")
@@ -113,6 +119,54 @@ async function main() {
     );
   }
   const { owner, connection, wallet, maker, chain } = await devnetContext();
+  if (args.includes("--hosted")) {
+    const run = await journal(workflowPath(), resume);
+    try {
+      await runHostedRoundTrip(
+        maker,
+        run.record,
+        run.proof.results,
+        resume,
+        async () => {
+          const state = await readJson<{
+            services: { maker: { pid: number } };
+          }>(resolvePath("data/runtime/services.json"));
+          assert.ok(
+            Number.isSafeInteger(state.services.maker.pid) &&
+              state.services.maker.pid > 0,
+          );
+          process.kill(state.services.maker.pid, "SIGKILL");
+          await run.record({
+            stage: "maker_crash_requested",
+            pid: state.services.maker.pid,
+          });
+          await sleep(5000);
+          const restarted = await readJson<typeof state>(
+            resolvePath("data/runtime/services.json"),
+          );
+          assert.notEqual(
+            restarted.services.maker.pid,
+            state.services.maker.pid,
+          );
+          await run.record({
+            stage: "maker_restarted",
+            pid: restarted.services.maker.pid,
+          });
+        },
+      );
+      run.proof.status = "complete";
+    } catch (error) {
+      run.proof.status = "failed";
+      await run.record({
+        stage: "trade_recovery_required",
+        error: safeError(error),
+      });
+      throw error;
+    } finally {
+      await run.save();
+    }
+    return;
+  }
   let hedgeLeg = 0;
   let hedgeProof: Proof;
   let recordHedge: (entry: Record<string, unknown>) => Promise<void>;
