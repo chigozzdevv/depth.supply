@@ -1087,11 +1087,6 @@ export class DepthClient {
           : "long"
         : (input as TradeInput).direction;
     encodeSide(direction);
-    const worstPriceE8 = tradeLimit(
-      input,
-      direction,
-      BigInt(market.state.oraclePriceE8.toString()),
-    );
     if (
       (intent === "reduce" || intent === "close" || intent === "reverse") &&
       position.position === 0n
@@ -1121,20 +1116,6 @@ export class DepthClient {
     const inputNonce = randomBytes(16);
     const cipher = new RescueCipher(
       x25519.getSharedSecret(secret, mxePublicKey),
-    );
-    const ciphertexts = cipher.encrypt(
-      circuits.OrderInput.pack({
-        side: encodeSide(direction),
-        amount,
-        margin: position.collateral,
-        limit_price: worstPriceE8,
-        max_fee: input.maxFee,
-        intent: BigInt(
-          ["increase", "reduce", "close", "reverse"].indexOf(intent),
-        ),
-        version: position.version,
-      }),
-      inputNonce,
     );
     const offset = nonce();
     const queue = await this.queue("match_order", offset);
@@ -1187,6 +1168,25 @@ export class DepthClient {
         await new Promise((resolve) => setTimeout(resolve, 1000));
       }
     }
+    const worstPriceE8 = tradeLimit(
+      input,
+      direction,
+      BigInt(market.state.oraclePriceE8.toString()),
+    );
+    const ciphertexts = cipher.encrypt(
+      circuits.OrderInput.pack({
+        side: encodeSide(direction),
+        amount,
+        margin: position.collateral,
+        limit_price: worstPriceE8,
+        max_fee: input.maxFee,
+        intent: BigInt(
+          ["increase", "reduce", "close", "reverse"].indexOf(intent),
+        ),
+        version: position.version,
+      }),
+      inputNonce,
+    );
     const signature = await this.program.methods
       .submitOrder(
         offset,
