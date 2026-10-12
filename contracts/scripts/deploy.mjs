@@ -21,6 +21,7 @@ const clusterOffset = 456;
 const programPath = resolvePath("contracts/target/deploy/depth.so");
 const programSize = statSync(programPath).size;
 const maxLength = programSize;
+let extension = 0;
 const programKeypairPath = rolePath("program");
 const bufferKeypairPath = rolePath("buffer");
 const signerPath = rolePath("deployer");
@@ -95,7 +96,7 @@ if (!cluster?.owner.equals(arcium.programId)) {
   throw new Error("Arcium devnet cluster 456 is unavailable");
 }
 // The loader returns the buffer balance to the payer before funding ProgramData.
-const required =
+let required =
   Math.max(
     0,
     Math.max(bufferRent, programRent) - (bufferAccount?.lamports ?? 0),
@@ -128,6 +129,21 @@ if (upgrade) {
     !new PublicKey(programData.data.subarray(13, 45)).equals(signer.publicKey)
   )
     throw new Error("Deployment signer is not the program upgrade authority");
+  const allocated = programData.data.length - 45;
+  if (allocated < programSize) {
+    extension = Math.max(10_240, programSize - allocated);
+    required += Math.max(
+      0,
+      (await connection.getMinimumBalanceForRentExemption(
+        allocated + extension + 45,
+      )) - programData.lamports,
+    );
+    console.log(
+      `ProgramData growth: ${extension} bytes; revised peak: ${(
+        required / 1_000_000_000
+      ).toFixed(3)} SOL`,
+    );
+  }
   const depth = new anchor.Program(idl, provider);
   const [protocols, markets, accounts, clearing] = await Promise.all([
     depth.account.protocol.all(),
@@ -192,6 +208,17 @@ async function run(command, args) {
 }
 
 if (!existing || upgrade) {
+  if (extension)
+    await run("solana", [
+      "program",
+      "extend",
+      programId.toBase58(),
+      String(extension),
+      "--keypair",
+      signerPath,
+      "--url",
+      rpc,
+    ]);
   console.log("Uploading program through the configured RPC...");
   await run("solana", [
     "program",
