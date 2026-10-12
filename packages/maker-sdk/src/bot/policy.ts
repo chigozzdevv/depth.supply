@@ -1,7 +1,7 @@
 import type { QuoteInput, MarketState } from "@/client/types";
 import type { PositionSnapshot } from "@depthhq/sdk";
 import { positionPnl } from "@depthhq/sdk";
-import { quoteBounds } from "@depthhq/bindings";
+import { quoteBounds, quoteSizes } from "@depthhq/bindings";
 import { executionPrice, validateBook } from "@/hedge/policy";
 import { abs, notional, type HedgeBook } from "@/hedge/types";
 
@@ -34,6 +34,23 @@ export type BotMarket = MarketState & {
     fundingIntervalSeconds: number;
   };
 };
+
+export function executionCosts(
+  policy: BotPolicy,
+  pricing?: Pick<BotPricing, "takerFeeBps" | "hourlyFundingBps">,
+) {
+  const horizon = policy.fundingHours ?? 1;
+  return {
+    bid: Math.ceil(
+      (pricing?.takerFeeBps ?? 0) +
+        Math.max(0, -(pricing?.hourlyFundingBps ?? 0)) * horizon,
+    ),
+    ask: Math.ceil(
+      (pricing?.takerFeeBps ?? 0) +
+        Math.max(0, pricing?.hourlyFundingBps ?? 0) * horizon,
+    ),
+  };
+}
 
 export function validateBotPolicy(policy: BotPolicy) {
   if (
@@ -92,6 +109,7 @@ export function botQuote(
   nonce: bigint,
   now: number,
   pricing?: BotPricing,
+  reservationCredit = 0n,
 ): QuoteInput | undefined {
   validateBotPolicy(policy);
   const reason = quoteHealth(market, now);
@@ -105,10 +123,14 @@ export function botQuote(
     throw new Error("Maker private position is not ready");
   const price = BigInt(market.oraclePriceE8.toString());
   const exposure =
-    ((position.position < 0n ? -position.position : position.position) *
-      price) /
+    ((position.position < 0n ? -position.position : position.position) * price +
+      99_999_999_999n) /
     100_000_000_000n;
   const marginBps = BigInt(market.config.initialMarginBps);
+  if (reservationCredit < 0n || reservationCredit > position.reserved)
+    throw new Error(
+      "Replacement margin credit exceeds the private reservation",
+    );
   if (marginBps <= 0n) throw new Error("Maker margin policy is invalid");
   const pnl =
     position.position === 0n
@@ -119,7 +141,8 @@ export function botQuote(
     position.collateral +
     pnl -
     position.reserved -
-    (exposure * marginBps + 9_999n) / 10_000n;
+    (exposure * marginBps + 9_999n) / 10_000n +
+    reservationCredit;
   const limits = [
     policy.maxCapacity,
     policy.maxInventoryNotional - exposure,
@@ -130,9 +153,10 @@ export function botQuote(
   const capacity = limits.reduce((minimum, value) =>
     value < minimum ? value : minimum,
   );
-  const tiers = market.config.quoteTiers
-    .map((value) => BigInt(value.toString()))
-    .filter((size) => size > 0n && size <= capacity);
+  const tiers = quoteSizes(
+    market.config.quoteTiers.map((value) => BigInt(value.toString())),
+    capacity,
+  );
   if (!tiers.length) return;
   const half = Math.ceil(policy.spreadBps / 2);
   const preparation = quoteBounds(
@@ -159,23 +183,9 @@ export function botQuote(
       : BigInt(policy.inventorySkewBps ?? 0);
   const skew = (price * boundedSkew * (netPosition > 0n ? -1n : 1n)) / 10_000n;
   const costs = BigInt(half + (policy.executionCostBps ?? 0));
-  const horizon = policy.fundingHours ?? 1;
-  const bidCosts =
-    costs +
-    BigInt(
-      Math.ceil(
-        (pricing?.takerFeeBps ?? 0) +
-          Math.max(0, -(pricing?.hourlyFundingBps ?? 0)) * horizon,
-      ),
-    );
-  const askCosts =
-    costs +
-    BigInt(
-      Math.ceil(
-        (pricing?.takerFeeBps ?? 0) +
-          Math.max(0, pricing?.hourlyFundingBps ?? 0) * horizon,
-      ),
-    );
+  const execution = executionCosts(policy, pricing);
+  const bidCosts = costs + BigInt(execution.bid);
+  const askCosts = costs + BigInt(execution.ask);
   const quotes = tiers.map((size) => {
     const units = (size * 100_000_000_000n + price - 1n) / price;
     const sell = pricing ? executionPrice(pricing.book.bids, units) : price;

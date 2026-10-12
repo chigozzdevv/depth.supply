@@ -5,6 +5,7 @@ import type { MakerClient } from "@/client/client";
 import { BotStore, type BotState } from "@/bot/store";
 import {
   botQuote,
+  executionCosts,
   quoteHealth,
   validateBotPolicy,
   type BotMarket,
@@ -13,6 +14,7 @@ import {
 } from "@/bot/policy";
 import type { PositionSnapshot } from "@depthhq/sdk";
 import { HedgeEngine } from "@/hedge/engine";
+import { validateBook } from "@/hedge/policy";
 
 export type BotSnapshot = {
   phase: "active" | "pending" | "idle" | "stopped";
@@ -26,6 +28,7 @@ const nonce = () => BigInt(`0x${randomBytes(8).toString("hex")}`);
 export class MakerBot {
   private state?: BotState;
   private position?: PositionSnapshot;
+  private verifiedPosition?: PositionSnapshot;
   private dirty = true;
   private busy = false;
   private stopping = false;
@@ -35,6 +38,7 @@ export class MakerBot {
   private lastCleanup = 0;
   private lastFills = 0;
   private inventoryVersion?: bigint;
+  private reservationView?: ReturnType<MakerClient["quote"]["get"]>;
   private constructor(
     readonly maker: MakerClient,
     readonly policy: BotPolicy,
@@ -173,14 +177,30 @@ export class MakerBot {
       currentVersion === write.version + 1n &&
       (this.inventoryVersion ?? this.position.version) >= write.version &&
       (this.inventoryVersion ?? this.position.version) <= currentVersion;
+    const completedQuote =
+      write &&
+      "ready" in confirmed.status &&
+      currentVersion === write.version + 1n &&
+      (await this.maker.quoteState(new PublicKey(write.quote)));
     const completedWrite =
-      candidate &&
-      (await this.maker.quoteState(new PublicKey(write.quote))).status;
+      candidate && completedQuote ? completedQuote.status : undefined;
     const ownCommit =
+      write &&
       completedWrite &&
       (write.release
         ? "cancelled" in completedWrite || "filled" in completedWrite
         : "active" in completedWrite);
+    const riskWrite = [
+      this.state!.quoteRisk,
+      this.state!.replacement?.risk,
+    ].find((risk) => risk?.quote === write?.quote);
+    if (completedQuote && "active" in completedQuote.status && riskWrite) {
+      riskWrite.version = currentVersion;
+      riskWrite.balanceNonce = Buffer.from(
+        completedQuote.balanceNonce,
+      ).toString("hex");
+      await this.store.save(this.state!);
+    }
     if (ownCommit) {
       this.inventoryVersion = currentVersion;
       ready = true;
@@ -190,14 +210,15 @@ export class MakerBot {
       }
     }
     if (
-      ready &&
+      "ready" in confirmed.status &&
       (!this.position ||
         this.position.status !== "ready" ||
         this.position.position === undefined ||
-        (this.inventoryVersion ?? this.position.version) !== currentVersion)
+        ((this.inventoryVersion ?? this.position.version) !== currentVersion &&
+          this.position.version !== currentVersion))
     ) {
       const prior = this.position;
-      this.position = await this.maker.position.summary({ timeoutMs: 180_000 });
+      this.position = await this.maker.position.summary({ timeoutMs: 0 });
       const fresh = await this.maker.read<typeof account>(
         "MarketAccount",
         this.maker.marketAccount(),
@@ -226,16 +247,107 @@ export class MakerBot {
         this.dirty = false;
       }
     }
-    if (ready) this.dirty = false;
+    if (ready && this.position?.status === "ready") {
+      this.pricingDirty ||=
+        this.verifiedPosition !== undefined &&
+        (this.verifiedPosition.position !== this.position.position ||
+          this.verifiedPosition.collateral !== this.position.collateral);
+      this.verifiedPosition = this.position;
+      this.dirty = false;
+    }
     const snapshot = await this.hedge.tick(
       this.state!.hedge!,
       () => this.saveHedge(),
       ready ? this.position?.position : undefined,
     );
     if (snapshot.phase === "pending" || snapshot.phase === "blocked") {
+      const risk = this.state!.quoteRisk;
+      const inventoryWait =
+        snapshot.phase === "pending" &&
+        !this.state!.hedge?.pending &&
+        (snapshot.reason === "Waiting for finalized Depth inventory" ||
+          snapshot.reason ===
+            "Waiting for the external account to include the confirmed hedge" ||
+          snapshot.reason ===
+            "Hedge submitted; reconciling confirmed exposure");
+      if (
+        inventoryWait &&
+        risk &&
+        risk.quote === this.state!.quote &&
+        this.hedge.policy.ratioBps === 10_000
+      ) {
+        const [book, external] = await Promise.all([
+          this.hedge.adapter.book(),
+          this.hedge.adapter.account(),
+        ]);
+        validateBook(book, Date.now(), this.hedge.policy.maxPriceAgeMs);
+        if (
+          !Number.isSafeInteger(external.timestamp) ||
+          external.timestamp > Date.now() + 1000 ||
+          Date.now() - external.timestamp > this.hedge.policy.maxPriceAgeMs ||
+          external.openOrders.length ||
+          !Number.isInteger(external.leverage) ||
+          external.leverage < 1 ||
+          external.availableMargin < 0n ||
+          external.leverage > this.hedge.policy.maxLeverage
+        )
+          throw new Error(
+            "External account is unavailable for quote continuity",
+          );
+        const market = await this.maker.read<BotMarket>(
+          "Market",
+          this.maker.marketAddress,
+        );
+        const price = BigInt(market.oraclePriceE8.toString());
+        const expected =
+          risk.externalPosition +
+          this.state!.hedge!.history.filter(
+            (fill) => fill.nonce > risk.hedgeNonce,
+          ).reduce(
+            (total, fill) =>
+              total + (fill.buy ? fill.filledSize : -fill.filledSize),
+            0n,
+          );
+        const quote = await this.maker.quoteState(new PublicKey(risk.quote));
+        const balanceNonce = Buffer.from(quote.balanceNonce).toString("hex");
+        const unchanged = currentVersion === risk.version;
+        const ownFill =
+          "ready" in confirmed.status &&
+          currentVersion === risk.version + 1n &&
+          risk.balanceNonce !== undefined &&
+          balanceNonce !== risk.balanceNonce;
+        if (ownFill) {
+          risk.version = currentVersion;
+          risk.balanceNonce = balanceNonce;
+          this.state!.inventoryPendingSince ??= Date.now();
+          await this.store.save(this.state!);
+        }
+        const bounded =
+          (unchanged || ownFill) &&
+          external.position === expected &&
+          risk.notional * price <=
+            this.hedge.policy.maxUnhedgedNotional * risk.price;
+        if (market.pendingOrders > 0 && bounded) return snapshot.reason;
+        if (
+          bounded &&
+          unchanged &&
+          this.state!.inventoryPendingSince === undefined &&
+          this.state!.hedge!.unhedgedSince === undefined
+        )
+          return snapshot.reason;
+        this.state!.inventoryPendingSince ??= Date.now();
+        await this.store.save(this.state!);
+        if (
+          bounded &&
+          Date.now() - this.state!.inventoryPendingSince <
+            this.hedge.policy.maxUnhedgedMs
+        )
+          return snapshot.reason;
+      }
       await this.cancel(true);
       return snapshot.reason ?? "hedge reconciliation pending";
     }
+    this.state!.inventoryPendingSince = undefined;
     const [book, costs] = await Promise.all([
       this.hedge.adapter.book(),
       this.hedge.adapter.costs(),
@@ -245,10 +357,12 @@ export class MakerBot {
         this.pricing.book.bids[0].priceE8 + this.pricing.book.asks[0].priceE8;
       const after = book.bids[0].priceE8 + book.asks[0].priceE8;
       const change = after > before ? after - before : before - after;
+      const priorCosts = executionCosts(this.policy, this.pricing);
+      const nextCosts = executionCosts(this.policy, costs);
       this.pricingDirty ||=
         change * 10_000n >= before * BigInt(this.policy.repriceBps) ||
-        costs.takerFeeBps !== this.pricing.takerFeeBps ||
-        costs.hourlyFundingBps !== this.pricing.hourlyFundingBps;
+        priorCosts.bid !== nextCosts.bid ||
+        priorCosts.ask !== nextCosts.ask;
     }
     this.pricing = {
       book,
@@ -341,6 +455,7 @@ export class MakerBot {
         state.quote = flow.nextId.toBase58();
         state.request = state.replacement.request;
         state.referencePrice = state.replacement.referencePrice;
+        state.quoteRisk = state.replacement.risk;
         state.replacement = undefined;
         await this.store.save(state);
       } else if (
@@ -442,6 +557,7 @@ export class MakerBot {
             "validated",
             "validating",
             "closing",
+            "reserving",
           ].includes(snapshot.status)
             ? await this.quoteWrite(handle, true)
             : snapshot;
@@ -484,9 +600,14 @@ export class MakerBot {
       return true;
     }
     if (
-      ["active", "waiting", "validated", "validating", "closing"].includes(
-        quote.status,
-      )
+      [
+        "active",
+        "waiting",
+        "validated",
+        "validating",
+        "closing",
+        "reserving",
+      ].includes(quote.status)
     )
       await this.quoteWrite(handle, true);
     return false;
@@ -498,6 +619,15 @@ export class MakerBot {
       new PublicKey(replacement.prior),
       replacement.nonce,
     );
+    if (
+      now - market.oracleTimestamp.toNumber() >
+      market.config.maxOracleAgeSeconds -
+        Math.min(
+          Math.floor(market.config.maxOracleAgeSeconds / 2),
+          this.policy.lifetimeSeconds,
+        )
+    )
+      return this.snapshot("pending", "waiting for a fresh oracle update");
     if (!replacement.request) {
       const account = await this.maker.read<{
         status: Record<string, unknown>;
@@ -511,7 +641,7 @@ export class MakerBot {
         this.position.version !== BigInt(account.version.toString())
       ) {
         this.position = await this.maker.position.summary({
-          timeoutMs: 180_000,
+          timeoutMs: 0,
         });
         if (
           this.position.status !== "ready" ||
@@ -524,17 +654,49 @@ export class MakerBot {
       }
       this.inventoryVersion = this.position.version;
       this.dirty = false;
-      replacement.request = botQuote(
-        this.policy,
+      const previous = await this.maker.quote
+        .get(new PublicKey(replacement.prior))
+        .status();
+      const policy = this.quotePolicy(market);
+      const planned = botQuote(
+        policy,
         market,
         this.position,
         replacement.nonce,
         now,
         this.pricing,
       );
+      let credit = 0n;
+      if (
+        previous.status === "active" &&
+        (!planned || planned.maxCapacity < policy.maxCapacity)
+      ) {
+        this.reservationView ??= this.maker.quote.get(
+          new PublicKey(replacement.prior),
+        );
+        const margin = await this.reservationView.reservation();
+        if (margin === undefined)
+          return this.snapshot("pending", "reading remaining quote margin");
+        credit = margin;
+        this.reservationView = undefined;
+      }
+      replacement.request = botQuote(
+        policy,
+        market,
+        this.position,
+        replacement.nonce,
+        now,
+        this.pricing,
+        credit,
+      );
       if (!replacement.request)
         return this.snapshot("pending", "inventory or collateral limit");
       replacement.referencePrice = BigInt(market.oraclePriceE8.toString());
+      replacement.risk = this.quoteRisk(
+        flow.nextId,
+        replacement.request,
+        market,
+      );
       await this.store.save(state);
     }
     await flow.begin();
@@ -552,27 +714,49 @@ export class MakerBot {
       ["rejected", "cancelled"].includes(snapshot.status) ||
       replacement.request.expiresAt <= now
     ) {
-      await this.cancel();
-      return this.snapshot("pending", "releasing expired successor");
+      await flow.discard();
+      state.replacement = undefined;
+      this.reservationView = undefined;
+      await this.store.save(state);
+      return this.snapshot("pending", "retrying expired successor");
     }
     const prior = this.maker.quote.get(new PublicKey(replacement.prior));
     const previous = await prior.status();
-    const size = this.position!.position!;
-    const exposure =
-      ((size < 0n ? -size : size) * BigInt(market.oraclePriceE8.toString()) +
-        99_999_999_999n) /
-      100_000_000_000n;
     if (
-      !terminal.has(previous.status) &&
-      ["validated", "waiting", "reserving"].includes(snapshot.status) &&
-      market.activeQuoteCount < 4 &&
-      exposure + previous.maxCapacity + snapshot.maxCapacity <=
-        this.policy.maxInventoryNotional &&
-      BigInt(market.quotedNotional.toString()) + snapshot.maxCapacity <=
-        BigInt(market.config.maxMarketNotional.toString())
+      previous.status === "active" &&
+      ["validated", "reserving"].includes(snapshot.status)
     ) {
-      await this.quoteWrite(next);
-      return this.snapshot("pending", "activating successor quote");
+      const price = BigInt(market.oraclePriceE8.toString());
+      const size = this.position!.position!;
+      const exposure =
+        ((size < 0n ? -size : size) * price + 99_999_999_999n) /
+        100_000_000_000n;
+      const risk = this.quoteRisk(next.id, replacement.request, market);
+      if (
+        snapshot.status === "validated" &&
+        (exposure + snapshot.maxCapacity > this.policy.maxInventoryNotional ||
+          (risk && risk.notional > this.hedge!.policy.maxUnhedgedNotional))
+      ) {
+        await flow.discard();
+        state.replacement = undefined;
+        await this.store.save(state);
+        return this.snapshot("pending", "repricing changed inventory");
+      }
+      if (snapshot.status === "validated") replacement.risk = risk;
+      await this.store.save(state);
+      const account = await this.maker.read<{
+        version: { toString(): string };
+      }>("MarketAccount", this.maker.marketAccount());
+      await flow.rotate(next);
+      if (next.reserveSignature) {
+        state.quoteWrite = {
+          quote: next.id.toBase58(),
+          version: BigInt(account.version.toString()),
+          release: false,
+        };
+        await this.store.save(state);
+      }
+      return this.snapshot("pending", "rotating quote reservation");
     }
     if (!terminal.has(previous.status)) {
       if (
@@ -586,6 +770,7 @@ export class MakerBot {
     state.quote = flow.nextId.toBase58();
     state.request = replacement.request;
     state.referencePrice = replacement.referencePrice;
+    state.quoteRisk = replacement.risk;
     state.replacement = undefined;
     this.pricingDirty = false;
     await this.store.save(state);
@@ -648,6 +833,7 @@ export class MakerBot {
           reason,
         );
       }
+      if (state.quote) await this.renew(market, now);
       await this.fills();
       const hedgeReason = await this.hedgeTick();
       if (hedgeReason) return this.snapshot("pending", hedgeReason);
@@ -699,6 +885,30 @@ export class MakerBot {
           await this.cancel();
           return this.snapshot("pending", "releasing quote");
         } else if (quote.status === "active") {
+          if (this.dirty && !this.hedge) {
+            const account = await this.maker.read<{
+              status: Record<string, unknown>;
+              version: { toString(): string };
+            }>("MarketAccount", this.maker.marketAccount());
+            if ("ready" in account.status) {
+              const before = this.position;
+              this.position = await this.maker.position.summary({
+                timeoutMs: 0,
+              });
+              if (
+                this.position.status === "ready" &&
+                this.position.version === BigInt(account.version.toString())
+              ) {
+                this.dirty = false;
+                this.pricingDirty ||=
+                  before !== undefined &&
+                  before.position !== this.position.position;
+                this.inventoryVersion = this.position.version;
+              }
+            }
+            if (this.dirty)
+              return this.snapshot("pending", "reading maker inventory");
+          }
           const price = BigInt(market.oraclePriceE8.toString());
           const difference =
             state.referencePrice === undefined
@@ -707,17 +917,24 @@ export class MakerBot {
                   ? price - state.referencePrice
                   : state.referencePrice - price) * 10_000n;
           const current = await this.maker.quoteState(handle.id);
-          const duration = Math.min(
-            this.policy.lifetimeSeconds,
-            market.config.maxQuoteLifetimeSeconds,
-          );
-          const refresh =
-            current.expiry.toNumber() - now <=
-            duration - Math.min(this.policy.refreshSeconds, duration - 1);
+          const reference = BigInt(current.oracleReferenceE8.toString());
+          const drift =
+            price > reference ? price - reference : reference - price;
+          const compatible =
+            current.marketRevision.eq(market.revision) &&
+            drift * 10_000n <=
+              reference *
+                BigInt(
+                  Math.min(
+                    Math.floor(market.config.maxQuoteDeviationBps / 4),
+                    25,
+                  ),
+                );
           if (
             !this.dirty &&
             !this.pricingDirty &&
-            !refresh &&
+            compatible &&
+            current.expiry.toNumber() > now &&
             difference !== undefined &&
             difference < BigInt(this.policy.repriceBps) * state.referencePrice!
           )
@@ -746,7 +963,7 @@ export class MakerBot {
         this.position.version !== BigInt(account.version.toString())
       ) {
         this.position = await this.maker.position.summary({
-          timeoutMs: 180_000,
+          timeoutMs: 0,
         });
         if (
           this.position.status !== "ready" ||
@@ -758,7 +975,7 @@ export class MakerBot {
       }
       if (!state.request) {
         const request = botQuote(
-          this.policy,
+          this.quotePolicy(market),
           market,
           this.position,
           nonce(),
@@ -770,6 +987,7 @@ export class MakerBot {
         state.request = request;
         this.pricingDirty = false;
         state.referencePrice = BigInt(market.oraclePriceE8.toString());
+        state.quoteRisk = this.quoteRisk(this.requestId()!, request, market);
         await this.store.save(state);
       }
       const request = state.request;
@@ -797,6 +1015,94 @@ export class MakerBot {
     } finally {
       this.busy = false;
     }
+  }
+  private async renew(market: BotMarket, now: number) {
+    const state = this.state!;
+    if (
+      this.hedge &&
+      (state.hedge?.pending ||
+        (state.inventoryPendingSince !== undefined &&
+          Date.now() - state.inventoryPendingSince >=
+            this.hedge.policy.maxUnhedgedMs))
+    )
+      return;
+    const handle = this.maker.quote.get(new PublicKey(state.quote!));
+    const quote = await this.maker.quoteState(handle.id);
+    if (!("active" in quote.status) || quote.expiry.toNumber() <= now) return;
+    const duration = Math.min(
+      this.policy.lifetimeSeconds,
+      market.config.maxQuoteLifetimeSeconds,
+    );
+    if (
+      quote.expiry.toNumber() - now >
+      Math.max(
+        this.policy.refreshSeconds,
+        duration - this.policy.refreshSeconds,
+      )
+    )
+      return;
+    const price = BigInt(market.oraclePriceE8.toString());
+    const reference = BigInt(quote.oracleReferenceE8.toString());
+    const drift = price > reference ? price - reference : reference - price;
+    if (
+      !quote.marketRevision.eq(market.revision) ||
+      reference <= 0n ||
+      drift * 10_000n >
+        reference *
+          BigInt(
+            Math.min(Math.floor(market.config.maxQuoteDeviationBps / 4), 25),
+          )
+    )
+      return;
+    const renewed = await handle.renew({ validForSeconds: duration });
+    if (state.request) state.request.expiresAt = renewed.expiresAt;
+    await this.store.save(state);
+  }
+  private quotePolicy(market: BotMarket): BotPolicy {
+    if (!this.hedge || !this.pricing || this.position?.position === undefined)
+      return this.policy;
+    const price = BigInt(market.oraclePriceE8.toString());
+    const size = this.position.position + this.pricing.externalPosition;
+    const risk =
+      ((size < 0n ? -size : size) * price + 99_999_999_999n) / 100_000_000_000n;
+    const remaining = (this.hedge.policy.maxUnhedgedNotional * 9n) / 10n - risk;
+    const capacity =
+      (remaining * 10_000n) /
+      BigInt(10_000 + market.config.maxQuoteDeviationBps);
+    return {
+      ...this.policy,
+      maxCapacity:
+        capacity < this.policy.maxCapacity
+          ? capacity > 0n
+            ? capacity
+            : 1n
+          : this.policy.maxCapacity,
+    };
+  }
+  private quoteRisk(
+    id: PublicKey,
+    request: NonNullable<BotState["request"]>,
+    market: BotMarket,
+  ) {
+    if (!this.hedge || !this.pricing || this.position?.position === undefined)
+      return;
+    const price = BigInt(market.oraclePriceE8.toString());
+    const size = this.position.position + this.pricing.externalPosition;
+    const notional =
+      ((size < 0n ? -size : size) * price + 99_999_999_999n) /
+        100_000_000_000n +
+      (request.maxCapacity *
+        BigInt(10_000 + market.config.maxQuoteDeviationBps) +
+        9_999n) /
+        10_000n;
+    return {
+      quote: id.toBase58(),
+      notional,
+      price,
+      version: this.position.version,
+      externalPosition: this.pricing.externalPosition,
+      hedgeNonce: this.state!.hedge!.nonce,
+    };
   }
   stop() {
     this.stopping = true;

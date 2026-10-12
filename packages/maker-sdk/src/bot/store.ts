@@ -5,6 +5,16 @@ import { dirname, join } from "node:path";
 import type { QuoteInput } from "@/client/types";
 import type { HedgeState } from "@/hedge/types";
 
+export type QuoteRisk = {
+  quote: string;
+  notional: bigint;
+  price: bigint;
+  version: bigint;
+  balanceNonce?: string;
+  externalPosition: bigint;
+  hedgeNonce: number;
+};
+
 export type BotState = {
   genesis: string;
   maker: string;
@@ -14,11 +24,14 @@ export type BotState = {
   request?: QuoteInput;
   referencePrice?: bigint;
   quoteWrite?: { quote: string; version: bigint; release: boolean };
+  inventoryPendingSince?: number;
+  quoteRisk?: QuoteRisk;
   replacement?: {
     prior: string;
     nonce: bigint;
     request?: QuoteInput;
     referencePrice?: bigint;
+    risk?: QuoteRisk;
   };
   fills: Record<string, { signature: string; slot: number }>;
   hedge?: HedgeState;
@@ -145,6 +158,29 @@ export class BotStore {
     for (const value of [state.quote, state.replacement?.prior])
       if (value !== undefined && !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(value))
         throw new Error("Maker bot checkpoint quote is invalid");
+    if (
+      state.inventoryPendingSince !== undefined &&
+      (!Number.isSafeInteger(state.inventoryPendingSince) ||
+        state.inventoryPendingSince <= 0)
+    )
+      throw new Error("Inventory checkpoint time is invalid");
+    for (const risk of [state.quoteRisk, state.replacement?.risk])
+      if (
+        risk &&
+        (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(risk.quote) ||
+          typeof risk.notional !== "bigint" ||
+          risk.notional < 0n ||
+          typeof risk.price !== "bigint" ||
+          risk.price <= 0n ||
+          typeof risk.version !== "bigint" ||
+          risk.version < 0n ||
+          typeof risk.externalPosition !== "bigint" ||
+          !Number.isSafeInteger(risk.hedgeNonce) ||
+          risk.hedgeNonce < 0 ||
+          (risk.balanceNonce !== undefined &&
+            !/^[0-9a-f]{32}$/.test(risk.balanceNonce)))
+      )
+        throw new Error("Quote risk checkpoint is invalid");
     if (
       state.quoteWrite &&
       (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(state.quoteWrite.quote) ||
