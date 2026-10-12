@@ -174,6 +174,7 @@ export function withdrawalAddress(
 
 export { circuits } from "@/circuits";
 export { packQuoteCurve } from "@/quote";
+export { fundingFresh } from "@/funding";
 export type { EncryptedQuote } from "@/quote";
 
 export { computations, computationName } from "@/computations";

@@ -8,6 +8,7 @@ import {
   type PublicApp,
 } from "@depthhq/sdk/data";
 import { useDepth } from "@/shared/depth/session";
+import { fundingFresh } from "@depthhq/bindings";
 
 export function useMarket() {
   const { config } = useDepth();
@@ -61,8 +62,11 @@ export function useMarket() {
     age === undefined || age > (market?.max_oracle_age_seconds ?? 0);
   const fundingOverdue = Boolean(
     market &&
-    now >
-      Number(market.last_funding_timestamp) + market.funding_interval_seconds,
+    !fundingFresh(
+      Number(market.last_funding_timestamp),
+      market.funding_interval_seconds,
+      now,
+    ),
   );
   const reason =
     error ||

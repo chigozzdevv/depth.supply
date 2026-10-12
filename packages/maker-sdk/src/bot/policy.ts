@@ -1,7 +1,7 @@
 import type { QuoteInput, MarketState } from "@/client/types";
 import type { PositionSnapshot } from "@depthhq/sdk";
 import { positionPnl } from "@depthhq/sdk";
-import { quoteBounds, quoteSizes } from "@depthhq/bindings";
+import { fundingFresh, quoteBounds, quoteSizes } from "@depthhq/bindings";
 import { executionPrice, validateBook } from "@/hedge/policy";
 import { abs, notional, type HedgeBook } from "@/hedge/types";
 
@@ -93,9 +93,11 @@ export function quoteHealth(
   const age = now - market.oracleTimestamp.toNumber();
   if (age < 0 || age > market.config.maxOracleAgeSeconds) return "oracle stale";
   if (
-    now >
-    market.lastFundingTimestamp.toNumber() +
-      market.config.fundingIntervalSeconds
+    !fundingFresh(
+      market.lastFundingTimestamp.toNumber(),
+      market.config.fundingIntervalSeconds,
+      now,
+    )
   )
     return "funding overdue";
   if (BigInt(market.oraclePriceE8.toString()) < 100_000_000n)

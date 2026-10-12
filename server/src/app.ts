@@ -23,6 +23,7 @@ import { registerHttp } from "@/shared/http/http.plugin";
 import { viewRoute } from "@/features/view/view.route";
 import type { ViewService } from "@/features/view/view.service";
 import type { RpcTransport } from "@/shared/chain/transport";
+import { fundingFresh as fundingCurrent } from "@depthhq/bindings";
 import { rpcRoute } from "@/shared/http/rpc";
 
 export function buildApp(
@@ -68,7 +69,11 @@ export function buildApp(
     );
     const fundingFresh = Boolean(
       market &&
-      now <= market.lastFundingTimestamp + market.fundingIntervalSeconds,
+      fundingCurrent(
+        market.lastFundingTimestamp,
+        market.fundingIntervalSeconds,
+        now,
+      ),
     );
     const ready = Boolean(
       market &&
