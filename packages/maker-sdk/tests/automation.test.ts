@@ -259,3 +259,75 @@ test("injected hedge wallets sign canonical typed data and stop when the selecte
   await assert.rejects(wallet.signTypedData(data), /account changed/);
   assert.equal(calls, 1);
 });
+
+test("unresponsive hedge wallets time out without retaining a connection", async () => {
+  await assert.rejects(
+    connect_hyperliquid(
+      { request: () => new Promise(() => {}) },
+      { timeoutMs: 5 },
+    ),
+    /Wallet did not respond/,
+  );
+  const wallet = await connect_hyperliquid(
+    {
+      request: async (input) =>
+        input.method === "eth_requestAccounts"
+          ? [`0x${"1".repeat(40)}`]
+          : new Promise(() => {}),
+    },
+    { timeoutMs: 5 },
+  );
+  await assert.rejects(wallet.getAddresses(), /Wallet did not respond/);
+});
+
+test("cancelling a hedge connection ignores a later provider approval", async () => {
+  const controller = new AbortController();
+  let resolve!: (value: unknown) => void;
+  let calls = 0;
+  const result = connect_hyperliquid(
+    {
+      request: () => {
+        calls++;
+        return new Promise((done) => {
+          resolve = done;
+        });
+      },
+    },
+    { signal: controller.signal },
+  );
+  assert.equal(calls, 1);
+  controller.abort();
+  await assert.rejects(result, /cancelled/);
+  resolve([`0x${"1".repeat(40)}`]);
+  await assert.rejects(
+    connect_hyperliquid(
+      {
+        request: async () => {
+          calls++;
+          return [];
+        },
+      },
+      { signal: controller.signal },
+    ),
+    /cancelled/,
+  );
+  assert.equal(calls, 1);
+});
+
+test("invalid hedge wallet timeouts never call the provider", async () => {
+  let calls = 0;
+  for (const timeoutMs of [0, -1, 1.5, 300001])
+    await assert.rejects(
+      connect_hyperliquid(
+        {
+          request: async () => {
+            calls++;
+            return [];
+          },
+        },
+        { timeoutMs },
+      ),
+      /timeout/,
+    );
+  assert.equal(calls, 0);
+});
