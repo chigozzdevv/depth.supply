@@ -3,7 +3,6 @@ import {
   awaitComputationFinalization,
   getArciumAccountBaseSeed,
   getArciumEnv,
-  getArciumProgram,
   getArciumProgramId,
   getClusterAccAddress,
   getCompDefAccOffset,
@@ -28,6 +27,7 @@ import { expect } from "chai";
 import { createHash, randomBytes } from "crypto";
 import * as fs from "fs";
 import { Depth } from "@/target/types/depth";
+import { readMxe } from "@/tests/support/program";
 import { unpackMarket } from "@/tests/support/packing";
 import { recoveryKey, recoveryPrivateKey } from "@/tests/keys";
 import { exerciseQuote } from "@/tests/support/quote";
@@ -67,9 +67,7 @@ describe("private balances", () => {
       getArciumProgramId()
     )[0];
     const mxeAccount = getMXEAccAddress(program.programId);
-    const mxe = await getArciumProgram(provider).account.mxeAccount.fetch(
-      mxeAccount
-    );
+    const mxe = await readMxe(provider, mxeAccount);
     await program.methods
       .initOpenBalanceCompDef()
       .accountsPartial({

@@ -2,7 +2,6 @@ import * as anchor from "@anchor-lang/core";
 import {
   awaitComputationFinalization,
   getArciumEnv,
-  getArciumProgram,
   getClusterAccAddress,
   getCompDefAccAddress,
   getCompDefAccOffset,
@@ -20,6 +19,7 @@ import { PublicKey } from "@solana/web3.js";
 import { randomBytes } from "crypto";
 import * as fs from "fs";
 import { Depth } from "@/target/types/depth";
+import { readMxe } from "@/tests/support/program";
 
 export class Harness {
   readonly mxeAccount: PublicKey;
@@ -41,9 +41,7 @@ export class Harness {
     program: anchor.Program<Depth>
   ) {
     const mxeAccount = getMXEAccAddress(program.programId);
-    const mxe = await getArciumProgram(provider).account.mxeAccount.fetch(
-      mxeAccount
-    );
+    const mxe = await readMxe(provider, mxeAccount);
     let publicKey = await getMXEPublicKey(provider, program.programId);
     for (let attempt = 0; !publicKey && attempt < 60; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 2_000));

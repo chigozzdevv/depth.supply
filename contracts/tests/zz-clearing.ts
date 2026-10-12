@@ -3,7 +3,6 @@ import {
   awaitComputationFinalization,
   createPacker,
   getArciumEnv,
-  getArciumProgram,
   getClusterAccAddress,
   getCompDefAccAddress,
   getCompDefAccOffset,
@@ -27,6 +26,7 @@ import { expect } from "chai";
 import { createHash, randomBytes } from "crypto";
 import * as fs from "fs";
 import { Depth } from "@/target/types/depth";
+import { readMxe } from "@/tests/support/program";
 import { recoveryKey, recoveryPrivateKey } from "@/tests/keys";
 
 const feed = Buffer.from(
@@ -79,9 +79,7 @@ describe("encrypted market clearing", () => {
 
   it("credits real USDC to the encrypted insurance ledger and recovers the draft fund", async () => {
     const mxeAccount = getMXEAccAddress(program.programId);
-    const mxe = await getArciumProgram(provider).account.mxeAccount.fetch(
-      mxeAccount
-    );
+    const mxe = await readMxe(provider, mxeAccount);
     const clusterOffset = getArciumEnv().arciumClusterOffset;
     const definitions = [
       {

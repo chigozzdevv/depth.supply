@@ -2,7 +2,6 @@ import * as anchor from "@anchor-lang/core";
 import {
   awaitComputationFinalization,
   getArciumEnv,
-  getArciumProgram,
   getClusterAccAddress,
   getCompDefAccAddress,
   getCompDefAccOffset,
@@ -21,6 +20,7 @@ import { expect } from "chai";
 import { randomBytes } from "crypto";
 import * as fs from "fs";
 import { Depth } from "@/target/types/depth";
+import { readMxe } from "@/tests/support/program";
 import { packQuoteCurve, unpackMarket } from "@/tests/support/packing";
 import { recoveryPrivateKey } from "@/tests/keys";
 
@@ -39,9 +39,7 @@ export async function exerciseQuote(
     program.programId
   )[0];
   const mxeAccount = getMXEAccAddress(program.programId);
-  const mxe = await getArciumProgram(provider).account.mxeAccount.fetch(
-    mxeAccount
-  );
+  const mxe = await readMxe(provider, mxeAccount);
   const clusterOffset = getArciumEnv().arciumClusterOffset;
   const definitions = [
     {

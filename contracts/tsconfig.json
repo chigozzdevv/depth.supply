@@ -8,6 +8,8 @@
     "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
+      "@/generated": ["./target/types/depth"],
+      "@/target/types/depth": ["./tests/support/program"],
       "@/*": ["./*"],
       "@/circuits": ["../packages/bindings/dist/index.js"],
       "@/sdk": ["../packages/sdk/dist/index.js"],
