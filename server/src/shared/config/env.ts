@@ -99,7 +99,9 @@ export function hedgeConfig(
     maxUnhedgedNotional: amount("DEPTH_HEDGE_EXPOSURE_LIMIT", "100000000"),
     maxOrderNotional: amount("DEPTH_HEDGE_ORDER_LIMIT", "100000000"),
     batchMs: Number(env.DEPTH_HEDGE_BATCH_MS ?? "5000"),
-    maxUnhedgedMs: Number(env.DEPTH_HEDGE_WAIT_MS ?? "15000"),
+    maxUnhedgedMs: Number(
+      env.DEPTH_HEDGE_WAIT_MS ?? (network === "testnet" ? "90000" : "15000"),
+    ),
     maxSlippageBps: Number(env.DEPTH_HEDGE_SLIPPAGE_BPS ?? "10"),
     maxPriceAgeMs: Number(env.DEPTH_HEDGE_PRICE_AGE_MS ?? "5000"),
     orderTtlMs: Number(env.DEPTH_HEDGE_ORDER_TTL_MS ?? "10000"),
