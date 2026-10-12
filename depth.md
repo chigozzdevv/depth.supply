@@ -412,8 +412,19 @@ the receiver account and advances the market only on a newer update. A
 deployment using another account must supply it explicitly and maintain that
 account's updates; stale or unavailable prices block risk actions.
 The devnet demo uses `PYTH_ORACLE_MODE=sponsored` and does not call Hermes.
-`PYTH_ORACLE_MODE=hermes` runs Depth's separate price publisher and requires a
-Pyth API key; the keeper still reads the verified onchain account in both modes.
+Its oracle age limit is 600 seconds to tolerate sponsored devnet update delays;
+new submissions leave time for their computations before that cutoff. Prices
+older than the configured limit still block trading and risk actions. The
+`devnet` program feature permits this demo limit; standard builds cap it at
+300 seconds. The protocol authority can change only the age limit while the
+market is paused with no pending order, advancing the revision and invalidating
+old quote snapshots. A longer age limit accepts older marks and increases
+pricing and liquidation delay risk; it does not improve source freshness.
+`PYTH_ORACLE_MODE=hermes` adds Depth's price publisher to the service supervisor
+and requires `PYTH_API_KEY`; the keeper still reads the verified onchain account in both modes.
+The publisher maintains the approved feed without changing the oracle account.
+The keeper retries after snapshot computations finish; traders and makers leave
+freshness time for admission and computation rather than submitting near expiry.
 Depth must normalize units, reject non-positive or stale data, apply a
 confidence threshold, and reject old but still technically valid updates
 chosen opportunistically by a caller. Pyth's own derivative guidance calls
@@ -549,14 +560,36 @@ same balance through several apps or markets. The program's account locks
 and the circuit's capacity calculation enforce this. Registration alone
 does not make a quote active.
 
-The maker worker prepares and privately validates the successor before stopping
-the prior quote. With sufficient collateral, inventory allowance and book capacity, it activates the
-successor before releasing the prior reservation; a full book requires releasing
-the prior quote first.
-Both quotes and their private terms remain in its durable checkpoint during the
-transition. A shutdown or hedge failure stops both quotes. Inventory reads follow
-the canonical account version; a reservation-only version change does not trigger
-another repricing cycle.
+The maker worker renews an active quote without another Arcium computation when
+its encrypted terms are unchanged and its original oracle reference still fits
+admission bounds. Renewal extends expiry within the market lifetime and operator
+grant; it never replenishes consumed capacity or changes prices.
+
+Repricing privately validates a successor while retaining the prior quote. An
+Arcium rotation then credits the prior quote's actual remaining private margin
+and reserves the successor margin in one account update. Its callback swaps the
+same book slot atomically, so full books and tight collateral do not require a
+release-before-reserve gap. A rejected rotation retains the prior quote and
+reservation. Only a cancelled or rejected successor can have its replacement
+link reset for another attempt. Checkpoints retain both quotes and their terms
+until the handover completes. A shutdown or unresolved hedge stops both quotes.
+
+Pricing tiers extend through the first tier covering the capacity envelope;
+capacity between tier boundaries remains usable, while the encrypted remaining
+capacity still limits actual fills. Hedged quotes fit the remaining aggregate
+unhedged budget, with ten percent headroom and the market price-deviation buffer.
+The worker compares rounded execution costs when repricing, so changes too small
+to change its prices do not trigger a new computation. Public readiness and trade
+admission read market and quote accounts from a consistent bank snapshot.
+An existing bounded quote can remain during inventory finality or confirmed hedge
+reconciliation for at most the configured exposure time limit. New hedge orders
+still require finalized private inventory. A full-hedge worker can restore a view
+while continuing an unchanged, previously balanced ledger and external inventory;
+unobserved changes must be identified as its own fill or quoting stops.
+Unresolved external receipts, stale
+external prices, or an exhausted risk budget stop quoting. Inventory reads poll
+without blocking the quote loop, reuse pending requests, and follow the canonical
+account version; reservation-only changes do not force another inventory read.
 
 Preparation validates prices inside a narrower oracle band, reserving up to
 25 bps for price movement before admission. Admission rejects larger movement

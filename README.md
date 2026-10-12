@@ -193,6 +193,16 @@ One supervisor owns the directory lease, and one worker owns each maker and
 hedge account lease. `/healthz` on loopback port 8789 reports supervisor health;
 authenticated SDK status reports each worker's phase, reason, and update time.
 
+Unchanged quotes renew their expiry without another Arcium computation. Repricing
+validates a successor first, then atomically replaces the prior margin reservation
+and book entry. Failed rotations preserve the prior quote. Consumed capacity stays
+consumed, and pricing tiers cover capacities between tier boundaries.
+
+Hedged quote capacity also fits the remaining aggregate unhedged budget, including
+price-deviation protection and ten percent headroom. Bounded quotes can remain
+through inventory finality or confirmed hedge reconciliation within the exposure
+time limit. Unresolved hedge receipts stop quoting.
+
 Quotes fit available equity and inventory and stop on stale oracle, funding,
 hedge uncertainty, or low operator SOL. The default SOL reserve is 0.05 SOL.
 Replenishing the operator or changing permissions requires the owner wallet;
@@ -237,8 +247,11 @@ open scoped sessions; session tokens stay in memory. Sessions must be authorized
 again after expiry or a wallet change. Decryption keys are not sent to the API.
 The maker's explicit operator grant lets its worker read that maker's inventory.
 
-The optional Hermes publisher runs separately with `PYTH_ORACLE_MODE=hermes`
-and `PYTH_API_KEY`:
+With `PYTH_ORACLE_MODE=hermes` and `PYTH_API_KEY`, `pnpm services:start` also
+supervises the Hermes publisher on health port 8788. It updates the approved
+Pyth feed when sponsored updates are late and shares the RPC request budget.
+The sponsored mode reads the existing feed without an API key; stale feed data
+still stops trading. To run the publisher alone:
 
 ```sh
 pnpm --dir server publisher
@@ -427,7 +440,7 @@ pnpm --dir contracts upload:circuits
 ```
 
 Set the verified `DEPTH_CIRCUIT_BASE_URL` printed by the uploader in the root
-`.env.local`, then run `pnpm --dir contracts build`. The build command loads
+`.env.local`, then run `pnpm --dir contracts build:devnet`. The build command loads
 the root environment and selects the pinned Anchor version.
 The devnet deployment command checks the signer, program identity, hosted
 circuits, cluster, and rent before creating the program and MXE:
@@ -473,6 +486,20 @@ pnpm --dir contracts init:market
 The command saves five encrypted recovery shares before creating the draft
 market. Each committee member must receive its own envelope and retain its
 private keys independently.
+
+The devnet build permits a 600-second oracle age limit for sponsored feed delays.
+Standard builds cap it at 300 seconds. To apply the saved age policy to an
+existing market, pause it, upgrade the program if necessary, then update the
+limit with the protocol authority:
+
+```sh
+pnpm --dir contracts init:market --pause
+pnpm --dir contracts init:market --oracle-age
+```
+
+The update requires no pending order and advances the market revision. Publish
+a new signed manifest before restarting services. The longer demo limit accepts
+older marks; it does not ensure uninterrupted source updates.
 
 After initializing the market, release operators can
 capture and sign the deployed configuration with:
@@ -531,8 +558,11 @@ An interrupted trade can be recovered with `depth.trade.flow(clientNonce)`;
 its order and margin allocation are linked by that nonce. A restarted maker
 can inspect `maker.quote.list()` and recover a replacement with
 `maker.quote.replacement(priorQuoteId, replacementNonce)`. The prior quote
-records the successor nonce onchain before it stops. If a successor quote was
+records the successor nonce onchain before rotation. If a successor quote was
 never submitted, the maker supplies fresh quote terms to resume publication.
+`maker.quote.get(quoteId).renew({ validForSeconds: 120 })` renews unchanged terms.
+`replacement.discard()` cancels a failed successor and clears its link for another
+attempt while retaining the prior quote.
 
 ### Automatic private reads
 
