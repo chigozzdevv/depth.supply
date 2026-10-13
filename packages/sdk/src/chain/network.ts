@@ -7,7 +7,7 @@ export const environments = {
   },
   devnet: {
     rpc: "https://api.devnet.solana.com",
-    service: "https://depth.supply",
+    service: "https://api.trydepth.xyz",
     genesis: "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
   },
   "mainnet-beta": {

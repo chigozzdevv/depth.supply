@@ -63,7 +63,7 @@ test("environment setup reads a signed release and binds it to the chain authori
       connection,
     });
     assert.equal(resolved.connection, connection);
-    assert.equal(resolved.serviceUrl, "https://depth.supply");
+    assert.equal(resolved.serviceUrl, "https://api.trydepth.xyz");
     assert.equal("manifest" in resolved.deployment, true);
     genesis = "wrong";
     await assert.rejects(
