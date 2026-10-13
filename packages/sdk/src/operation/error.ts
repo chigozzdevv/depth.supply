@@ -18,6 +18,18 @@ export class DepthError extends Error {
   }
 }
 
+export function admissionChanged(cause: unknown): boolean {
+  const error =
+    cause instanceof AnchorError
+      ? cause
+      : cause instanceof SendTransactionError && cause.logs
+        ? AnchorError.parse(cause.logs)
+        : undefined;
+  return ["WrongQuoteSnapshot", "WrongOrderStatus"].includes(
+    error?.error.errorCode.code ?? "",
+  );
+}
+
 export function submissionError(operationId: string, cause: unknown): never {
   if (cause instanceof DepthError) throw cause;
   const message = cause instanceof Error ? cause.message : String(cause);

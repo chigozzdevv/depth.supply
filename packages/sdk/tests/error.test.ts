@@ -2,7 +2,11 @@ import { AnchorError, ProgramError } from "@anchor-lang/core";
 import { SendTransactionError } from "@solana/web3.js";
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DepthError, submissionError } from "@/operation/error";
+import {
+  DepthError,
+  admissionChanged,
+  submissionError,
+} from "@/operation/error";
 
 function failure(cause: unknown): DepthError {
   try {
@@ -77,4 +81,39 @@ test("an existing Depth error keeps its classification", () => {
     "order-id",
   );
   assert.equal(failure(cause), cause);
+});
+
+test("only proven quote rotation or market contention permits fresh admission", () => {
+  const logs = [
+    "Program log: AnchorError occurred. Error Code: WrongQuoteSnapshot. Error Number: 6026. Error Message: The supplied quotes differ from the complete market snapshot.",
+  ];
+  assert.equal(admissionChanged(AnchorError.parse(logs)), true);
+  assert.equal(
+    admissionChanged(
+      new SendTransactionError({
+        action: "simulate",
+        signature: "",
+        transactionMessage: "Preflight failure",
+        logs,
+      }),
+    ),
+    true,
+  );
+  assert.equal(
+    admissionChanged(
+      AnchorError.parse([
+        "Program log: AnchorError occurred. Error Code: WrongOrderStatus. Error Number: 6020. Error Message: The order is in the wrong state.",
+      ]),
+    ),
+    true,
+  );
+  for (const error of [
+    new Error("WrongQuoteSnapshot"),
+    new Error("Failed to fetch"),
+    { code: 4001, message: "User denied transaction signature" },
+    AnchorError.parse([
+      "Program log: AnchorError occurred. Error Code: WrongQuoteStatus. Error Number: 6015. Error Message: The quote is in the wrong state.",
+    ]),
+  ])
+    assert.equal(admissionChanged(error), false);
 });

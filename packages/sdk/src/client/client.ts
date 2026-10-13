@@ -36,7 +36,7 @@ import { FundingClient } from "@/account/funding";
 import { balanceState } from "@/account/state";
 import { destinationTokenAccount, sourceTokenAccount } from "@/account/token";
 import { releasableMargin } from "@/account/release";
-import { submissionError } from "@/operation/error";
+import { admissionChanged, submissionError } from "@/operation/error";
 import { DepthOperation } from "@/operation/operation";
 import { DepthRecovery } from "@/recovery/recovery";
 import { ExecutionHistory } from "@/history/history";
@@ -1119,120 +1119,152 @@ export class DepthClient {
     );
     const offset = nonce();
     const queue = await this.queue("match_order", offset);
-    let keys: PublicKey[] = [];
-    const quoteDeadline = Date.now() + 60_000;
-    for (;;) {
-      try {
-        const snapshot = await quoteSnapshot(
-          this.options.connection,
-          this.program,
-          this.marketAddress,
-          market.state,
-        );
-        market = { ...market, state: snapshot.market };
-        deadline = tradeDeadline(
-          input,
-          Math.floor(Date.now() / 1_000),
-          market.state.config.maxOrderQueueSeconds,
-        );
-        this.validateTrade(
-          market.state,
-          protocol,
-          account,
-          app,
-          appId,
-          intent,
-          deadline,
-        );
-        if (!account.version.eq(new anchor.BN(position.version.toString())))
-          throw new Error("Private position changed while preparing the trade");
-        keys = snapshot.keys;
-        break;
-      } catch (error) {
-        if (
-          !(error instanceof Error) ||
-          ![
-            "Waiting for maker liquidity",
-            "Market is processing another order",
-            "Waiting for a fresh oracle update",
-            "Oracle update is stale",
-          ].includes(error.message) ||
-          Date.now() >= quoteDeadline
-        )
-          throw error;
-        [market, protocol, account, app] = await this.waitForMarket(
-          input,
-          appId,
-          intent,
-        );
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+    let worstPriceE8: bigint | undefined;
+    let signedDeadline: number | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      let keys: PublicKey[] = [];
+      const quoteDeadline = Date.now() + 60_000;
+      for (;;) {
+        try {
+          const snapshot = await quoteSnapshot(
+            this.options.connection,
+            this.program,
+            this.marketAddress,
+            market.state,
+          );
+          market = { ...market, state: snapshot.market };
+          deadline =
+            signedDeadline ??
+            tradeDeadline(
+              input,
+              Math.floor(Date.now() / 1_000),
+              market.state.config.maxOrderQueueSeconds,
+            );
+          this.validateTrade(
+            market.state,
+            protocol,
+            account,
+            app,
+            appId,
+            intent,
+            deadline,
+          );
+          if (!account.version.eq(new anchor.BN(position.version.toString())))
+            throw new Error(
+              "Private position changed while preparing the trade",
+            );
+          keys = snapshot.keys;
+          break;
+        } catch (error) {
+          if (
+            !(error instanceof Error) ||
+            ![
+              "Waiting for maker liquidity",
+              "Market is processing another order",
+              "Waiting for a fresh oracle update",
+              "Oracle update is stale",
+            ].includes(error.message) ||
+            Date.now() >= quoteDeadline
+          )
+            throw error;
+          [market, protocol, account, app] = await this.waitForMarket(
+            input,
+            appId,
+            intent,
+          );
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
       }
-    }
-    const worstPriceE8 = tradeLimit(
-      input,
-      direction,
-      BigInt(market.state.oraclePriceE8.toString()),
-    );
-    const ciphertexts = cipher.encrypt(
-      circuits.OrderInput.pack({
-        side: encodeSide(direction),
-        amount,
-        margin: position.collateral,
-        limit_price: worstPriceE8,
-        max_fee: input.maxFee,
-        intent: BigInt(
-          ["increase", "reduce", "close", "reverse"].indexOf(intent),
-        ),
-        version: position.version,
-      }),
-      inputNonce,
-    );
-    const signature = await this.program.methods
-      .submitOrder(
-        offset,
-        orderNonce,
-        appId,
-        app.feeBps,
-        app.version,
-        new anchor.BN(deadline),
-        market.state.revision,
-        market.state.oracleTimestamp,
-        ciphertexts,
-        Array.from(inputKey),
-        new anchor.BN(inputNonce, "le"),
-      )
-      .accountsPartial({
-        ...queue,
-        trader: this.options.wallet.publicKey,
-        protocol: this.protocolAddress,
-        appConfig: appAddress(appId),
-        market: this.marketAddress,
-        marketAccount: this.accountAddress(),
+      signedDeadline = deadline;
+      worstPriceE8 ??= tradeLimit(
+        input,
+        direction,
+        BigInt(market.state.oraclePriceE8.toString()),
+      );
+      const ciphertexts = cipher.encrypt(
+        circuits.OrderInput.pack({
+          side: encodeSide(direction),
+          amount,
+          margin: position.collateral,
+          limit_price: worstPriceE8,
+          max_fee: input.maxFee,
+          intent: BigInt(
+            ["increase", "reduce", "close", "reverse"].indexOf(intent),
+          ),
+          version: position.version,
+        }),
+        inputNonce,
+      );
+      let signature: string;
+      try {
+        signature = await this.program.methods
+          .submitOrder(
+            offset,
+            orderNonce,
+            appId,
+            app.feeBps,
+            app.version,
+            new anchor.BN(deadline),
+            market.state.revision,
+            market.state.oracleTimestamp,
+            ciphertexts,
+            Array.from(inputKey),
+            new anchor.BN(inputNonce, "le"),
+          )
+          .accountsPartial({
+            ...queue,
+            trader: this.options.wallet.publicKey,
+            protocol: this.protocolAddress,
+            appConfig: appAddress(appId),
+            market: this.marketAddress,
+            marketAccount: this.accountAddress(),
+            order,
+          })
+          .remainingAccounts([
+            ...keys.map((pubkey) => ({
+              pubkey,
+              isSigner: false,
+              isWritable: false,
+            })),
+            {
+              pubkey: recoveryConfigAddress(),
+              isSigner: false,
+              isWritable: false,
+            },
+            {
+              pubkey: pda([Buffer.from("fee-recovery"), order.toBuffer()]),
+              isSigner: false,
+              isWritable: true,
+            },
+          ])
+          .rpc({ commitment: "confirmed" });
+      } catch (error) {
+        if (attempt === 2 || !admissionChanged(error))
+          submissionError(order.toBase58(), error);
+        if (await this.options.connection.getAccountInfo(order, "confirmed")) {
+          const operation = this.trade.operation(clientNonce);
+          const snapshot = await operation.status();
+          if (snapshot.owner !== this.options.wallet.publicKey.toBase58())
+            throw new Error("Order owner does not match");
+          return operation;
+        }
+        [market, protocol, account, app] = await this.waitForMarket(
+          { ...input, validForSeconds: undefined, expiresAt: signedDeadline },
+          appId,
+          intent,
+        );
+        continue;
+      }
+      return new DepthOperation(
         order,
-      })
-      .remainingAccounts([
-        ...keys.map((pubkey) => ({
-          pubkey,
-          isSigner: false,
-          isWritable: false,
-        })),
-        { pubkey: recoveryConfigAddress(), isSigner: false, isWritable: false },
-        {
-          pubkey: pda([Buffer.from("fee-recovery"), order.toBuffer()]),
-          isSigner: false,
-          isWritable: true,
-        },
-      ])
-      .rpc({ commitment: "confirmed" })
-      .catch((error) => submissionError(order.toBase58(), error));
-    return new DepthOperation(
-      order,
-      signature,
-      this.program,
-      this.options.connection,
-      (id) => this.requestFillView(id),
-      position,
-    );
+        signature,
+        this.program,
+        this.options.connection,
+        (id) => this.requestFillView(id),
+        position,
+      );
+    }
+    throw new Error("Quote snapshot did not stabilize before submission");
   }
 
   private async waitForMarket(
