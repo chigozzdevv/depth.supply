@@ -495,6 +495,82 @@ test("account setup refuses a wrong signer and an unfunded account before approv
   }
 });
 
+test("hosted setup approves the agent without asking the account wallet to sign an L1 leverage action", async () => {
+  const signer = privateKeyToAccount(`0x${"1".repeat(64)}`);
+  const agent = privateKeyToAccount(`0x${"2".repeat(64)}`).address;
+  const signed: string[] = [];
+  const actions: string[] = [];
+  const wallet = {
+    getAddresses: async () => [signer.address],
+    getChainId: async () => 1,
+    signTypedData: async (data: Parameters<typeof signer.signTypedData>[0]) => {
+      assert.equal(data.domain?.chainId, 1);
+      signed.push(data.primaryType);
+      return signer.signTypedData(data);
+    },
+  };
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) => {
+    const body = JSON.parse(String(init!.body));
+    if (body.type === "clearinghouseState")
+      return Response.json({ marginSummary: { accountValue: "1000" } });
+    if (body.type === "extraAgents") return Response.json([]);
+    if (body.type === "meta")
+      return Response.json({ universe: [{ name: "SOL", szDecimals: 3 }] });
+    actions.push(body.action.type);
+    return Response.json({ status: "ok", response: { type: "default" } });
+  }) as typeof fetch;
+  try {
+    await setup_hyperliquid({
+      wallet,
+      agent,
+      leverage: 3,
+      configureLeverage: false,
+    });
+    assert.deepEqual(signed, ["HyperliquidTransaction:ApproveAgent"]);
+    assert.deepEqual(actions, ["approveAgent"]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test("the approved agent caps leverage and leaves compatible leverage unchanged", async () => {
+  const wallet = privateKeyToAccount(`0x${"1".repeat(64)}`);
+  const account = `0x${"2".repeat(40)}` as const;
+  let leverage = 20;
+  const actions: Record<string, unknown>[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_input, init) => {
+    const body = JSON.parse(String(init!.body));
+    if (body.type === "meta")
+      return Response.json({ universe: [{ name: "SOL", szDecimals: 3 }] });
+    if (body.type === "extraAgents")
+      return Response.json([{ address: wallet.address, validUntil: null }]);
+    if (body.type === "activeAssetData")
+      return Response.json({ leverage: { type: "cross", value: leverage } });
+    if (body.type === "clearinghouseState")
+      return Response.json({ assetPositions: [] });
+    if (body.type === "openOrders") return Response.json([]);
+    actions.push(body.action);
+    return Response.json({ status: "ok", response: { type: "default" } });
+  }) as typeof fetch;
+  try {
+    await HyperliquidAdapter.create({ wallet, account, maxLeverage: 3 });
+    assert.deepEqual(actions, [
+      { type: "updateLeverage", asset: 0, isCross: true, leverage: 3 },
+    ]);
+    leverage = 2;
+    await HyperliquidAdapter.create({ wallet, account, maxLeverage: 3 });
+    assert.equal(actions.length, 1);
+    await assert.rejects(
+      HyperliquidAdapter.create({ wallet, account, maxLeverage: 11 }),
+      /1 to 10/,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
 test("the adapter deduplicates partial fills, waits for incomplete full fills and rejects mismatched execution", async () => {
   const wallet = privateKeyToAccount(`0x${"1".repeat(64)}`);
   const account = `0x${"2".repeat(40)}` as const;

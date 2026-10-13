@@ -1,4 +1,4 @@
-import { HttpTransport, InfoClient } from "@nktkas/hyperliquid";
+import { ExchangeClient, HttpTransport, InfoClient } from "@nktkas/hyperliquid";
 import {
   canonicalize,
   getWalletAddress,
@@ -60,7 +60,15 @@ export class HyperliquidAdapter implements HedgeAdapter {
     agentKey?: `0x${string}`;
     account: `0x${string}`;
     network?: "testnet" | "mainnet";
+    maxLeverage?: number;
   }) {
+    if (
+      options.maxLeverage !== undefined &&
+      (!Number.isInteger(options.maxLeverage) ||
+        options.maxLeverage < 1 ||
+        options.maxLeverage > 10)
+    )
+      throw new Error("Hedge leverage limit must be 1 to 10");
     if (Boolean(options.wallet) === Boolean(options.agentKey))
       throw new Error("Provide one Hyperliquid agent signer source");
     const wallet = options.wallet ?? privateKeyToAccount(options.agentKey!);
@@ -94,6 +102,36 @@ export class HyperliquidAdapter implements HedgeAdapter {
     const sizeDecimals = meta.universe[asset].szDecimals;
     if (!Number.isInteger(sizeDecimals) || sizeDecimals < 0 || sizeDecimals > 6)
       throw new Error("Unsupported Hyperliquid SOL precision");
+    if (options.maxLeverage !== undefined) {
+      const data = await info.activeAssetData({
+        user: options.account,
+        coin: "SOL",
+      });
+      if (
+        data.leverage.type !== "cross" ||
+        data.leverage.value > options.maxLeverage
+      ) {
+        const [state, orders] = await Promise.all([
+          info.clearinghouseState({ user: options.account }),
+          info.openOrders({ user: options.account }),
+        ]);
+        if (
+          state.assetPositions.some(
+            ({ position }) =>
+              position.coin !== "SOL" && units(position.szi, 9) !== 0n,
+          ) ||
+          orders.length
+        )
+          throw new Error(
+            "Clear unrelated positions and orders before configuring the hedge account",
+          );
+        await new ExchangeClient({ wallet, transport }).updateLeverage({
+          asset,
+          isCross: true,
+          leverage: options.maxLeverage,
+        });
+      }
+    }
     return new HyperliquidAdapter(
       network,
       options.account,

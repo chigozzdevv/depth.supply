@@ -86,7 +86,16 @@ export class MakerAutomation extends WalletSession {
       );
     if (config.hedge) {
       const network = profile.environment === "devnet" ? "testnet" : "mainnet";
-      if (options.hedgeWallet)
+      const verification = {
+        account: config.hedge.account,
+        agent: profile.agent,
+        network,
+        maxLeverage: config.hedge.policy.maxLeverage,
+      } as const;
+      try {
+        await verify_hyperliquid(verification);
+      } catch (cause) {
+        if (!options.hedgeWallet) throw cause;
         await setup_hyperliquid({
           wallet: options.hedgeWallet,
           account: config.hedge.account,
@@ -94,14 +103,10 @@ export class MakerAutomation extends WalletSession {
           network,
           leverage: config.hedge.policy.maxLeverage,
           agentName: `Depth ${profile.agent.slice(2, 10)}`,
+          configureLeverage: false,
         });
-      else
-        await verify_hyperliquid({
-          account: config.hedge.account,
-          agent: profile.agent,
-          network,
-          maxLeverage: config.hedge.policy.maxLeverage,
-        });
+        await verify_hyperliquid(verification);
+      }
     }
     const operator = new PublicKey(profile.operator);
     const balance = BigInt(

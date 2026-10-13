@@ -49,6 +49,7 @@ export async function setup_hyperliquid(options: {
   network?: "testnet" | "mainnet";
   leverage: number;
   agentName?: string;
+  configureLeverage?: boolean;
 }) {
   if (Boolean(options.wallet) === Boolean(options.accountKey))
     throw new Error("Provide one Hyperliquid account signer source");
@@ -101,11 +102,12 @@ export async function setup_hyperliquid(options: {
     (entry) => entry.name === "SOL" && !entry.isDelisted,
   );
   if (asset < 0) throw new Error("Hyperliquid SOL perpetual is unavailable");
-  await client.updateLeverage({
-    asset,
-    isCross: true,
-    leverage: options.leverage,
-  });
+  if (options.configureLeverage !== false)
+    await client.updateLeverage({
+      asset,
+      isCross: true,
+      leverage: options.leverage,
+    });
   return {
     account,
     agent,

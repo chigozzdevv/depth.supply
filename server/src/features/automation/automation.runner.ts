@@ -114,6 +114,7 @@ export function automationFactory(options: {
             account: config.hedge.account,
             agentKey: record.agentSecret,
             network: record.environment === "devnet" ? "testnet" : "mainnet",
+            maxLeverage: stopping ? undefined : config.hedge.policy.maxLeverage,
           }),
           config.hedge.policy,
         )
