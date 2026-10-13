@@ -775,7 +775,7 @@ export class MakerBot {
     const previous = await prior.status();
     if (
       snapshot.status === "validated" &&
-      this.pricesChanged(replacement.request, market, now)
+      this.pricesChanged(replacement.request, market)
     ) {
       await flow.discard();
       state.replacement = undefined;
@@ -999,7 +999,7 @@ export class MakerBot {
             difference <
               BigInt(this.policy.repriceBps) * state.referencePrice! &&
             state.request !== undefined &&
-            !this.pricesChanged(state.request, market, now)
+            !this.pricesChanged(state.request, market)
           ) {
             if (await this.renew(market, now)) return this.snapshot("active");
             market = await this.maker.read<BotMarket>(
@@ -1095,7 +1095,6 @@ export class MakerBot {
   private pricesChanged(
     request: NonNullable<BotState["request"]>,
     market: BotMarket,
-    now: number,
   ) {
     if (this.position?.position === undefined) return true;
     const prices = quotePrices(
@@ -1103,7 +1102,6 @@ export class MakerBot {
       market,
       this.position.position,
       request.tiers.map((tier) => tier.size),
-      now,
       this.pricing,
     );
     return request.tiers.some((tier, index) =>

@@ -160,14 +160,7 @@ export function botQuote(
     capacity,
   );
   if (!tiers.length) return;
-  const quotes = quotePrices(
-    policy,
-    market,
-    position.position,
-    tiers,
-    now,
-    pricing,
-  );
+  const quotes = quotePrices(policy, market, position.position, tiers, pricing);
   const duration = Math.min(
     policy.lifetimeSeconds,
     market.config.maxQuoteLifetimeSeconds,
@@ -185,7 +178,6 @@ export function quotePrices(
   market: BotMarket,
   position: bigint,
   sizes: readonly bigint[],
-  now: number,
   pricing?: BotPricing,
 ): QuoteInput["tiers"] {
   const price = BigInt(market.oraclePriceE8.toString());
@@ -195,7 +187,8 @@ export function quotePrices(
   ).preparationBps;
   if (half > preparation)
     throw new Error("Maker spread exceeds oracle deviation policy");
-  if (pricing) validateBook(pricing.book, now * 1000, pricing.maxPriceAgeMs);
+  // External feed timestamps are checked against the worker's wall clock.
+  if (pricing) validateBook(pricing.book, Date.now(), pricing.maxPriceAgeMs);
   if (
     pricing &&
     (!Number.isFinite(pricing.takerFeeBps) ||
