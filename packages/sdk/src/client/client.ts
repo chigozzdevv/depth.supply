@@ -1161,6 +1161,7 @@ export class DepthClient {
             ![
               "Waiting for maker liquidity",
               "Market is processing another order",
+              "Market account is processing another operation",
               "Waiting for a fresh oracle update",
               "Oracle update is stale",
             ].includes(error.message) ||
@@ -1309,6 +1310,7 @@ export class DepthClient {
           ![
             "Waiting for maker liquidity",
             "Market is processing another order",
+            "Market account is processing another operation",
             "Waiting for a fresh oracle update",
             "Oracle update is stale",
           ].includes(error.message) ||
@@ -1344,12 +1346,13 @@ export class DepthClient {
       throw new Error("App registration is inactive");
     }
     if (
-      enumName(account.status) !== "ready" ||
       !account.market.equals(this.marketAddress) ||
       !account.owner.equals(this.options.wallet.publicKey)
     ) {
       throw new Error("Market account is unavailable");
     }
+    if (enumName(account.status) !== "ready")
+      throw new Error("Market account is processing another operation");
     if (market.pendingOrders !== 0)
       throw new Error("Market is processing another order");
     if (market.activeQuoteCount === 0)

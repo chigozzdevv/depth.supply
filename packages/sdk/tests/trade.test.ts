@@ -333,7 +333,7 @@ test("private fill result resumes its view and schedules cleanup before returnin
   assert.equal(closes, 2);
 });
 
-test("submission waits through quote replacement and validates the new market snapshot", async () => {
+test("submission waits through risk checks and quote replacement while rejecting foreign accounts", async () => {
   const wallet = new anchor.Wallet(Keypair.generate());
   const Constructor = DepthClient as unknown as new (
     options: DepthClient["options"],
@@ -346,6 +346,7 @@ test("submission waits through quote replacement and validates the new market sn
   const app = PublicKey.unique();
   let reads = 0;
   let enabled = true;
+  let foreign = false;
   client.market = async () => ({
     address: marketAddress(),
     slot: 1,
@@ -370,9 +371,9 @@ test("submission waits through quote replacement and validates the new market sn
       ? { tradingEnabled: enabled }
       : name === "MarketAccount"
         ? {
-            owner: wallet.publicKey,
+            owner: foreign ? PublicKey.unique() : wallet.publicKey,
             market: marketAddress(),
-            status: { ready: {} },
+            status: reads < 3 ? { liquidating: {} } : { ready: {} },
           }
         : { active: true, app };
   const terms = {
@@ -381,13 +382,20 @@ test("submission waits through quote replacement and validates the new market sn
     validForSeconds: 120,
   };
   await internal.waitForMarket(terms, app, "increase");
-  assert.equal(reads, 2);
+  assert.equal(reads, 3);
+  foreign = true;
+  await assert.rejects(
+    internal.waitForMarket(terms, app, "increase"),
+    /Market account is unavailable/,
+  );
+  assert.equal(reads, 4);
+  foreign = false;
   enabled = false;
   await assert.rejects(
     internal.waitForMarket(terms, app, "increase"),
     /Market is paused/,
   );
-  assert.equal(reads, 3);
+  assert.equal(reads, 5);
 });
 
 test("full closes retain price caps, deadlines and nonces across a quote rotation", async () => {

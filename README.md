@@ -61,9 +61,11 @@ authority's unexpired backstop before expiry and resumes stale-oracle or
 missed-funding incidents after prices recover. It does not resume manual or
 safety pauses, revive expired backstops, or operate on mainnet.
 
-`pnpm devnet:quote --hosted` verifies a trade, the managed Hyperliquid testnet
-hedge, maker process recovery, position closure, and hedge unwind against the
-running services. Interrupted operations retain their IDs in the existing devnet
+`pnpm devnet:quote --hosted` verifies trading, the managed maker's aggregate
+Hyperliquid testnet hedge, process recovery, and position closure against the
+running services. Each fill is attributed to its selected maker; closing with
+another maker can leave the managed maker's inventory and hedge open.
+Interrupted operations retain their IDs in the existing devnet
 journal and resume with `--hosted --resume`.
 
 `SOLANA_RPC_RPS` bounds shared RPC throughput and defaults to three requests per
