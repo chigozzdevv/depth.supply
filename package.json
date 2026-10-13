@@ -22,8 +22,6 @@
     "devnet:quote": "bun --env-file=.env.local scripts/devnet/quote.ts",
     "devnet:audit": "bun --env-file=.env.local scripts/devnet/quote.ts --audit",
     "devnet:callbacks": "bun --env-file=.env.local scripts/devnet/callback.ts",
-    "devnet:bot": "bun --env-file=.env.local scripts/devnet/bot.ts",
-    "devnet:hedge": "bun --env-file=.env.local scripts/devnet/hedge.ts",
     "devnet:history": "bun --env-file=.env.local scripts/devnet/history.ts",
     "scripts:typecheck": "tsc --noEmit -p scripts/tsconfig.json"
   },
