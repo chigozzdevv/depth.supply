@@ -63,6 +63,7 @@ export async function prepareRoundTrip(
   maker: MakerClient,
   record: Recorder,
   tradeNotional = defaults.tradeNotional,
+  limits: { collateral?: bigint; maxFee?: bigint } = {},
 ): Promise<RoundTripContext> {
   const trader = await loadSigner("trader");
   const app = await loadSigner("app");
@@ -82,13 +83,15 @@ export async function prepareRoundTrip(
   assert.notEqual(position.collateral, undefined);
   assert.notEqual(position.reserved, undefined);
   const market = await depth.market();
-  const required =
+  const riskMargin =
     (tradeNotional *
       BigInt(10_000 + defaults.slippageBps) *
       BigInt(market.state.config.initialMarginBps) +
       99_999_999n) /
       100_000_000n +
-    defaults.maxFee;
+    (limits.maxFee ?? defaults.maxFee);
+  const required =
+    (limits.collateral ?? 0n) > riskMargin ? limits.collateral! : riskMargin;
   let balance: BalanceSnapshot = await depth.account.summary({
     timeoutMs: 90_000,
   });
@@ -288,11 +291,17 @@ export async function runHostedRoundTrip(
   records: ProofRecord[],
   resume = false,
   afterOpen?: () => Promise<void>,
+  limits: { notional?: bigint; collateral?: bigint; maxFee?: bigint } = {},
 ) {
   await maker.hedges.authorize();
   const context = resume
-    ? await restoreRoundTrip(maker, records, 20_000_000n)
-    : await prepareRoundTrip(maker, record, 20_000_000n);
+    ? await restoreRoundTrip(maker, records, limits.notional ?? 20_000_000n)
+    : await prepareRoundTrip(
+        maker,
+        record,
+        limits.notional ?? 20_000_000n,
+        limits,
+      );
   const { depth, nonce } = context;
   let baseline = records.find(
     (entry) => entry.stage === "maker_hedge_baseline",
@@ -418,7 +427,7 @@ export async function runHostedRoundTrip(
       const terms = {
         marketId,
         slippageBps: defaults.slippageBps,
-        maxFee: defaults.maxFee,
+        maxFee: limits.maxFee ?? defaults.maxFee,
         validForSeconds: 300,
         clientNonce: id,
       } as const;
