@@ -456,7 +456,11 @@ test("inventory-aware quotes use tier execution costs, funding and private inven
   assert.equal(covered.maxCapacity, skewed.maxCapacity);
   assert.equal(covered.tiers[0].askE8, flat.tiers[0].askE8);
   assert.throws(
-    () => botQuote(rules, current, position, 4n, now + 6, pricing),
+    () =>
+      botQuote(rules, current, position, 4n, now, {
+        ...pricing,
+        book: { ...pricing.book, timestamp: Date.now() - 5001 },
+      }),
     /stale/,
   );
   assert.throws(
@@ -467,6 +471,46 @@ test("inventory-aware quotes use tier execution costs, funding and private inven
       }),
     /deviation/,
   );
+});
+
+test("external quote freshness uses wall time while quote expiry uses the Solana clock", () => {
+  const original = Date.now;
+  let wallTime = original();
+  Date.now = () => wallTime;
+  try {
+    const chainNow = Math.floor(wallTime / 1000) - 5;
+    const current = market();
+    current.oracleTimestamp = new anchor.BN(chainNow);
+    current.lastFundingTimestamp = new anchor.BN(chainNow);
+    const pricing = {
+      book: {
+        timestamp: wallTime - 100,
+        bids: [{ priceE8: 9_999_000_000n, size: 10_000_000_000n }],
+        asks: [{ priceE8: 10_001_000_000n, size: 10_000_000_000n }],
+      },
+      externalPosition: 0n,
+      maxPriceAgeMs: 5000,
+      takerFeeBps: 4,
+      hourlyFundingBps: 0,
+    };
+    const quote = botQuote(policy, current, position, 1n, chainNow, pricing)!;
+    assert.equal(quote.expiresAt, chainNow + policy.lifetimeSeconds);
+    assert.throws(
+      () =>
+        botQuote(policy, current, position, 2n, chainNow, {
+          ...pricing,
+          book: { ...pricing.book, timestamp: wallTime + 1001 },
+        }),
+      /stale/,
+    );
+    wallTime += 5001;
+    assert.throws(
+      () => botQuote(policy, current, position, 3n, chainNow, pricing),
+      /stale/,
+    );
+  } finally {
+    Date.now = original;
+  }
 });
 
 test("the bot waits for finalized inventory, pauses quotes for uncertain hedges and preserves its hedge journal on restart", async () => {
