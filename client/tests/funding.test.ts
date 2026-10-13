@@ -169,3 +169,32 @@ test("wallet and RPC errors use plain text without leaking provider URLs", () =>
     /private-key/,
   );
 });
+
+test("wrapped Hyperliquid errors preserve the actual wallet action and redact provider URLs", () => {
+  assert.equal(
+    errorMessage(
+      new Error("Failed to sign the typed data using the wallet", {
+        cause: { code: 4001, message: "User rejected the request" },
+      }),
+    ),
+    "Wallet approval declined.",
+  );
+  assert.equal(
+    errorMessage(
+      new Error("Failed to get an address from the wallet", {
+        cause: new Error("Failed to get the chain ID from the wallet", {
+          cause: { code: -32002, message: "Request already pending" },
+        }),
+      }),
+    ),
+    "A wallet request is already pending. Open your wallet to resolve it.",
+  );
+  assert.equal(
+    errorMessage(
+      new Error("Failed to get an address from the wallet", {
+        cause: { message: "Disconnected from https://rpc.test/secret" },
+      }),
+    ),
+    "Disconnected from [endpoint]",
+  );
+});

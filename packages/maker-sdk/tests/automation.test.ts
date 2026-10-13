@@ -28,6 +28,125 @@ const config = {
     refreshSeconds: 60,
   },
 };
+test("an already approved hedge agent does not reopen the Ethereum wallet during operator approval", async () => {
+  const owner = Keypair.generate().publicKey;
+  const operator = Keypair.generate().publicKey;
+  const account = `0x${"2".repeat(40)}` as const;
+  const agent = `0x${"1".repeat(40)}` as const;
+  const profile: AutomationView = {
+    owner: owner.toBase58(),
+    operator: operator.toBase58(),
+    agent,
+    environment: "devnet",
+    revision: 1,
+    config: automationWire({
+      ...config,
+      hedge: {
+        account,
+        policy: {
+          ratioBps: 10000,
+          thresholdNotional: 10_000_000n,
+          maxUnhedgedNotional: 100_000_000n,
+          maxOrderNotional: 50_000_000n,
+          batchMs: 5000,
+          maxUnhedgedMs: 90000,
+          maxSlippageBps: 10,
+          maxPriceAgeMs: 5000,
+          orderTtlMs: 10000,
+          maxLeverage: 3,
+        },
+      },
+    }),
+    desired: "paused",
+    phase: "configured",
+    updatedAt: Date.now(),
+    hedge: { maker: owner.toBase58(), enabled: true, snapshot: null },
+  };
+  let approved = true;
+  let grants = 0;
+  const maker = {
+    options: {
+      maker: owner,
+      environment: "devnet",
+      serviceUrl: "https://depth.example",
+      wallet: {
+        publicKey: owner,
+        signMessage: async () => new Uint8Array(64),
+      },
+      connection: { getBalance: async () => 1_000_000_000 },
+    },
+    operator: {
+      authorize: async () => {
+        grants++;
+        return "grant-signature";
+      },
+    },
+  } as unknown as MakerClient;
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input, init) => {
+    const url = new URL(String(input));
+    if (url.hostname === "api.hyperliquid-testnet.xyz") {
+      const body = JSON.parse(String(init?.body));
+      if (body.type === "clearinghouseState")
+        return Response.json({ withdrawable: "100", assetPositions: [] });
+      assert.equal(body.type, "extraAgents");
+      return Response.json(
+        approved ? [{ address: agent, validUntil: null }] : [],
+      );
+    }
+    if (url.pathname.endsWith("challenge")) {
+      const nonce = "a".repeat(64);
+      const expiresAt = Date.now() + 60000;
+      return Response.json({
+        wallet: owner.toBase58(),
+        nonce,
+        expiresAt,
+        message: accessMessage(
+          owner.toBase58(),
+          nonce,
+          expiresAt,
+          "Manage maker automation",
+        ),
+      });
+    }
+    if (url.pathname.endsWith("session"))
+      return Response.json({
+        token: "b".repeat(64),
+        expiresAt: Date.now() + 900000,
+      });
+    assert.ok(
+      url.pathname.endsWith("automation") || url.pathname.endsWith("fund"),
+    );
+    return Response.json(profile);
+  }) as typeof fetch;
+  try {
+    const automation = new MakerAutomation(maker);
+    await automation.authorize();
+    const result = await automation.approve(profile, {
+      hedgeWallet: {
+        getAddresses: async () => {
+          throw new Error("Ethereum wallet is disconnected");
+        },
+        getChainId: async () => {
+          throw new Error("Ethereum wallet is disconnected");
+        },
+        signTypedData: async () => {
+          throw new Error("Ethereum wallet is disconnected");
+        },
+      },
+    });
+    assert.deepEqual(result.signatures, ["grant-signature"]);
+    assert.equal(grants, 1);
+    approved = false;
+    await assert.rejects(
+      automation.approve(profile),
+      /Approve the displayed agent/,
+    );
+    assert.equal(grants, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
 test("the public automation flow signs its scope, reviews persisted identities, funds only its operator, and grants no collateral authority", async () => {
   const ownerKey = Keypair.generate();
   const owner = ownerKey.publicKey;
