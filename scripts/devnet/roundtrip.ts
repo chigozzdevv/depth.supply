@@ -58,6 +58,7 @@ export async function prepareRoundTrip(
     environment: "devnet",
     connection: maker.options.connection,
     deployment: maker.options.deployment,
+    serviceUrl: maker.options.serviceUrl,
     appId: app.publicKey,
     wallet: new anchor.Wallet(trader),
   });
@@ -229,6 +230,7 @@ export async function restoreRoundTrip(
     environment: "devnet",
     connection: maker.options.connection,
     deployment: maker.options.deployment,
+    serviceUrl: maker.options.serviceUrl,
     appId: app.publicKey,
     wallet: new anchor.Wallet(trader),
   });
@@ -280,6 +282,42 @@ export async function runHostedRoundTrip(
     ? await restoreRoundTrip(maker, records, 20_000_000n)
     : await prepareRoundTrip(maker, record, 20_000_000n);
   const { depth, nonce } = context;
+  let baseline = records.find(
+    (entry) => entry.stage === "maker_hedge_baseline",
+  );
+  if (!baseline) {
+    assert.ok(
+      !records.some((entry) => entry.stage === "trade_open_submitted"),
+      "The maker baseline must be recorded before opening the proof trade",
+    );
+    const deadline = Date.now() + 180_000;
+    for (;;) {
+      const view = await maker.hedges.summary();
+      assert.ok(view.enabled, "The managed maker must have hedging enabled");
+      const snapshot = view.snapshot;
+      if (
+        snapshot?.phase === "balanced" &&
+        snapshot.depthPosition !== undefined &&
+        snapshot.externalPosition !== undefined &&
+        !snapshot.pending
+      ) {
+        baseline = {
+          stage: "maker_hedge_baseline",
+          depthPosition: snapshot.depthPosition,
+          externalPosition: snapshot.externalPosition,
+        };
+        await record(baseline);
+        break;
+      }
+      if (Date.now() >= deadline)
+        throw new Error("The managed maker inventory did not stabilize");
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+    }
+  }
+  assert.equal(typeof baseline.depthPosition, "string");
+  assert.equal(typeof baseline.externalPosition, "string");
+  const baselineDepth = BigInt(baseline.depthPosition as string);
+  const baselineExternal = BigInt(baseline.externalPosition as string);
   const waitHedge = async (leg: string) => {
     const deadline = Date.now() + 300_000;
     while (Date.now() < deadline) {
@@ -302,12 +340,12 @@ export async function runHostedRoundTrip(
         if (
           (leg === "open" &&
             history.some((order) => order.buy && !order.reduceOnly) &&
-            BigInt(view.snapshot.depthPosition) < 0n &&
-            BigInt(view.snapshot.externalPosition) > 0n) ||
+            BigInt(view.snapshot.depthPosition) < baselineDepth &&
+            BigInt(view.snapshot.externalPosition) > baselineExternal) ||
           (leg === "close" &&
             history.some((order) => !order.buy && order.reduceOnly) &&
-            BigInt(view.snapshot.depthPosition) === 0n &&
-            BigInt(view.snapshot.externalPosition) === 0n)
+            BigInt(view.snapshot.depthPosition) === baselineDepth &&
+            BigInt(view.snapshot.externalPosition) === baselineExternal)
         ) {
           await record({
             stage: "hedge_balanced",
