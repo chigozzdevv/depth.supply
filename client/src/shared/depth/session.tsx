@@ -45,6 +45,24 @@ type Session = {
 };
 const Context = createContext<Session | null>(null);
 
+async function initialize<T>(request: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(new Error("Connection timed out. Retry the connection.")),
+          60000,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function DepthSession({
   config,
   role,
@@ -126,11 +144,13 @@ export function DepthSession({
     void (async () => {
       try {
         const { prepare_depth } = await import("@depthhq/sdk");
-        const connection = await prepare_depth({
-          environment: config.environment,
-          rpcUrl: `${location.origin}/api/rpc?cluster=${config.environment}`,
-          serviceUrl: `${location.origin}/api/depth`,
-        });
+        const connection = await initialize(
+          prepare_depth({
+            environment: config.environment,
+            rpcUrl: `${location.origin}/api/rpc?cluster=${config.environment}`,
+            serviceUrl: `${location.origin}/api/depth`,
+          }),
+        );
         if (!cancelled) setBoot({ key: bootKey, connection });
       } catch (cause) {
         if (!cancelled)
@@ -163,12 +183,14 @@ export function DepthSession({
     void (async () => {
       try {
         const { create_depth } = await import("@depthhq/sdk");
-        const trader = await create_depth(options);
+        const trader = await initialize(create_depth(options));
         const maker =
           role === "maker"
-            ? await (
-                await import("@depthhq/maker-sdk")
-              ).create_depth_maker(options)
+            ? await initialize(
+                (await import("@depthhq/maker-sdk")).create_depth_maker(
+                  options,
+                ),
+              )
             : undefined;
         if (!cancelled) {
           makerSession = maker;
