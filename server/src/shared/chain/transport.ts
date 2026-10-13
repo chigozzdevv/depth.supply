@@ -40,7 +40,10 @@ const cached = new Set([
   "getGenesisHash",
 ]);
 class RpcUnavailable extends Error {
-  constructor(cause?: unknown) {
+  constructor(
+    cause?: unknown,
+    readonly cooldown = true,
+  ) {
     super("RPC provider is unavailable", { cause });
   }
 }
@@ -221,7 +224,13 @@ export class RpcTransport {
                 "ETIMEDOUT",
               ].includes(String((error as Error & { code?: string }).code))));
         if (transient && attempt < attempts - 1) retry = true;
-        else throw transient ? new RpcUnavailable(error) : error;
+        else
+          throw transient
+            ? new RpcUnavailable(
+                error,
+                !(error instanceof Error && error.name === "TimeoutError"),
+              )
+            : error;
       } finally {
         if (request.method === "sendTransaction") this.invalidate();
         this.active--;
@@ -238,7 +247,7 @@ export class RpcTransport {
       } catch (error) {
         signal.throwIfAborted();
         if (!this.backup || !(error instanceof RpcUnavailable)) throw error;
-        this.unavailableUntil = Date.now() + 30_000;
+        if (error.cooldown) this.unavailableUntil = Date.now() + 30_000;
       }
     }
     const network = await this.backup!.request(

@@ -395,3 +395,48 @@ test("a fallback on the wrong network never receives a transaction", async () =>
     globalThis.fetch = original;
   }
 });
+
+test("an account timeout falls back without redirecting healthy confirmation traffic", async () => {
+  const original = globalThis.fetch;
+  const primary: string[] = [];
+  const backup: string[] = [];
+  globalThis.fetch = async (url, init) => {
+    const body = JSON.parse(String(init?.body));
+    if (String(url).includes("primary")) {
+      primary.push(body.method);
+      if (body.method === "getAccountInfo")
+        throw new DOMException("Account response timed out", "TimeoutError");
+    } else backup.push(body.method);
+    return Response.json({
+      jsonrpc: "2.0",
+      id: body.id,
+      result: body.method === "getGenesisHash" ? "devnet" : null,
+    });
+  };
+  try {
+    const relay = new RpcTransport("https://primary.example", 100, {
+      url: "https://backup.example",
+      genesis: "devnet",
+    });
+    await relay.request({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getAccountInfo",
+      params: ["program-data"],
+    });
+    await relay.request({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "getSignatureStatuses",
+      params: [["signed-operation"]],
+    });
+    assert.deepEqual(primary, [
+      "getAccountInfo",
+      "getAccountInfo",
+      "getSignatureStatuses",
+    ]);
+    assert.deepEqual(backup, ["getGenesisHash", "getAccountInfo"]);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
