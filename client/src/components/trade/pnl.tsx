@@ -198,7 +198,7 @@ export function Pnl({
                 </button>
               )}
             </div>
-            <div className="pnl-brand">depth.supply</div>
+            <div className="pnl-brand">trydepth.xyz</div>
           </div>
           <div className="pnl-actions">
             <button disabled={saving || !signature} onClick={() => void save()}>
