@@ -865,6 +865,109 @@ test("unchanged quotes renew their existing receipt and survive restart without 
   }
 });
 
+test("repricing never extends the old quote while its successor is preparing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-reprice-bot-"));
+  const setup = fixture();
+  const bot = await MakerBot.create({
+    maker: setup.client,
+    policy,
+    stateDirectory: directory,
+  });
+  const realNow = Date.now;
+  try {
+    await bot.tick();
+    await bot.tick();
+    const prior = [...setup.quotes.values()][0];
+    const expiry = prior.input.expiresAt;
+    const clock = realNow() + 70_000;
+    Date.now = () => clock;
+    setup.current.oraclePriceE8 = new anchor.BN("10015000000");
+    assert.equal((await bot.tick()).reason, "repricing quote");
+    assert.equal(prior.input.expiresAt, expiry);
+    assert.equal(prior.status, "active");
+    assert.equal((await bot.tick()).reason, "validating successor quote");
+    assert.equal(prior.input.expiresAt, expiry);
+    assert.equal(setup.published.length, 2);
+  } finally {
+    Date.now = realNow;
+    await bot.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("small external price moves accumulate against the published quote", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-price-bot-"));
+  const setup = fixture();
+  let price = 10_000_000_000n;
+  const hedge = {
+    adapter: {
+      identity: "test:price-drift:SOL",
+      book: async () => ({
+        timestamp: Date.now(),
+        bids: [{ priceE8: price - 1_000_000n, size: 10_000_000_000n }],
+        asks: [{ priceE8: price + 1_000_000n, size: 10_000_000_000n }],
+      }),
+      costs: async () => ({ takerFeeBps: 4, hourlyFundingBps: 0 }),
+    },
+    policy: {
+      ratioBps: 10000,
+      maxPriceAgeMs: 5000,
+      maxUnhedgedNotional: 200_000_000n,
+      maxUnhedgedMs: 90000,
+    },
+    tick: async () => ({
+      phase: "balanced",
+      externalPosition: 0n,
+      history: [],
+    }),
+  } as unknown as HedgeEngine;
+  const bot = await MakerBot.create({
+    maker: setup.client,
+    policy,
+    stateDirectory: directory,
+    hedge,
+  });
+  try {
+    await bot.tick();
+    await bot.tick();
+    assert.equal((await bot.tick()).phase, "active");
+    price += 6_000_000n;
+    assert.equal((await bot.tick()).phase, "active");
+    price += 6_000_000n;
+    assert.equal((await bot.tick()).reason, "repricing quote");
+    assert.equal(setup.published.length, 2);
+  } finally {
+    await bot.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a validated successor is discarded if its executable prices moved before rotation", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-successor-bot-"));
+  const setup = fixture();
+  const bot = await MakerBot.create({
+    maker: setup.client,
+    policy,
+    stateDirectory: directory,
+  });
+  try {
+    await bot.tick();
+    await bot.tick();
+    setup.current.oraclePriceE8 = new anchor.BN("10100000000");
+    await bot.tick();
+    const [prior, next] = [...setup.quotes.values()];
+    next.status = "validated";
+    setup.current.oraclePriceE8 = new anchor.BN("10115000000");
+    assert.equal((await bot.tick()).reason, "successor prices changed");
+    assert.equal(prior.status, "active");
+    assert.equal(next.status, "cancelled");
+    assert.equal((await bot.store.load()).replacement, undefined);
+  } finally {
+    await bot.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("partial capacity retains its ceiling price tier and replacement credits only the remaining private margin", () => {
   const current = market();
   const now = Math.floor(Date.now() / 1000);

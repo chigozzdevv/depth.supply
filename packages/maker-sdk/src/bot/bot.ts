@@ -7,6 +7,7 @@ import {
   botQuote,
   executionCosts,
   quoteHealth,
+  quotePrices,
   validateBotPolicy,
   type BotMarket,
   type BotPolicy,
@@ -773,6 +774,16 @@ export class MakerBot {
     const prior = this.maker.quote.get(new PublicKey(replacement.prior));
     const previous = await prior.status();
     if (
+      snapshot.status === "validated" &&
+      this.pricesChanged(replacement.request, market, now)
+    ) {
+      await flow.discard();
+      state.replacement = undefined;
+      this.reservationView = undefined;
+      await this.store.save(state);
+      return this.snapshot("pending", "successor prices changed");
+    }
+    if (
       previous.status === "active" &&
       ["validated", "reserving"].includes(snapshot.status)
     ) {
@@ -883,7 +894,6 @@ export class MakerBot {
           reason,
         );
       }
-      if (state.quote) await this.renew(market, now);
       await this.fills();
       const hedgeReason = await this.hedgeTick();
       if (hedgeReason) return this.snapshot("pending", hedgeReason);
@@ -986,9 +996,25 @@ export class MakerBot {
             compatible &&
             current.expiry.toNumber() > now &&
             difference !== undefined &&
-            difference < BigInt(this.policy.repriceBps) * state.referencePrice!
-          )
-            return this.snapshot("active");
+            difference <
+              BigInt(this.policy.repriceBps) * state.referencePrice! &&
+            state.request !== undefined &&
+            !this.pricesChanged(state.request, market, now)
+          ) {
+            if (await this.renew(market, now)) return this.snapshot("active");
+            market = await this.maker.read<BotMarket>(
+              "Market",
+              this.maker.marketAddress,
+            );
+            now = await chainTime(this.maker.options.connection);
+            const changed = quoteHealth(market, now);
+            if (changed) {
+              const stopped = await this.cancel();
+              return this.snapshot(stopped ? "stopped" : "pending", changed);
+            }
+            if ((await handle.status()).status !== "active")
+              return this.snapshot("pending", "quote changed during renewal");
+          }
           state.replacement = { prior: state.quote, nonce: nonce() };
           this.pricingDirty = false;
           await this.store.save(state);
@@ -1066,6 +1092,29 @@ export class MakerBot {
       this.busy = false;
     }
   }
+  private pricesChanged(
+    request: NonNullable<BotState["request"]>,
+    market: BotMarket,
+    now: number,
+  ) {
+    if (this.position?.position === undefined) return true;
+    const prices = quotePrices(
+      this.policy,
+      market,
+      this.position.position,
+      request.tiers.map((tier) => tier.size),
+      now,
+      this.pricing,
+    );
+    return request.tiers.some((tier, index) =>
+      (["bidE8", "askE8"] as const).some((side) => {
+        const before = tier[side];
+        const after = prices[index][side];
+        const change = after > before ? after - before : before - after;
+        return change * 10_000n >= before * BigInt(this.policy.repriceBps);
+      }),
+    );
+  }
   private async renew(market: BotMarket, now: number) {
     const state = this.state!;
     if (
@@ -1075,10 +1124,11 @@ export class MakerBot {
           Date.now() - state.inventoryPendingSince >=
             this.hedge.policy.maxUnhedgedMs))
     )
-      return;
+      return false;
     const handle = this.maker.quote.get(new PublicKey(state.quote!));
     const quote = await this.maker.quoteState(handle.id);
-    if (!("active" in quote.status) || quote.expiry.toNumber() <= now) return;
+    if (!("active" in quote.status) || quote.expiry.toNumber() <= now)
+      return false;
     const duration = Math.min(
       this.policy.lifetimeSeconds,
       market.config.maxQuoteLifetimeSeconds,
@@ -1090,7 +1140,7 @@ export class MakerBot {
         duration - this.policy.refreshSeconds,
       )
     )
-      return;
+      return true;
     const price = BigInt(market.oraclePriceE8.toString());
     const reference = BigInt(quote.oracleReferenceE8.toString());
     const drift = price > reference ? price - reference : reference - price;
@@ -1103,7 +1153,7 @@ export class MakerBot {
             Math.min(Math.floor(market.config.maxQuoteDeviationBps / 4), 25),
           )
     )
-      return;
+      return false;
     let renewed;
     try {
       renewed = await handle.renew({ validForSeconds: duration });
@@ -1133,11 +1183,12 @@ export class MakerBot {
               Math.min(Math.floor(latest.config.maxQuoteDeviationBps / 4), 25),
             )
       )
-        return;
+        return false;
       throw error;
     }
     if (state.request) state.request.expiresAt = renewed.expiresAt;
     await this.store.save(state);
+    return true;
   }
   private quotePolicy(market: BotMarket): BotPolicy {
     if (!this.hedge || !this.pricing || this.position?.position === undefined)

@@ -160,6 +160,35 @@ export function botQuote(
     capacity,
   );
   if (!tiers.length) return;
+  const quotes = quotePrices(
+    policy,
+    market,
+    position.position,
+    tiers,
+    now,
+    pricing,
+  );
+  const duration = Math.min(
+    policy.lifetimeSeconds,
+    market.config.maxQuoteLifetimeSeconds,
+  );
+  return {
+    tiers: quotes,
+    maxCapacity: capacity,
+    expiresAt: now + duration,
+    clientNonce: nonce,
+  };
+}
+
+export function quotePrices(
+  policy: BotPolicy,
+  market: BotMarket,
+  position: bigint,
+  sizes: readonly bigint[],
+  now: number,
+  pricing?: BotPricing,
+): QuoteInput["tiers"] {
+  const price = BigInt(market.oraclePriceE8.toString());
   const half = Math.ceil(policy.spreadBps / 2);
   const preparation = quoteBounds(
     market.config.maxQuoteDeviationBps,
@@ -174,7 +203,7 @@ export function botQuote(
       !Number.isFinite(pricing.hourlyFundingBps))
   )
     throw new Error("External execution costs are invalid");
-  const netPosition = position.position + (pricing?.externalPosition ?? 0n);
+  const netPosition = position + (pricing?.externalPosition ?? 0n);
   const netExposure = notional(netPosition, price);
   const skewBps =
     (netExposure * BigInt(policy.inventorySkewBps ?? 0)) /
@@ -188,7 +217,7 @@ export function botQuote(
   const execution = executionCosts(policy, pricing);
   const bidCosts = costs + BigInt(execution.bid);
   const askCosts = costs + BigInt(execution.ask);
-  const quotes = tiers.map((size) => {
+  return sizes.map((size) => {
     const units = (size * 100_000_000_000n + price - 1n) / price;
     const sell = pricing ? executionPrice(pricing.book.bids, units) : price;
     const buy = pricing ? executionPrice(pricing.book.asks, units) : price;
@@ -204,14 +233,4 @@ export function botQuote(
       throw new Error("Executable maker prices exceed oracle deviation bounds");
     return { size, bidE8, askE8 };
   });
-  const duration = Math.min(
-    policy.lifetimeSeconds,
-    market.config.maxQuoteLifetimeSeconds,
-  );
-  return {
-    tiers: quotes,
-    maxCapacity: capacity,
-    expiresAt: now + duration,
-    clientNonce: nonce,
-  };
 }
