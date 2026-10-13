@@ -53,7 +53,8 @@ export class AutomationService {
         );
       if (
         record?.hedgeBound &&
-        config.hedge?.account !== record.config.hedge?.account
+        config.hedge?.account.toLowerCase() !==
+          record.config.hedge?.account.toLowerCase()
       )
         throw new AutomationError(
           "Keep the existing hedge account to preserve its inventory and order recovery",
@@ -64,7 +65,8 @@ export class AutomationService {
           (entry) =>
             entry.owner !== owner &&
             entry.hedgeBound &&
-            entry.config.hedge?.account === config.hedge!.account,
+            entry.config.hedge?.account.toLowerCase() ===
+              config.hedge!.account.toLowerCase(),
         )
       )
         throw new AutomationError(

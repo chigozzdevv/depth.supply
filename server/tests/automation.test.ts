@@ -379,6 +379,40 @@ test("unapproved hedge drafts cannot reserve somebody else's account and confirm
   }
 });
 
+test("bound hedge accounts retain identity across checksum casing and remain exclusive", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "depth-checksum-"));
+  const store = await AutomationStore.open(
+    directory,
+    randomBytes(32).toString("hex"),
+    "devnet",
+  );
+  const service = new AutomationService(store, () => false);
+  const owner = Keypair.generate().publicKey.toBase58();
+  const other = Keypair.generate().publicKey.toBase58();
+  const account = "0xa35Cf0c52b8A01828a0C8d336d158067b6C61C72";
+  const input = { ...config, hedge: { ...hedge, account } };
+  try {
+    const original = await service.configure(owner, 0, input);
+    await store.change((records) => {
+      const record = records.find((record) => record.owner === owner)!;
+      record.hedgeBound = true;
+      record.config.hedge!.account = account;
+    });
+    await assert.rejects(service.configure(other, 0, input), /assigned/);
+    const updated = await service.configure(owner, 1, input);
+    assert.equal(updated.operator, original.operator);
+    assert.equal(updated.agent, original.agent);
+    assert.equal(updated.config.hedge!.account, account.toLowerCase());
+    await assert.rejects(
+      service.configure(owner, 2, { ...config, hedge }),
+      /existing hedge account/,
+    );
+  } finally {
+    await store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("failed approval checks stay blocked and a never-started worker can be paused and repaired", async () => {
   const directory = await mkdtemp(join(tmpdir(), "depth-blocked-"));
   const store = await AutomationStore.open(
