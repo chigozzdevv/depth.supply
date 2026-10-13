@@ -3,7 +3,12 @@ import { test } from "node:test";
 import { POST } from "@/app/api/rpc/route";
 import { relayRpc } from "@/shared/rpc/relay";
 
-function request(origin: string, host: string, forwarded?: string): Request {
+function request(
+  origin: string,
+  host: string,
+  forwarded?: string,
+  protocol?: string,
+): Request {
   return new Request("http://localhost:3100/api/rpc?cluster=devnet", {
     method: "POST",
     headers: {
@@ -11,6 +16,7 @@ function request(origin: string, host: string, forwarded?: string): Request {
       origin,
       host,
       ...(forwarded ? { "x-forwarded-host": forwarded } : {}),
+      ...(protocol ? { "x-forwarded-proto": protocol } : {}),
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getGenesisHash" }),
   });
@@ -33,18 +39,25 @@ test("RPC accepts the browser host when Next normalizes its internal URL", async
       assert.equal(response.status, 200);
       assert.equal((await response.json()).result, "devnet-genesis");
     }
-    assert.equal(calls, 3);
+    const secure = await POST(
+      request("https://trydepth.xyz", "trydepth.xyz", undefined, "https"),
+    );
+    assert.equal(secure.status, 200);
+    assert.equal((await secure.json()).result, "devnet-genesis");
+    assert.equal(calls, 4);
     for (const rejected of [
       request("https://other.example", "127.0.0.1:3100"),
       request("http://127.0.0.1:3101", "127.0.0.1:3100"),
       request("http://localhost:3100", "127.0.0.1:3100"),
       request("https://other.example", "127.0.0.1:3100", "other.example"),
+      request("https://other.example", "trydepth.xyz", undefined, "https"),
+      request("http://trydepth.xyz", "trydepth.xyz", undefined, "https"),
     ]) {
       const response = await POST(rejected);
       assert.equal(response.status, 403);
       assert.equal((await response.json()).error, "origin_mismatch");
     }
-    assert.equal(calls, 3);
+    assert.equal(calls, 4);
   } finally {
     globalThis.fetch = previousFetch;
     if (previousRpc === undefined) delete process.env.DEPTH_SERVICE_URL;

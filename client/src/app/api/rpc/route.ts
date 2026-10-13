@@ -26,7 +26,17 @@ const buckets = new Map<string, { count: number; since: number }>();
 export async function POST(request: Request) {
   const origin = request.headers.get("origin");
   const target = new URL(request.url);
-  target.host = request.headers.get("host") ?? target.host;
+  const host = request.headers.get("host");
+  if (host) {
+    target.port = "";
+    target.host = host;
+  }
+  const protocol = request.headers
+    .get("x-forwarded-proto")
+    ?.split(",")[0]
+    ?.trim();
+  if (protocol === "https" || protocol === "http")
+    target.protocol = `${protocol}:`;
   if (origin && origin !== target.origin) {
     return Response.json({ error: "origin_mismatch" }, { status: 403 });
   }

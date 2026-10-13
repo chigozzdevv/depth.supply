@@ -8,6 +8,7 @@ const envFile = resolve(root, ".env.local");
 if (existsSync(envFile)) process.loadEnvFile(envFile);
 
 const config: NextConfig = {
+  output: "standalone",
   agentRules: false,
   allowedDevOrigins: ["127.0.0.1", "localhost"],
   outputFileTracingRoot: root,

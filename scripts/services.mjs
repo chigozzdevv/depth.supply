@@ -85,6 +85,7 @@ if (action === "start") {
   );
   await lock.sync();
   const bun = process.env.DEPTH_BUN_BIN ?? "bun";
+  const stdout = process.env.DEPTH_LOG_STDOUT === "true";
   const definitions = [
     [
       "api",
@@ -110,7 +111,9 @@ if (action === "start") {
       ],
       `http://127.0.0.1:${process.env.DEPTH_MAKER_HEALTH_PORT ?? 8789}/healthz`,
     ],
-    [
+  ];
+  if (process.env.DEPTH_SERVICES_CLIENT !== "false")
+    definitions.push([
       "client",
       process.execPath,
       [
@@ -122,8 +125,7 @@ if (action === "start") {
         "3100",
       ],
       "http://127.0.0.1:3100/demo/trade",
-    ],
-  ];
+    ]);
   if (process.env.PYTH_ORACLE_MODE === "hermes")
     definitions.splice(1, 0, [
       "publisher",
@@ -156,13 +158,17 @@ if (action === "start") {
   const launch = async (definition, restarts = 0) => {
     if (stopping) return;
     const [name, command, args, health] = definition;
-    const log = await open(join(directory, `${name}.log`), "a", 0o600);
+    const log = stdout
+      ? undefined
+      : await open(join(directory, `${name}.log`), "a", 0o600);
     const child = spawn(command, args, {
       cwd: name === "client" ? resolvePath("client") : repositoryRoot,
-      stdio: ["ignore", log.fd, log.fd],
+      stdio: stdout
+        ? ["ignore", "inherit", "inherit"]
+        : ["ignore", log.fd, log.fd],
       env: process.env,
     });
-    await log.close();
+    await log?.close();
     children.set(name, {
       child,
       restarts,

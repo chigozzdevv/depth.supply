@@ -1,0 +1,85 @@
+name: depth
+
+services:
+  backend:
+    container_name: depth-runtime
+    image: depth-backend:${DEPTH_RELEASE:?Set DEPTH_RELEASE}
+    hostname: depth-runtime
+    init: true
+    restart: unless-stopped
+    env_file: /opt/depth/shared/runtime.env
+    environment:
+      DEPTH_SERVICES_CLIENT: "false"
+      DEPTH_LOG_STDOUT: "true"
+    volumes:
+      - /opt/depth/shared/runtime.env:/app/.env.local:ro
+      - /opt/depth/shared/keeper.json:/run/secrets/keeper.json:ro
+      - /opt/depth/shared/manifest.json:/run/deployment/manifest.json:ro
+      - /opt/depth/shared/data:/app/data
+    ports:
+      - "127.0.0.1:8787:8787"
+    networks:
+      edge:
+        aliases: [depth-api]
+    cpus: 1.5
+    mem_limit: 2g
+    memswap_limit: 2g
+    pids_limit: 256
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    stop_grace_period: 6m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    healthcheck:
+      test: [CMD, node, /app/scripts/health.mjs]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 3
+
+  website:
+    image: depth-website:${DEPTH_RELEASE:?Set DEPTH_RELEASE}
+    init: true
+    restart: unless-stopped
+    environment:
+      DEPTH_ENVIRONMENT: devnet
+      DEPTH_SERVICE_URL: http://depth-api:8787
+    ports:
+      - "127.0.0.1:3100:3000"
+    networks:
+      edge:
+        aliases: [depth-web]
+    cpus: 0.75
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 128
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/client/.next/cache:size=128m,uid=1000,gid=1000,mode=0700
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
+networks:
+  edge:
+    name: depth-edge
+    external: true
