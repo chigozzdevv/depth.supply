@@ -86,6 +86,8 @@ export function DepthSession({
   const prepared = boot?.key === bootKey ? boot : undefined;
   const connection = prepared?.connection;
   const locked = useRef(false);
+  const reading = useRef<string | undefined>(undefined);
+  const [readOwner, setReadOwner] = useState<string>();
   const signer = useMemo<DepthWallet | undefined>(
     () =>
       wallet.publicKey && wallet.signTransaction && wallet.signAllTransactions
@@ -233,11 +235,12 @@ export function DepthSession({
   );
   const load = useCallback(
     async (action: () => Promise<void>) => {
-      if (locked.current || scope.current !== owner) return false;
-      locked.current = true;
+      if (reading.current === owner || scope.current !== owner) return false;
+      reading.current = owner;
+      setReadOwner(owner);
       setFeedback((previous) => ({
         owner,
-        busy: "Loading account",
+        busy: previous.owner === owner ? previous.busy : "",
         error: previous.owner === owner ? previous.error : "",
         message: previous.owner === owner ? previous.message : "",
         reading: true,
@@ -247,8 +250,15 @@ export function DepthSession({
         await action();
         return true;
       } finally {
-        locked.current = false;
-        setFeedback((previous) => ({ ...previous, busy: "", reading: false }));
+        if (reading.current === owner) {
+          reading.current = undefined;
+          setReadOwner((previous) =>
+            previous === owner ? undefined : previous,
+          );
+        }
+        setFeedback((previous) =>
+          previous.owner === owner ? { ...previous, reading: false } : previous,
+        );
       }
     },
     [owner],
@@ -277,7 +287,7 @@ export function DepthSession({
               currentFeedback?.error ??
               ""),
         busy: feedback.busy,
-        reading: feedback.reading || feedback.owner !== owner,
+        reading: readOwner === owner && !feedback.busy,
         local: Boolean(
           currentFeedback?.local && !prepared?.error && !current?.error,
         ),

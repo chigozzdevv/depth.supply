@@ -111,20 +111,24 @@ export function Automation({
       setError((cause as Error).message);
       return;
     }
-    await session.run("Save automation", async () => {
-      const value = await session.maker!.automation.configure(
-        input,
-        profile?.revision ?? 0,
-      );
-      if (alive.current) {
-        onProfile(value);
-        setForm(automationForm(value));
-        setEditing(false);
-        setReview(true);
-        setPrivateView(false);
-        setReceipts([]);
-      }
-    });
+    await session.run(
+      "Save automation",
+      async () => {
+        const value = await session.maker!.automation.configure(
+          input,
+          profile?.revision ?? 0,
+        );
+        if (alive.current) {
+          onProfile(value);
+          setForm(automationForm(value));
+          setEditing(false);
+          setReview(true);
+          setPrivateView(false);
+          setReceipts([]);
+        }
+      },
+      false,
+    );
   }
   function connected(wallet: HedgeWallet, address: string) {
     setHedgeWallet(wallet);
@@ -141,19 +145,23 @@ export function Automation({
       setError("Approval must last 1 to 168 hours");
       return;
     }
-    await session.run("Approve automation", async () => {
-      const result = await session.maker!.automation.approve(profile, {
-        grantSeconds: duration,
-        hedgeWallet,
-      });
-      if (alive.current) {
-        setReceipts(result.signatures);
-        setReview(false);
-        session.notice(
-          "Operator approved. Start when your market collateral is ready.",
-        );
-      }
-    });
+    await session.run(
+      "Approve automation",
+      async () => {
+        const result = await session.maker!.automation.approve(profile, {
+          grantSeconds: duration,
+          hedgeWallet,
+        });
+        if (alive.current) {
+          setReceipts(result.signatures);
+          setReview(false);
+          session.notice(
+            "Operator approved. Start when your market collateral is ready.",
+          );
+        }
+      },
+      false,
+    );
   }
   async function command(action: "start" | "pause") {
     if (!profile) return;
@@ -163,6 +171,7 @@ export function Automation({
         const value = await session.maker!.automation[action](profile.revision);
         if (alive.current) onProfile(value);
       },
+      false,
     );
   }
   const field = (

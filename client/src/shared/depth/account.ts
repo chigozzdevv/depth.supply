@@ -6,7 +6,7 @@ import { AccountReader, type AccountSnapshot } from "@/shared/depth/snapshot";
 import { errorMessage } from "@/shared/depth/error";
 
 export function useAccount() {
-  const { trader, load, version, busy } = useDepth();
+  const { trader, load, version, busy, reading } = useDepth();
   const owner = trader?.options.wallet.publicKey.toBase58();
   const reader = useMemo(
     () => (trader ? new AccountReader(trader) : undefined),
@@ -50,8 +50,22 @@ export function useAccount() {
         checking: true,
         error: "",
       }));
+      let timer: ReturnType<typeof setTimeout> | undefined;
       try {
-        const snapshot = await reader.read(current);
+        const snapshot = await Promise.race([
+          reader.read(current),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    "Private account read timed out. Please try again.",
+                  ),
+                ),
+              60000,
+            );
+          }),
+        ]);
         if (current())
           setState({
             owner,
@@ -70,6 +84,8 @@ export function useAccount() {
             checking: false,
             error: errorMessage(cause),
           }));
+      } finally {
+        clearTimeout(timer);
       }
     });
     if (!started && alive.current) attempted.current = undefined;
@@ -78,13 +94,14 @@ export function useAccount() {
     if (
       !reader ||
       busy ||
+      reading ||
       (attempted.current?.reader === reader &&
         attempted.current.version === version)
     )
       return;
     attempted.current = { reader, version };
     void read();
-  }, [reader, version, busy, read]);
+  }, [reader, version, busy, reading, read]);
   const current = state?.owner === owner ? state : undefined;
   const snapshot = current?.snapshot;
   const empty = Boolean(
