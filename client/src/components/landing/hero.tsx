@@ -1,4 +1,5 @@
 import Image from "next/image";
+import Link from "next/link";
 import { Texture } from "@/components/landing/texture";
 
 export function Hero() {
@@ -18,12 +19,12 @@ export function Hero() {
             confidential clearing on Solana.
           </p>
           <div className="hero-actions">
-            <a href="/demo/trade" className="action">
+            <Link href="/demo/trade" className="action">
               Run a Demo <span aria-hidden="true">↗</span>
-            </a>
-            <a href="#developers" className="action action-outline">
+            </Link>
+            <Link href="/docs" className="action action-outline">
               Build with Depth <span aria-hidden="true">↗</span>
-            </a>
+            </Link>
           </div>
           <div
             className="hero-ecosystem"

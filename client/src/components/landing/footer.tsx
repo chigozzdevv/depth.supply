@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Wordmark } from "@/components/ui/wordmark";
 import { site } from "@/shared/config/site";
 
@@ -9,9 +10,9 @@ export function Footer() {
           Build the next
           <span>trading experience.</span>
         </h2>
-        <a href="#developers" className="action">
+        <Link href="/docs" className="action">
           Build with Depth <span aria-hidden="true">↗</span>
-        </a>
+        </Link>
       </div>
       <div className="shell footer-bottom">
         <Wordmark className="footer-wordmark" />
