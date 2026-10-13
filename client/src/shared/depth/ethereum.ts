@@ -10,6 +10,7 @@ export type EthereumWallet = {
 type LegacyProvider = EthereumProvider & {
   providers?: EthereumProvider[];
   isPhantom?: boolean;
+  isRabby?: boolean;
   isMetaMask?: boolean;
   isCoinbaseWallet?: boolean;
 };
@@ -31,9 +32,22 @@ export function discoverEthereum(
   let registry = registries.get(target);
   if (!registry) {
     const wallets = new Map<EthereumProvider, EthereumWallet>();
+    const legacyWallets = new Map<EthereumProvider, EthereumWallet>();
+    const dedicated = new Set<EthereumProvider>();
     const readers = new Set<(wallets: EthereumWallet[]) => void>();
-    const snapshot = () =>
-      [...wallets.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const snapshot = () => {
+      const announced = [...wallets.values()];
+      const names = new Set(announced.map(({ name }) => name.toLowerCase()));
+      const legacy = [...legacyWallets.values()].filter(
+        ({ provider, name }) =>
+          !wallets.has(provider) &&
+          !names.has(name.toLowerCase()) &&
+          (!announced.length || dedicated.has(provider)),
+      );
+      return [...announced, ...legacy].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+    };
     const notify = () => {
       const current = snapshot();
       for (const listener of readers) listener(current);
@@ -72,24 +86,28 @@ export function discoverEthereum(
     registry = {
       subscribe(listener) {
         readers.add(listener);
-        const legacy = [
+        const explicit = [
           target.phantom?.ethereum,
           ...(target.ethereum?.providers ?? []),
-          target.ethereum,
         ];
-        for (const provider of legacy) {
-          if (!providerValid(provider) || wallets.has(provider)) continue;
+        for (const provider of explicit) {
+          if (providerValid(provider)) dedicated.add(provider);
+        }
+        for (const provider of [...explicit, target.ethereum]) {
+          if (!providerValid(provider) || legacyWallets.has(provider)) continue;
           const flags = provider as LegacyProvider;
-          wallets.set(provider, {
-            id: `legacy-${wallets.size}`,
+          legacyWallets.set(provider, {
+            id: `legacy-${legacyWallets.size}`,
             name:
               provider === target.phantom?.ethereum || flags.isPhantom
                 ? "Phantom"
-                : flags.isMetaMask
-                  ? "MetaMask"
-                  : flags.isCoinbaseWallet
-                    ? "Coinbase Wallet"
-                    : "Ethereum wallet",
+                : flags.isRabby
+                  ? "Rabby Wallet"
+                  : flags.isMetaMask
+                    ? "MetaMask"
+                    : flags.isCoinbaseWallet
+                      ? "Coinbase Wallet"
+                      : "Ethereum wallet",
             provider,
           });
         }
@@ -113,7 +131,16 @@ export function ethereumError(cause: unknown) {
   if (code === -32002)
     return "A wallet request is already pending. Open the extension to approve or reject it.";
   if (code === 4001) return "Wallet connection declined.";
-  return cause instanceof Error
-    ? errorMessage(cause)
-    : "Wallet connection failed.";
+  if (code === 4200 || code === -32601)
+    return "This wallet does not support Ethereum account connections. Choose another wallet.";
+  if (code === 4100) return "Open your wallet and allow this site to connect.";
+  if (code === 4900 || code === 4901)
+    return "Your Ethereum wallet is disconnected. Open it and reconnect.";
+  const message =
+    cause && typeof cause === "object" && "message" in cause
+      ? cause.message
+      : undefined;
+  return typeof message === "string" && message.trim()
+    ? errorMessage(new Error(message))
+    : "Wallet connection failed. Open your wallet and try again.";
 }

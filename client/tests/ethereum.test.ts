@@ -82,6 +82,50 @@ test("late wallet announcements reach active subscribers but not closed views", 
   next();
 });
 
+test("announced wallets replace ambiguous legacy wrappers without merging distinct sessions", () => {
+  const wrapper = Object.assign(provider(), { isMetaMask: true });
+  const metamask = provider();
+  const rabby = Object.assign(provider(), { isRabby: true, isMetaMask: true });
+  const target = Object.assign(new EventTarget(), { ethereum: wrapper });
+  let wallets: EthereumWallet[] = [];
+  const stop = discoverEthereum(target, (value) => {
+    wallets = value;
+  });
+  assert.equal(wallets[0].provider, wrapper);
+  announce(target, metamask, { name: "MetaMask" });
+  announce(target, rabby, {
+    uuid: "22222222-2222-4222-8222-222222222222",
+    name: "Rabby Wallet",
+  });
+  assert.deepEqual(
+    wallets.map(({ name }) => name),
+    ["MetaMask", "Rabby Wallet"],
+  );
+  assert.equal(wallets[0].provider, metamask);
+  announce(target, provider(), {
+    uuid: "33333333-3333-4333-8333-333333333333",
+    name: "MetaMask",
+  });
+  assert.equal(wallets.filter(({ name }) => name === "MetaMask").length, 2);
+  stop();
+});
+
+test("Rabby compatibility flags do not label its legacy provider as MetaMask", () => {
+  const rabby = Object.assign(provider(), { isRabby: true, isMetaMask: true });
+  const target = Object.assign(new EventTarget(), { ethereum: rabby });
+  let wallets: EthereumWallet[] = [];
+  const stop = discoverEthereum(target, (value) => {
+    wallets = value;
+  });
+  assert.equal(wallets[0].name, "Rabby Wallet");
+  announce(target, provider(), { name: "Phantom" });
+  assert.deepEqual(
+    wallets.map(({ name }) => name),
+    ["Phantom"],
+  );
+  stop();
+});
+
 test("invalid or colliding announcements cannot replace a selected provider", () => {
   const target = new EventTarget();
   let wallets: EthereumWallet[] = [];
@@ -107,4 +151,20 @@ test("a pending Ethereum approval has a distinct actionable error", () => {
     ethereumError(new Error("Wallet did not respond")),
     "Wallet did not respond",
   );
+});
+
+test("Ethereum RPC errors retain their message and hide endpoint credentials", () => {
+  assert.equal(
+    ethereumError({ code: -32603, message: "Unlock your Ethereum wallet." }),
+    "Unlock your Ethereum wallet.",
+  );
+  assert.equal(
+    ethereumError({
+      message: "Provider rejected https://example.com/private-key",
+    }),
+    "Provider rejected [endpoint]",
+  );
+  assert.match(ethereumError({ code: 4200 }), /does not support Ethereum/);
+  assert.match(ethereumError({ code: 4100 }), /allow this site/);
+  assert.match(ethereumError({ code: 4900 }), /disconnected/);
 });

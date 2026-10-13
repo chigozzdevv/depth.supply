@@ -89,10 +89,10 @@ export function HedgeWalletButton({
         onCancel={close}
       >
         <div className="dialog-heading">
-          <h2 id={titleId}>Connect hedge wallet</h2>
+          <h2 id={titleId}>Connect Ethereum wallet</h2>
           <button
             type="button"
-            aria-label="Close hedge wallet dialog"
+            aria-label="Close Ethereum wallet dialog"
             onClick={close}
           >
             <X size={18} />
