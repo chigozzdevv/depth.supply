@@ -1,0 +1,41 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { Article } from "@/components/docs/article";
+import { findPage, pages } from "@/components/docs/content";
+import { docHref } from "@/components/docs/model";
+
+type Props = { params: Promise<{ slug: string[] }> };
+
+export function generateStaticParams() {
+  return pages
+    .filter((page) => page.slug)
+    .map((page) => ({ slug: page.slug.split("/") }));
+}
+
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const page = findPage((await params).slug.join("/"));
+  if (!page) notFound();
+  return {
+    title: page.title,
+    description: page.description,
+    alternates: { canonical: docHref(page.slug) },
+    openGraph: {
+      title: `${page.title} | Depth Docs`,
+      description: page.description,
+      url: docHref(page.slug),
+    },
+    twitter: {
+      title: `${page.title} | Depth Docs`,
+      description: page.description,
+    },
+  };
+}
+
+export default async function DocsPage({ params }: Props) {
+  const page = findPage((await params).slug.join("/"));
+  if (!page) notFound();
+  const index = pages.indexOf(page);
+  return (
+    <Article page={page} previous={pages[index - 1]} next={pages[index + 1]} />
+  );
+}
