@@ -511,7 +511,7 @@ test("full closes retain price caps, deadlines and nonces across a quote rotatio
           if (failure === "uncertain") throw new Error("Failed to fetch");
           if (failure === "busy" && requests.length === 1)
             throw anchor.AnchorError.parse([
-              "Program log: AnchorError occurred. Error Code: WrongOrderStatus. Error Number: 6020. Error Message: The order is in the wrong state.",
+              "Program log: AnchorError occurred. Error Code: WrongOrderStatus. Error Number: 6023. Error Message: The order is in the wrong state.",
             ]);
           if ((rotation && requests.length === 1) || failure === "exhausted") {
             latest = {

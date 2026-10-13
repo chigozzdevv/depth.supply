@@ -102,7 +102,7 @@ test("only proven quote rotation or market contention permits fresh admission", 
   assert.equal(
     admissionChanged(
       AnchorError.parse([
-        "Program log: AnchorError occurred. Error Code: WrongOrderStatus. Error Number: 6020. Error Message: The order is in the wrong state.",
+        "Program log: AnchorError occurred. Error Code: WrongOrderStatus. Error Number: 6023. Error Message: The order is in the wrong state.",
       ]),
     ),
     true,

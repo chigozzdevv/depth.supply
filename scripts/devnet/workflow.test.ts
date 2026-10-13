@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { callbackTargets } from "@/devnet/callback";
-import { fundingAmounts } from "@/devnet/roundtrip";
+import { fundingAmounts, makerPosition } from "@/devnet/roundtrip";
 import {
   journal,
   readJson,
@@ -17,6 +17,28 @@ import {
 function proof(status: Proof["status"], results: Proof["results"]): Proof {
   return { testedAt: "test", updatedAt: "test", status, results };
 }
+
+test("hedge proofs attribute inventory to the maker that actually fills each leg", () => {
+  const baseline = -100n;
+  const opening = { maker: "primary", side: 1n, size: 20n };
+  const closing = { maker: "fallback", side: -1n, size: 20n };
+  assert.equal(makerPosition(baseline, "primary", [opening, closing]), -120n);
+  assert.equal(makerPosition(0n, "fallback", [opening, closing]), 20n);
+  assert.equal(
+    makerPosition(baseline, "primary", [
+      opening,
+      { ...closing, maker: "primary" },
+    ]),
+    baseline,
+  );
+  assert.equal(
+    makerPosition(baseline, "primary", [{ ...opening, side: -1n }]),
+    -80n,
+  );
+  assert.throws(() =>
+    makerPosition(baseline, "primary", [{ ...opening, side: 0n }]),
+  );
+});
 
 test("callbacks use the latest traded quote and order IDs", () => {
   const [quote, open, close, transfer] = Array.from({ length: 4 }, () =>

@@ -47,6 +47,18 @@ export function fundingAmounts(
   return { allocation, deposit };
 }
 
+export function makerPosition(
+  baseline: bigint,
+  maker: string,
+  fills: readonly { maker: string; side: bigint; size: bigint }[],
+): bigint {
+  return fills.reduce((position, fill) => {
+    assert.ok(fill.side === 1n || fill.side === -1n);
+    assert.ok(fill.size > 0n);
+    return fill.maker === maker ? position - fill.side * fill.size : position;
+  }, baseline);
+}
+
 export async function prepareRoundTrip(
   maker: MakerClient,
   record: Recorder,
@@ -317,8 +329,15 @@ export async function runHostedRoundTrip(
   assert.equal(typeof baseline.depthPosition, "string");
   assert.equal(typeof baseline.externalPosition, "string");
   const baselineDepth = BigInt(baseline.depthPosition as string);
-  const baselineExternal = BigInt(baseline.externalPosition as string);
+  const fills: { maker: string; side: bigint; size: bigint }[] = [];
   const waitHedge = async (leg: string) => {
+    const selected = fills.at(-1)!;
+    const managed = selected.maker === maker.options.maker.toBase58();
+    const expectedPosition = makerPosition(
+      baselineDepth,
+      maker.options.maker.toBase58(),
+      fills,
+    );
     const deadline = Date.now() + 300_000;
     while (Date.now() < deadline) {
       const view = await maker.hedges.summary();
@@ -338,18 +357,15 @@ export async function runHostedRoundTrip(
             order.hashes?.length,
         );
         if (
-          (leg === "open" &&
-            history.some((order) => order.buy && !order.reduceOnly) &&
-            BigInt(view.snapshot.depthPosition) < baselineDepth &&
-            BigInt(view.snapshot.externalPosition) > baselineExternal) ||
-          (leg === "close" &&
-            history.some((order) => !order.buy && order.reduceOnly) &&
-            BigInt(view.snapshot.depthPosition) === baselineDepth &&
-            BigInt(view.snapshot.externalPosition) === baselineExternal)
+          BigInt(view.snapshot.depthPosition) === expectedPosition &&
+          (!managed ||
+            history.some((order) => order.buy === (selected.side === 1n)))
         ) {
           await record({
             stage: "hedge_balanced",
             leg,
+            selectedMaker: selected.maker,
+            managedFill: managed,
             depthPosition: view.snapshot.depthPosition,
             externalPosition: view.snapshot.externalPosition,
             orders: history.map(
@@ -424,9 +440,24 @@ export async function runHostedRoundTrip(
     }
     const result = await operation.confirm({ timeoutMs: 300_000 });
     assert.equal(result.snapshot.outcome, "filled");
+    const [state, fill] = await Promise.all([
+      maker.read<{ maker: PublicKey }>("OrderRecord", operation.id),
+      operation.privateResult({ timeoutMs: 180_000 }),
+    ]);
+    assert.equal(fill.status, "ready");
+    assert.notEqual(fill.side, undefined);
+    assert.notEqual(fill.size, undefined);
+    fills.push({
+      maker: state.maker.toBase58(),
+      side: fill.side!,
+      size: fill.size!,
+    });
     await record({
       stage: `trade_${leg}_filled`,
       order: operation.id.toBase58(),
+      maker: state.maker.toBase58(),
+      side: fill.side!.toString(),
+      size: fill.size!.toString(),
     });
   };
   await execute("open");
