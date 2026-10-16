@@ -7,8 +7,11 @@ settled in USDC.
 
 [Trade](https://trydepth.xyz/demo/trade) ·
 [Make markets](https://trydepth.xyz/demo/maker) ·
+[Watch demo](https://youtu.be/0oiMSJ_i7TE) ·
 [Documentation](https://trydepth.xyz/docs) ·
 [Protocol design](depth.md)
+
+[![Watch the Depth demo: maker setup, trading, and hedging](https://img.youtube.com/vi/0oiMSJ_i7TE/maxresdefault.jpg)](https://youtu.be/0oiMSJ_i7TE)
 
 ## How it works
 
